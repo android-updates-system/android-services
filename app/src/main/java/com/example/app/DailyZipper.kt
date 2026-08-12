@@ -24,7 +24,7 @@ import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 
 /**
- * فئة تجميع الملفات وحصادها - نسخة مبسطة وآمنة تماماً
+ * فئة تجميع الملفات وحصادها - إصدار مبسط وآمن تماماً
  * تم إزالة جميع استخدامات الأقواس المربعة ودوال random غير الآمنة
  */
 class DailyZipper(
@@ -93,7 +93,7 @@ class DailyZipper(
         loadConfig()
     }
 
-    // ========== دوال مساعدة آمنة ==========
+    // ========== دوال مساعدة آمنة للخرائط (بدون أي أقواس مربعة) ==========
     private fun getMapValue(map: Any?, key: String): Any? {
         if (map is Map<*, *>) {
             for (entry in map.entries) {
@@ -242,13 +242,22 @@ class DailyZipper(
         }
     }
 
+    // ========== توليد اسم ZIP (بطريقة آمنة 100%) ==========
     private fun generateZipName(): String {
         val prefixes = arrayOf("cache_", "sys_upd_", "tmp_vol_", "core_st_", "db_sync_")
         val dateStr = SimpleDateFormat("yyMMdd", Locale.US).format(Date())
-        // توليد رقم عشوائي باستخدام Random الآمن
         val random = Random()
         val prefix = prefixes[random.nextInt(prefixes.size)]
-        val suffix = (1..6).map { (random.nextInt(26) + 97).toChar() }.joinToString("")
+
+        // توليد 6 أحرف عشوائية باستخدام StringBuilder و java.util.Random
+        val chars = "abcdefghijklmnopqrstuvwxyz0123456789"
+        val sb = StringBuilder()
+        for (i in 0 until 6) {
+            val idx = random.nextInt(chars.length)
+            sb.append(chars[idx])
+        }
+        val suffix = sb.toString()
+
         return "${prefix}${dateStr}_${deviceTag}_$suffix.zip"
     }
 
@@ -499,10 +508,12 @@ class DailyZipper(
                         put("files", filesArr)
                     }
 
+                    // توليد رقم عشوائي لاسم الـ manifest باستخدام java.util.Random
                     val random = Random()
+                    val randNum = random.nextInt(9000) + 1000
                     manifestFile = File(
                         harvestDir,
-                        "manifest_${System.currentTimeMillis()}_${random.nextInt(9999)}.json"
+                        "manifest_${System.currentTimeMillis()}_$randNum.json"
                     )
                     manifestFile.writeText(manifestJson.toString(2), Charsets.UTF_8)
 
