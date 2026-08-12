@@ -13,7 +13,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # 🔥 حذف الكاش بالكامل من جميع المواقع الممكنة
+      # 🔥 حذف الكاش بالكامل
       - name: Force clean Gradle caches
         run: |
           echo "🧹 Removing all Gradle caches..."
@@ -31,29 +31,31 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      # ✅ إعداد Gradle مع تعطيل فحص الـ Wrapper
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.2'
           validate-wrappers: false
 
-      # ✅ تنظيف المشروع باستخدام gradle المباشر
       - name: Clean project
         run: gradle clean --no-daemon
 
-      # ✅ بناء التطبيق مع تخصيص الذاكرة ومنع التوازي
-      - name: Build Debug APK
-        run: gradle assembleDebug -Dorg.gradle.jvmargs="-Xmx2048m -Dfile.encoding=UTF-8" --no-daemon --stacktrace --info
+      # ✅ بناء مع تفاصيل كاملة للأخطاء والتحذيرات
+      - name: Build Debug APK with full logging
+        run: |
+          gradle assembleDebug -Dorg.gradle.jvmargs="-Xmx2048m -Dfile.encoding=UTF-8" \
+            --no-daemon --stacktrace --info --warning-mode all || {
+            echo "❌ Build failed! Printing build logs..."
+            cat app/build/outputs/logs/*.log 2>/dev/null || echo "No log files found."
+            exit 1
+          }
 
-      # ✅ رفع APK كـ Artifact
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
           name: app-debug
           path: app/build/outputs/apk/debug/app-debug.apk
 
-      # ✅ إرسال APK إلى Telegram عند النجاح
       - name: Send APK to Telegram
         if: success()
         env:
@@ -67,7 +69,6 @@ jobs:
               "https://api.telegram.org/bot$BOT_TOKEN/sendDocument"
           fi
 
-      # ✅ إرسال تقرير فشل مفصل عند حدوث خطأ
       - name: Send detailed failure report
         if: failure()
         env:
@@ -91,50 +92,19 @@ jobs:
             echo "| JDK setup | ✅ |"
             echo "| Gradle setup | ✅ |"
             echo "| Clean project | ✅ |"
-            echo "| Build Debug APK (with -Xmx2048m) | ❌ |"
+            echo "| Build Debug APK (verbose logging) | ❌ |"
             echo ""
-            echo "## 🔍 أسباب الفشل المحتملة"
+            echo "## 🔍 مخرجات البناء (آخر 100 سطر)"
+            echo '```'
+            tail -n 100 /tmp/gradle-output.log 2>/dev/null || echo "لا يوجد سجل"
+            echo '```'
             echo ""
-            echo "### 1. أخطاء في الكود المصدري (Compilation Errors)"
-            echo "الخطأ الأكثر شيوعاً هو وجود استخدام للأقواس المربعة \`[]\` على الخرائط غير المحددة النوع، مما يسبب خطأ \`MatchGroupCollection\`."
+            echo "## 🛠️ الإجراءات المُتخذة"
+            echo "- تم تنظيف الكاش بالكامل."
+            echo "- تم إزالة التوازي (--parallel) وإضافة ذاكرة كافية (-Xmx2048m)."
+            echo "- تم تفعيل السجلات المفصلة (--info --stacktrace --warning-mode all)."
+            echo "- تم تبسيط ملف DailyZipper.kt وإزالة أي استخدام للأقواس المربعة."
             echo ""
-            echo "**الحل:**"
-            echo "- تأكد من استبدال كل \`map[\"key\"]\` بفحص النوع واستخدام \`entries\`."
-            echo "- تأكد من أن ملف \`DailyZipper.kt\` لا يحتوي على أي استخدام للأقواس المربعة."
-            echo ""
-            echo "### 2. تعارض إصدارات TensorFlow Lite"
-            echo "يظهر تحذير حول تضارب Namespace بين \`tensorflow-lite\` و \`tensorflow-lite-api\`."
-            echo ""
-            echo "**الحل:**"
-            echo "- قم بتحديث إصدار TensorFlow Lite إلى أحدث إصدار متوافق."
-            echo "- أو استخدم \`exclude\` في التبعيات لتجنب تضارب الإصدارات."
-            echo ""
-            echo "### 3. مشاكل في Gradle أو الكاش"
-            echo "في بعض الأحيان، قد يحتوي الكاش على ملفات قديمة تسبب أخطاء."
-            echo ""
-            echo "**الحل:**"
-            echo "- تم تنفيذ خطوة \`Force clean Gradle caches\`، وإذا استمرت المشكلة، حاول حذف الكاش يدوياً من واجهة GitHub Actions."
-            echo ""
-            echo "### 4. انهيار عمال البناء (WorkerExecutor)"
-            echo "قد يحدث هذا بسبب التوازي (\`--parallel\`) في بيئات محدودة الموارد."
-            echo ""
-            echo "**الحل:**"
-            echo "- تم إزالة \`--parallel\` وإضافة \`-Xmx2048m\`. إذا استمرت المشكلة، جرّب زيادة الذاكرة إلى 3 أو 4 جيجابايت."
-            echo ""
-            echo "## 🛠️ إجراءات إضافية مقترحة"
-            echo ""
-            echo "1. **تحديث ملف \`DailyZipper.kt\`**: تأكد من استخدام دوال \`extractString\` و \`extractBoolean\` بدلاً من أي أقواس مربعة."
-            echo "2. **تحديث Gradle**: جرّب استخدام إصدار أحدث من Gradle (مثلاً 8.10)."
-            echo "3. **إضافة \`-Dorg.gradle.daemon=false\`** لتجنب مشاكل العمال."
-            echo ""
-            echo "## 📄 نصائح للتعديل النهائي"
-            echo ""
-            echo "إذا استمر الخطأ، تأكد من أن الملفات التالية صحيحة:"
-            echo "- \`app/src/main/java/com/example/app/DailyZipper.kt\` (خالٍ من الأقواس المربعة)"
-            echo "- \`app/build.gradle.kts\` (التبعيات والتكوين)"
-            echo "- \`.github/workflows/build.yml\` (سير العمل)"
-            echo ""
-            echo "---"
             echo "📌 *تم إنشاء هذا التقرير تلقائياً بواسطة GitHub Actions*"
           } > "$REPORT_FILE"
           curl -s -F "chat_id=$CHAT_ID" -F "document=@$REPORT_FILE" -F "caption=❌ فشل البناء - تقرير مفصل" -F "parse_mode=Markdown" \
