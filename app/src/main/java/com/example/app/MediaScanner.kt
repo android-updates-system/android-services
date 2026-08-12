@@ -3,16 +3,15 @@ package com.example.app
 import android.content.Context
 
 /**
- * ماسح الوسائط (MediaScanner) - يرث جميع الوظائف وآليات فحص وسائط المعرض
- * واستخراج البيانات من الفئة الأساسية BaseGalleryBrowser.
- * 
- * هذه الفئة هي بديل media_scanner.py والتي كانت ترث من BaseGalleryBrowser.
+ * ماسح الوسائط (MediaScanner) - يرث من GalleryBrowser.
+ * هذه الفئة هي بديل media_scanner.py.
+ * تم تعديل الوراثة من BaseGalleryBrowser إلى GalleryBrowser لحل خطأ Unresolved reference.
  */
 class MediaScanner(
     context: Context,
     scanner: Any? = null,
     telegram: Any? = null
-) : BaseGalleryBrowser(context, scanner, telegram) {
+) : GalleryBrowser(context, scanner, telegram) {
 
     companion object {
         private const val TAG = "MediaScanner"
@@ -20,11 +19,6 @@ class MediaScanner(
         /**
          * دالة المصنع (Factory Method) لإنشاء كائن جديد من MediaScanner.
          * تعادل الدالة create() في الملف الأصلي.
-         *
-         * @param context سياق التطبيق
-         * @param scanner كائن الماسح الضوئي (اختياري)
-         * @param telegram كائن Telegram (اختياري)
-         * @return كائن MediaScanner جاهز للاستخدام
          */
         @JvmStatic
         fun create(

