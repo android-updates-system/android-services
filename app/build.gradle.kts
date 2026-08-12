@@ -38,11 +38,11 @@ android {
 
     kotlinOptions {
         jvmTarget = "17"
-        // تفعيل تحذيرات اختيارية لتحسين جودة الكود
+        // ✅ تحديث من -Xopt-in إلى -opt-in (إزالة التحذير)
         freeCompilerArgs = listOf(
-            "-Xopt-in=kotlin.RequiresOptIn",
-            "-Xopt-in=kotlinx.coroutines.ExperimentalCoroutinesApi",
-            "-Xopt-in=kotlinx.coroutines.FlowPreview"
+            "-opt-in=kotlin.RequiresOptIn",
+            "-opt-in=kotlinx.coroutines.ExperimentalCoroutinesApi",
+            "-opt-in=kotlinx.coroutines.FlowPreview"
         )
     }
 
@@ -51,7 +51,8 @@ android {
         viewBinding = true   // ✅ تفعيل View Binding لتسهيل ربط الواجهات
     }
 
-    packagingOptions {
+    // ✅ تحديث packagingOptions إلى packaging (القاعدة الجديدة)
+    packaging {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }

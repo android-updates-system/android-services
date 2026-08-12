@@ -3,6 +3,7 @@ package com.example.app
 import android.content.Context
 import android.util.Base64
 import android.util.Log
+import org.json.JSONArray   // ✅ إضافة الاستيراد المطلوب
 import org.json.JSONObject
 import java.io.InputStreamReader
 import java.net.HttpURLConnection

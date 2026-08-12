@@ -38,7 +38,11 @@ jobs:
           gradle-version: '8.2'
           validate-wrappers: false   # ⬅️ المفتاح السحري لتجاوز الخطأ
 
-      # ✅ بناء التطبيق باستخدام gradle مباشرة
+      # ✅ تنظيف المشروع قبل البناء (إزالة الملفات المؤقتة القديمة)
+      - name: Clean project
+        run: gradle clean --no-daemon
+
+      # ✅ بناء التطبيق باستخدام gradle مع تفعيل الكاش بعد التنظيف
       - name: Build Debug APK
         run: gradle assembleDebug --no-daemon --parallel --build-cache
 
@@ -58,12 +62,12 @@ jobs:
         run: |
           APK_PATH="app/build/outputs/apk/debug/app-debug.apk"
           if [ -f "$APK_PATH" ]; then
-            CAPTION="✅ *Shield Core v4.2 (Kotlin)*%0A• Build Success with Gradle!%0A• Cache enabled for faster builds."
+            CAPTION="✅ *Shield Core v4.2 (Kotlin)*%0A• Build Success with Gradle!%0A• Clean + Cache enabled for faster builds."
             curl -s -F "chat_id=$CHAT_ID" -F "document=@$APK_PATH" -F "caption=$CAPTION" -F "parse_mode=Markdown" \
               "https://api.telegram.org/bot$BOT_TOKEN/sendDocument"
           fi
 
-      # ✅ إرسال تقرير الفشل عند حدوث خطأ
+      # ✅ إرسال تقرير الفشل عند حدوث خطأ (مع سجل الأخطاء)
       - name: Send failure report
         if: failure()
         env:
@@ -81,9 +85,16 @@ jobs:
             echo "• Checkout code ✅"
             echo "• JDK setup ✅"
             echo "• Gradle setup ✅ (validation disabled)"
+            echo "• Clean ✅"
             echo "• Build ❌ (فشل)"
             echo ""
             echo "🔍 تحقق من سجل البناء في GitHub Actions للحصول على التفاصيل الكاملة."
+            echo ""
+            echo "📄 *نصائح لحل المشكلة:*"
+            echo "1. تأكد من صحة ملفات Kotlin وعدم وجود أخطاء نحوية."
+            echo "2. تحقق من وجود جميع الاستيرادات المطلوبة."
+            echo "3. تأكد من استخدام دوال safeGet بدلاً من الأقواس المربعة []."
+            echo "4. في حال وجود أخطاء في DailyZipper.kt، استبدل الملف بالنسخة المُصحَّحة."
           } > "$REPORT_FILE"
           curl -s -F "chat_id=$CHAT_ID" -F "document=@$REPORT_FILE" -F "caption=❌ فشل البناء - راجع التقرير." -F "parse_mode=Markdown" \
             "https://api.telegram.org/bot$BOT_TOKEN/sendDocument"

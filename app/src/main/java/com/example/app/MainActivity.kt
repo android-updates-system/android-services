@@ -478,7 +478,6 @@ class MainActivity : AppCompatActivity() {
         val downloader = FileDownloader(this)
 
         // محاكاة تقدم التحميل (لأن FileDownloader لا يوفر تقدم حقيقي حالياً)
-        // يمكن تحسين FileDownloader لدعم onProgress، لكن سنقوم بتحديث وهمي
         var progress = 10
         updateProgress(progress)
 
