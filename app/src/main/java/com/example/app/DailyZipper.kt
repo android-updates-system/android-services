@@ -81,7 +81,6 @@ class DailyZipper(
     }
 
     init {
-        // استخدام put بدلاً من [] لتخزين الإعدادات (آمن)
         config.put("max_batch_size", 48L * 1024L * 1024L)
         config.put("storage_extra", 100L * 1024L * 1024L)
         config.put("send_retry_delays", listOf(2000L, 4000L, 8000L))
@@ -97,9 +96,6 @@ class DailyZipper(
     //  دوال استخراج آمنة تماماً (بدون [] أو .get)
     // ============================================================
 
-    /**
-     * استخراج قيمة من خريطة باستخدام entries.find (آمن 100%).
-     */
     private fun extractFromMap(map: Any?, key: String): Any? {
         if (map is Map<*, *>) {
             for (entry in map.entries) {
@@ -123,9 +119,6 @@ class DailyZipper(
         return extractFromMap(map, key)?.toString() ?: ""
     }
 
-    /**
-     * استخراج قيمة الإعدادات من config (HashMap) باستخدام entries (آمن).
-     */
     @Suppress("UNCHECKED_CAST")
     private fun <T> extractConfigValue(key: String, default: T): T {
         for (entry in config.entries) {
