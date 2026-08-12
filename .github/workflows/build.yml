@@ -38,7 +38,11 @@ jobs:
           gradle-version: '8.2'
           validate-wrappers: false
 
-      # ✅ تنظيف المشروع (إضافي)
+      # 🔥 منح صلاحية التنفيذ لملف gradlew (حل مشكلة Permission denied)
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+
+      # ✅ تنظيف المشروع
       - name: Clean project
         run: ./gradlew clean --no-daemon
 
@@ -86,6 +90,7 @@ jobs:
             echo "• Force clean caches ✅"
             echo "• JDK setup ✅"
             echo "• Gradle setup ✅"
+            echo "• Grant execute permission ✅"
             echo "• Clean project ✅"
             echo "• Build ❌"
             echo ""
