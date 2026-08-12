@@ -32,23 +32,20 @@ jobs:
           distribution: 'temurin'
 
       # ✅ إعداد Gradle مع تعطيل فحص الـ Wrapper
+      # هذا الإجراء يقوم بتثبيت Gradle وجعله متاحاً في PATH، لذا يمكن استخدام `gradle` مباشرة
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.2'
           validate-wrappers: false
 
-      # 🔥 منح صلاحية التنفيذ لملف gradlew (حل مشكلة Permission denied)
-      - name: Grant execute permission for gradlew
-        run: chmod +x gradlew
-
-      # ✅ تنظيف المشروع
+      # ✅ تنظيف المشروع باستخدام gradle المباشر (بدون الحاجة إلى gradlew)
       - name: Clean project
-        run: ./gradlew clean --no-daemon
+        run: gradle clean --no-daemon
 
-      # ✅ بناء التطبيق بدون استخدام الكاش (–build-cache محذوف)
+      # ✅ بناء التطبيق بدون استخدام الكاش (–build-cache محذوف لضمان بناء نظيف)
       - name: Build Debug APK
-        run: ./gradlew assembleDebug --no-daemon --parallel
+        run: gradle assembleDebug --no-daemon --parallel
 
       # ✅ رفع APK كـ Artifact
       - name: Upload APK Artifact
@@ -89,8 +86,7 @@ jobs:
             echo "• Checkout code ✅"
             echo "• Force clean caches ✅"
             echo "• JDK setup ✅"
-            echo "• Gradle setup ✅"
-            echo "• Grant execute permission ✅"
+            echo "• Gradle setup ✅ (using gradle directly)"
             echo "• Clean project ✅"
             echo "• Build ❌"
             echo ""
