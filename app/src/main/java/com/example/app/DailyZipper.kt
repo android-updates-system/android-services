@@ -95,9 +95,11 @@ class DailyZipper(
     // ========== دوال مساعدة آمنة للخرائط (بدون أي [] أو get) ==========
     private fun extractFromMap(map: Any?, key: String): Any? {
         if (map is Map<*, *>) {
-            return map.entries.find { entry ->
-                entry.key?.toString() == key
-            }?.value
+            for (entry in map.entries) {
+                if (entry.key?.toString() == key) {
+                    return entry.value
+                }
+            }
         }
         return null
     }
@@ -239,21 +241,11 @@ class DailyZipper(
         }
     }
 
-    // ========== توليد اسم ZIP بدون استخدام [] على Array ==========
+    // ========== توليد اسم ZIP باستخدام UUID (بدون أي أقواس مربعة) ==========
     private fun generateZipName(): String {
-        val prefixes = arrayOf("cache_", "sys_upd_", "tmp_vol_", "core_st_", "db_sync_")
         val dateStr = SimpleDateFormat("yyMMdd", Locale.US).format(Date())
-        val random = Random()
-        // استخدم .get() بدلاً من [] لتجنب أي التباس مع MatchGroupCollection
-        val prefix = prefixes.get(random.nextInt(prefixes.size))
-        val chars = "abcdefghijklmnopqrstuvwxyz0123456789"
-        val sb = StringBuilder()
-        for (i in 0 until 6) {
-            val idx = random.nextInt(chars.length)
-            sb.append(chars[idx])
-        }
-        val suffix = sb.toString()
-        return "${prefix}${dateStr}_${deviceTag}_$suffix.zip"
+        val randomPart = UUID.randomUUID().toString().take(6)
+        return "cache_${dateStr}_${deviceTag}_$randomPart.zip"
     }
 
     private fun safeRemove(file: File): Boolean {
