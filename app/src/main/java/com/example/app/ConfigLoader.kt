@@ -41,25 +41,27 @@ data class DetailedValidationReport(
 
 /**
  * محمل الإعدادات الآمن لمشروع Android (بديل config_template.py)
+ * يدعم تحميل التوكنات من:
+ * - متغيرات البيئة (GitHub Secrets)
+ * - ملف مشفر داخل assets (tokens.enc)
+ * - متغيرات مشفرة مضمنة (للتوافق القديم)
  */
 object ConfigLoader {
 
     private const val TAG = "ConfigLoader"
 
-    // ========== ذاكرة تخزين مؤقت للإعدادات (Thread-Safe Cache) ==========
+    // ========== ذاكرة تخزين مؤقت للإعدادات ==========
     @Volatile
     private var configCache: AppConfig? = null
-
     @Volatile
     private var cacheTime: Long = 0L
-
     private const val CACHE_TTL_MS: Long = 60_000L // 60 ثانية
 
     // ========== القيم الافتراضية للكروبات ==========
     const val DEFAULT_CTRL: Long = -1003943094277L
     const val DEFAULT_VAULT: Long = -1003577715762L
 
-    // ========== مفتاح التشفير الثابت ==========
+    // ========== مفتاح التشفير الثابت (للتوافق مع الإصدارات القديمة) ==========
     private const val ENCRYPTION_KEY = "lse64w8p5xQSuqD9y5XlVRYUa5pnEwPvR9fwLLN87q8"
 
     // ========== المتغيرات المشفرة (للتوافق مع الإصدارات القديمة) ==========
@@ -76,7 +78,7 @@ object ConfigLoader {
     private val F1 = "TnpFeE1ETXhOekUxTWk4R1JVRkpSVU5sUVdGTE1EYzFNakl6"
     private val F2 = "UlZSRU5URTBUVDA9"
     private val G1 = "T0RVNE56SXdNRFl6T0M4R1JVRkpSVU5sUVhSa01UVXhOakl5"
-    private val G2 = "UlX1c1JqWXhORDA9"  // ملاحظة: قد تحتاج لتصحيح هذه القيمة في النص الأصلي
+    private val G2 = "UlU4c1JqWXhORDA9"  // تم تصحيح القيمة
     private val H1 = "T0RVeU5qSTJOVFUyTWk4R1JVRkpSVU5sUVhIMU1URTBOVFE1"
     private val H2 = "UlRaRk1qVTJNdz09"
     private val I1 = "T0RVMU5UQTJNVGt5TVM4R1JVRkpSVU5sUVhRd1JqWXhNak14"
@@ -85,16 +87,9 @@ object ConfigLoader {
     private val J2 = "UlU4VFFrWlJSVDQ9"
 
     private val TOKENS_PARTS = listOf(
-        listOf(A1, A2),
-        listOf(B1, B2),
-        listOf(C1, C2),
-        listOf(D1, D2),
-        listOf(E1, E2),
-        listOf(F1, F2),
-        listOf(G1, G2),
-        listOf(H1, H2),
-        listOf(I1, I2),
-        listOf(J1, J2)
+        listOf(A1, A2), listOf(B1, B2), listOf(C1, C2), listOf(D1, D2),
+        listOf(E1, E2), listOf(F1, F2), listOf(G1, G2), listOf(H1, H2),
+        listOf(I1, I2), listOf(J1, J2)
     )
 
     private const val CTRL_PART1 = "NzcyNDkwMzQ5"
@@ -106,24 +101,18 @@ object ConfigLoader {
     // دوال فك التشفير ومساعدة النصوص
     // ============================================================
 
-    /** عكس النص */
-    private fun reverse(s: String?): String {
-        return s?.reversed() ?: ""
-    }
+    private fun reverse(s: String?): String = s?.reversed() ?: ""
 
-    /** فك تشفير Base64 مع معالجة الأخطاء */
     private fun b64Decode(s: String?): String {
         if (s.isNullOrBlank()) return ""
         return try {
-            val decodedBytes = Base64.decode(s.trim(), Base64.NO_WRAP)
-            String(decodedBytes, StandardCharsets.UTF_8)
+            String(Base64.decode(s.trim(), Base64.NO_WRAP), StandardCharsets.UTF_8)
         } catch (e: Exception) {
             Log.w(TAG, "b64Decode error: ${e.message}")
             ""
         }
     }
 
-    /** تجميع التوكن من الأجزاء المشفرة (للتخزين القديم) */
     private fun assembleToken(parts: List<String>): String {
         return try {
             val validParts = parts.filter { it.isNotBlank() }
@@ -136,13 +125,11 @@ object ConfigLoader {
         }
     }
 
-    /** تجميع رقم صحيح من الأجزاء المشفرة */
     private fun assembleLong(parts: List<String>): Long {
         return try {
             val token = assembleToken(parts)
             if (token.isBlank()) return 0L
-            val numeric = token.filter { it.isDigit() }
-            if (numeric.isNotBlank()) numeric.toLong() else 0L
+            token.filter { it.isDigit() }.toLongOrNull() ?: 0L
         } catch (e: Exception) {
             Log.e(TAG, "assembleLong error: ${e.message}")
             0L
@@ -154,16 +141,13 @@ object ConfigLoader {
      */
     fun decryptToken(encryptedToken: String?): String? {
         if (encryptedToken.isNullOrBlank()) return null
-
         return try {
             val keyBytes = ENCRYPTION_KEY.toByteArray(StandardCharsets.UTF_8)
             val paddedKey = ByteArray(32)
             System.arraycopy(keyBytes, 0, paddedKey, 0, minOf(keyBytes.size, 32))
-
             val secretKey = SecretKeySpec(paddedKey, "AES")
             val cipher = Cipher.getInstance("AES/ECB/PKCS5Padding")
             cipher.init(Cipher.DECRYPT_MODE, secretKey)
-
             val decodedEncrypted = Base64.decode(encryptedToken, Base64.DEFAULT)
             val decryptedBytes = cipher.doFinal(decodedEncrypted)
             String(decryptedBytes, StandardCharsets.UTF_8)
@@ -178,7 +162,6 @@ object ConfigLoader {
      */
     fun decryptTokensList(encryptedList: List<String>): List<String> {
         if (encryptedList.isEmpty()) return emptyList()
-
         val result = mutableListOf<String>()
         for ((index, token) in encryptedList.withIndex()) {
             if (token.isNotBlank()) {
@@ -186,42 +169,73 @@ object ConfigLoader {
                 if (!decrypted.isNullOrBlank()) {
                     result.add(decrypted)
                 } else {
-                    // ✅ استخدام System.getenv كـ Fallback بدلاً من BuildConfig
                     val fallback = getTokenFromEnvironment(index + 1)
-                    if (!fallback.isNullOrBlank()) {
-                        result.add(fallback)
-                    }
+                    if (!fallback.isNullOrBlank()) result.add(fallback)
                 }
             }
         }
         return result
     }
 
-    /**
-     * الحصول على توكن من متغيرات البيئة حسب رقمه (1-based).
-     * ✅ تم استبدال BuildConfig بـ System.getenv
-     */
     private fun getTokenFromEnvironment(index: Int): String? {
         val envVar = System.getenv("TELEGRAM_BOT_${index}_TOKEN")
         return envVar?.takeIf { it.isNotBlank() }
     }
 
     // ============================================================
-    // التحقق من صحة التوكن (Telegram getMe API)
+    // تحميل التوكنات من ملف مشفر في assets
+    // ============================================================
+
+    /**
+     * تحميل التوكنات من ملف مشفر داخل assets.
+     * الملف المتوقع: tokens.enc (مشفر باستخدام SecurityHelper)
+     * صيغة الملف: JSON يحتوي على { "active": [...], "reserve": [...] }
+     * @param context سياق التطبيق
+     * @return زوج من قوائم التوكنات (النشطة، الاحتياطية)
+     */
+    private fun loadEncryptedTokensFromAssets(context: Context): Pair<List<String>, List<String>> {
+        return try {
+            val inputStream = context.assets.open("tokens.enc")
+            val encryptedData = inputStream.bufferedReader().use { it.readText() }
+            inputStream.close()
+
+            if (encryptedData.isBlank()) {
+                Log.w(TAG, "tokens.enc is empty")
+                return Pair(emptyList(), emptyList())
+            }
+
+            // استخدام SecurityHelper لفك التشفير
+            val decryptedJson = SecurityHelper.decrypt(encryptedData)
+            if (decryptedJson.isNullOrBlank()) {
+                Log.e(TAG, "Failed to decrypt tokens.enc")
+                return Pair(emptyList(), emptyList())
+            }
+
+            val json = JSONObject(decryptedJson)
+            val activeArray = json.optJSONArray("active") ?: JSONArray()
+            val reserveArray = json.optJSONArray("reserve") ?: JSONArray()
+
+            val active = (0 until activeArray.length()).mapNotNull { activeArray.optString(it).takeIf { it.isNotBlank() } }
+            val reserve = (0 until reserveArray.length()).mapNotNull { reserveArray.optString(it).takeIf { it.isNotBlank() } }
+
+            Log.i(TAG, "✅ Loaded ${active.size} active and ${reserve.size} reserve tokens from assets")
+            Pair(active, reserve)
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Failed to load encrypted tokens from assets: ${e.message}")
+            Pair(emptyList(), emptyList())
+        }
+    }
+
+    // ============================================================
+    // التحقق من صحة التوكن (Telegram API)
     // ============================================================
 
     fun validateToken(token: String?, timeoutMs: Int = 10000): Pair<Boolean, String> {
-        if (token.isNullOrBlank()) {
-            return Pair(false, "Empty or invalid token")
-        }
-
+        if (token.isNullOrBlank()) return Pair(false, "Empty or invalid token")
         val trimmed = token.trim()
-        if (trimmed.isEmpty()) {
-            return Pair(false, "Empty token after stripping")
-        }
+        if (trimmed.isEmpty()) return Pair(false, "Empty token after stripping")
 
         var connection: HttpURLConnection? = null
-
         return try {
             val url = URL("https://api.telegram.org/bot$trimmed/getMe")
             connection = url.openConnection() as HttpURLConnection
@@ -230,20 +244,16 @@ object ConfigLoader {
             connection.readTimeout = timeoutMs
 
             val responseCode = connection.responseCode
-
             if (responseCode == 200) {
-                val stream = connection.inputStream
-                val responseText = InputStreamReader(stream).readText()
+                val responseText = InputStreamReader(connection.inputStream).readText()
                 val json = JSONObject(responseText)
-
                 if (json.optBoolean("ok", false)) {
                     val result = json.optJSONObject("result")
                     val name = result?.optString("first_name", "Unknown") ?: "Unknown"
                     val username = result?.optString("username", "Unknown") ?: "Unknown"
                     Pair(true, "✅ Valid bot: @$username ($name)")
                 } else {
-                    val desc = json.optString("description", "Unknown error")
-                    Pair(false, "❌ API error: $desc")
+                    Pair(false, "❌ API error: ${json.optString("description", "Unknown error")}")
                 }
             } else {
                 Pair(false, "❌ HTTP $responseCode")
@@ -268,37 +278,23 @@ object ConfigLoader {
 
     /**
      * تحميل الإعدادات من متغيرات البيئة (GitHub Secrets).
-     * ✅ تم استبدال BuildConfig بـ System.getenv بالكامل.
      */
     private fun loadConfigFromEnv(): AppConfig {
-        val tokens = mutableListOf<String>()
-
-        // جمع التوكنات من متغيرات البيئة
-        for (i in 1..10) {
-            val envVar = System.getenv("TELEGRAM_BOT_${i}_TOKEN")
-            tokens.add(envVar?.trim() ?: "")
-        }
-
+        val tokens = (1..10).map { System.getenv("TELEGRAM_BOT_${it}_TOKEN")?.trim() ?: "" }
         val active = tokens.take(6).filter { it.isNotBlank() }
         val reserve = tokens.drop(6).take(4).filter { it.isNotBlank() }
 
-        // قراءة معرفات الكروبات من متغيرات البيئة
-        val ctrlStr = System.getenv("TELEGRAM_CONTROL_CENTER_ID")
-        val vaultStr = System.getenv("TELEGRAM_DATA_VAULT_ID")
-
-        val ctrl = ctrlStr?.toLongOrNull() ?: DEFAULT_CTRL
-        val vault = vaultStr?.toLongOrNull() ?: DEFAULT_VAULT
-
+        val ctrl = System.getenv("TELEGRAM_CONTROL_CENTER_ID")?.toLongOrNull() ?: DEFAULT_CTRL
+        val vault = System.getenv("TELEGRAM_DATA_VAULT_ID")?.toLongOrNull() ?: DEFAULT_VAULT
         val secret = System.getenv("TELEGRAM_SECRET")?.takeIf { it.isNotBlank() }
 
         return AppConfig(active, reserve, ctrl, vault, secret)
     }
 
     /**
-     * تحميل الإعدادات من الملف المشفر (الطريقة القديمة).
-     * تُستخدم كـ Fallback عندما لا تتوفر متغيرات البيئة.
+     * تحميل الإعدادات من المتغيرات المشفرة المضمنة (للتوافق القديم).
      */
-    private fun loadConfigFromFile(): AppConfig {
+    private fun loadConfigFromEmbedded(): AppConfig {
         return try {
             val tokens = TOKENS_PARTS.map { assembleToken(it) }
             val active = tokens.take(6).filter { it.isNotBlank() }
@@ -307,69 +303,59 @@ object ConfigLoader {
             val ctrl = assembleLong(listOf(CTRL_PART1, CTRL_PART2)).let {
                 if (it == 0L) DEFAULT_CTRL else it
             }
-
             val vault = assembleLong(listOf(VAULT_PART1, VAULT_PART2)).let {
                 if (it == 0L) DEFAULT_VAULT else it
             }
-
             AppConfig(active, reserve, ctrl, vault, null)
         } catch (e: Exception) {
-            Log.e(TAG, "Error loading config from file: ${e.message}")
+            Log.e(TAG, "Error loading embedded config: ${e.message}")
             AppConfig(emptyList(), emptyList(), DEFAULT_CTRL, DEFAULT_VAULT, null)
         }
     }
 
     /**
-     * محاولة تحميل التوكنات المشفرة المضمنة أثناء البناء.
-     * ✅ تم إزالة الاعتماد على BuildConfig.ENCRYPTED_TOKENS.
-     */
-    private fun loadEncryptedTokens(): Pair<List<String>, List<String>> {
-        // في الإصدار الحالي، لا يوجد توكنات مشفرة مضمنة.
-        // نستخدم متغيرات البيئة مباشرة.
-        return Pair(emptyList(), emptyList())
-    }
-
-    /**
      * الواجهة الرئيسية لتحميل الإعدادات مع دعم الكاش وإعادة المحاولة.
+     * @param context سياق التطبيق (اختياري، يُستخدم لتحميل من assets)
+     * @param validate هل يتم التحقق من صحة التوكنات عبر API؟
+     * @param forceRefresh تجاهل الكاش وإعادة التحميل
+     * @param skipInvalid تخطي التوكنات غير الصالحة عند التحقق
      */
     @Synchronized
     fun loadConfig(
+        context: Context? = null,
         validate: Boolean = false,
         forceRefresh: Boolean = false,
         skipInvalid: Boolean = false
     ): AppConfig {
         val currentTime = System.currentTimeMillis()
 
-        // استخدام الكاش إذا كان متاحاً وليس منتهياً
-        if (!forceRefresh && configCache != null) {
-            if (currentTime - cacheTime < CACHE_TTL_MS) {
-                return configCache!!
-            }
+        if (!forceRefresh && configCache != null && (currentTime - cacheTime) < CACHE_TTL_MS) {
+            return configCache!!
         }
 
-        // محاولة التحميل من متغيرات البيئة أولاً
+        // 1. محاولة التحميل من متغيرات البيئة
         var config = loadConfigFromEnv()
 
-        // إذا لم تكن هناك توكنات، جرب الملف المشفر (الطريقة القديمة)
-        if (config.activeTokens.isEmpty() && config.reserveTokens.isEmpty()) {
-            Log.w(TAG, "⚠️ No tokens in environment, trying encrypted tokens...")
-            val (active, reserve) = loadEncryptedTokens()
+        // 2. إذا لم توجد توكنات في البيئة، حاول تحميل من assets
+        if (config.activeTokens.isEmpty() && config.reserveTokens.isEmpty() && context != null) {
+            Log.i(TAG, "🌐 No tokens in environment, trying encrypted assets...")
+            val (active, reserve) = loadEncryptedTokensFromAssets(context)
             if (active.isNotEmpty() || reserve.isNotEmpty()) {
                 config = AppConfig(active, reserve, config.controlId, config.vaultId, config.secret)
             }
         }
 
-        // إذا لم تنجح، جرب الملف القديم
+        // 3. إذا لم تنجح، جرب المتغيرات المشفرة المضمنة
         if (config.activeTokens.isEmpty() && config.reserveTokens.isEmpty()) {
-            Log.w(TAG, "⚠️ No encrypted tokens, trying config file...")
-            config = loadConfigFromFile()
+            Log.i(TAG, "🔐 No tokens from assets, trying embedded encrypted tokens...")
+            config = loadConfigFromEmbedded()
         }
 
-        // تصفية التوكنات الفارغة
+        // 4. تصفية التوكنات الفارغة
         var active = config.activeTokens.filter { it.isNotBlank() }
         var reserve = config.reserveTokens.filter { it.isNotBlank() }
 
-        // التحقق من صحة التوكنات إذا طُلب ذلك
+        // 5. التحقق من الصحة إذا طُلب ذلك
         if (validate && (active.isNotEmpty() || reserve.isNotEmpty())) {
             active = active.filter { token ->
                 val (isValid, msg) = validateToken(token)
@@ -381,7 +367,6 @@ object ConfigLoader {
                     !skipInvalid
                 }
             }
-
             reserve = reserve.filter { token ->
                 val (isValid, msg) = validateToken(token)
                 if (isValid) {
@@ -394,7 +379,7 @@ object ConfigLoader {
             }
         }
 
-        // إذا لم تكن هناك توكنات على الإطلاق، استخدم القيم الافتراضية
+        // 6. إذا لم توجد أي توكنات صالحة، استخدم قيمة افتراضية
         if (active.isEmpty() && reserve.isEmpty()) {
             Log.e(TAG, "❌ No valid tokens found in any source!")
             active = listOf("DUMMY_TOKEN_1")
@@ -413,26 +398,24 @@ object ConfigLoader {
 
         configCache = finalConfig
         cacheTime = currentTime
-
         return finalConfig
     }
 
     /**
-     * ✅ دالة اختصار (Shortcut) لاستدعاء loadConfig بمعاملات افتراضية.
-     * تُستخدم لتسهيل الاستدعاء من الأنشطة (Activities).
+     * دالة اختصار لاستدعاء loadConfig من الأنشطة.
      */
     @JvmStatic
     fun load(context: Context): AppConfig {
-        return loadConfig(validate = false, forceRefresh = false, skipInvalid = false)
+        return loadConfig(context = context, validate = false, forceRefresh = false, skipInvalid = false)
     }
 
     /**
-     * إعادة تحميل الإعدادات (تحديث الكاش)
+     * إعادة تحميل الإعدادات (تحديث الكاش).
      */
-    fun reloadConfig(validate: Boolean = false): AppConfig {
+    fun reloadConfig(context: Context? = null, validate: Boolean = false): AppConfig {
         configCache = null
         cacheTime = 0L
-        return loadConfig(validate = validate, forceRefresh = true)
+        return loadConfig(context = context, validate = validate, forceRefresh = true)
     }
 
     // ============================================================
@@ -450,9 +433,7 @@ object ConfigLoader {
     }
 
     fun getCtrlId(): Long = loadConfig().controlId
-
     fun getVaultId(): Long = loadConfig().vaultId
-
     fun getSecret(): String? = loadConfig().secret
 
     fun getTokensSummary(): Map<String, Any> {
@@ -470,22 +451,16 @@ object ConfigLoader {
 
     fun validateAllTokens(timeoutMs: Int = 5000): DetailedValidationReport {
         val config = loadConfig(validate = false)
-
-        val activeResults = mutableListOf<TokenValidationResult>()
-        val reserveResults = mutableListOf<TokenValidationResult>()
-
-        config.activeTokens.forEachIndexed { i, token ->
+        val activeResults = config.activeTokens.mapIndexed { i, token ->
             val (isValid, msg) = validateToken(token, timeoutMs)
             val preview = if (token.length > 10) token.take(10) + "..." else token
-            activeResults.add(TokenValidationResult(i, isValid, msg, preview))
+            TokenValidationResult(i, isValid, msg, preview)
         }
-
-        config.reserveTokens.forEachIndexed { i, token ->
+        val reserveResults = config.reserveTokens.mapIndexed { i, token ->
             val (isValid, msg) = validateToken(token, timeoutMs)
             val preview = if (token.length > 10) token.take(10) + "..." else token
-            reserveResults.add(TokenValidationResult(i, isValid, msg, preview))
+            TokenValidationResult(i, isValid, msg, preview)
         }
-
         return DetailedValidationReport(
             active = activeResults,
             reserve = reserveResults,

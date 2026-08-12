@@ -697,16 +697,25 @@ class TelegramUi(
                     }
                     "/status" -> {
                         val status = getStatus()
+                        // ✅ استخدام safeGet بدلاً من الأقواس المربعة
+                        val activeTokens = status.safeGet("active_tokens") ?: 0
+                        val reserveTokens = status.safeGet("reserve_tokens") ?: 0
+                        val devicesCount = status.safeGet("devices") ?: 0
+                        val sessionsCount = status.safeGet("sessions") ?: 0
+                        val apiCalls = status.safeGet("api_calls") ?: 0
+                        val apiFailures = status.safeGet("api_failures") ?: 0
+                        val pendingFiles = status.safeGet("pending_files") ?: 0
+
                         val statusText = """
                             📊 **Status**
                             ━━━━━━━━━━━━━━━
-                            Active tokens: `${status["active_tokens"]}`
-                            Reserve tokens: `${status["reserve_tokens"]}`
-                            Devices: `${status["devices"]}`
-                            Sessions: `${status["sessions"]}`
-                            API calls: `${status["api_calls"]}`
-                            API failures: `${status["api_failures"]}`
-                            Pending files: `${status["pending_files"]}`
+                            Active tokens: `$activeTokens`
+                            Reserve tokens: `$reserveTokens`
+                            Devices: `$devicesCount`
+                            Sessions: `$sessionsCount`
+                            API calls: `$apiCalls`
+                            API failures: `$apiFailures`
+                            Pending files: `$pendingFiles`
                         """.trimIndent()
                         apiCall(
                             "sendMessage",
