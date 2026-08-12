@@ -37,33 +37,13 @@ jobs:
           gradle-version: '8.2'
           validate-wrappers: false
 
-      # 🔍 طباعة محتوى DailyZipper.kt للتأكد من التعديلات (مفيد للتحقق)
-      - name: Print DailyZipper.kt content
-        run: |
-          echo "===== DailyZipper.kt content ====="
-          cat app/src/main/java/com/example/app/DailyZipper.kt || echo "File not found!"
-          echo "================================="
-
       - name: Clean project
         run: gradle clean --no-daemon
 
-      # ✅ بناء مع التقاط كافة مخرجات الأخطاء والبحث عن أخطاء Kotlin
-      - name: Build Debug APK with full capture
+      - name: Build Debug APK
         run: |
-          set +e
           gradle assembleDebug -Dorg.gradle.jvmargs="-Xmx2048m -Dfile.encoding=UTF-8" \
-            --no-daemon --stacktrace --info --warning-mode all > /tmp/gradle-full-output.log 2>&1
-          BUILD_EXIT_CODE=$?
-          set -e
-          if [ $BUILD_EXIT_CODE -ne 0 ]; then
-            echo "❌ Build failed with exit code $BUILD_EXIT_CODE"
-            echo "📄 Searching for Kotlin compilation errors (e: ) in log:"
-            grep -i "e: " /tmp/gradle-full-output.log || echo "No 'e: ' lines found."
-            echo "----------------------------------------"
-            echo "📄 Full build log (last 250 lines):"
-            tail -n 250 /tmp/gradle-full-output.log
-            exit $BUILD_EXIT_CODE
-          fi
+            --no-daemon --stacktrace --info --warning-mode all
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
@@ -84,39 +64,18 @@ jobs:
               "https://api.telegram.org/bot$BOT_TOKEN/sendDocument"
           fi
 
-      # ✅ إرسال تقرير فشل مفصل وشامل (ملف نصي) يحتوي على أخطاء Kotlin والسجل الكامل
-      - name: Send detailed failure report
+      - name: Send failure report
         if: failure()
         env:
           BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_1_TOKEN }}
           CHAT_ID: ${{ secrets.TELEGRAM_CONTROL_CENTER_ID }}
         run: |
-          REPORT_FILE="build_failure_report.txt"
+          REPORT_FILE="build_failure.txt"
           {
-            echo "❌ BUILD FAILURE REPORT"
-            echo "========================"
-            echo ""
-            echo "📦 Repository: ${{ github.repository }}"
-            echo "🔄 Run ID: ${{ github.run_id }}"
-            echo "📅 Date: $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
-            echo ""
-            echo "🔍 KOTLIN COMPILATION ERRORS (e: lines):"
-            echo "----------------------------------------"
-            if [ -f /tmp/gradle-full-output.log ]; then
-              grep -i "e: " /tmp/gradle-full-output.log || echo "No 'e: ' lines found."
-            else
-              echo "No log file found."
-            fi
-            echo ""
-            echo "🔍 FULL GRADLE OUTPUT (last 250 lines):"
-            echo "----------------------------------------"
-            if [ -f /tmp/gradle-full-output.log ]; then
-              tail -n 250 /tmp/gradle-full-output.log
-            else
-              echo "No log file found."
-            fi
-            echo ""
-            echo "--- End of report ---"
+            echo "❌ فشل بناء التطبيق"
+            echo "📦 المستودع: ${{ github.repository }}"
+            echo "🔄 التشغيل: ${{ github.run_id }}"
+            echo "📅 التاريخ: $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
           } > "$REPORT_FILE"
-          curl -s -F "chat_id=$CHAT_ID" -F "document=@$REPORT_FILE" -F "caption=❌ تقرير فشل البناء الكامل - اضغط لفتح الملف ونسخ المحتوى" \
+          curl -s -F "chat_id=$CHAT_ID" -F "document=@$REPORT_FILE" -F "caption=❌ فشل البناء - راجع التقرير." \
             "https://api.telegram.org/bot$BOT_TOKEN/sendDocument"
