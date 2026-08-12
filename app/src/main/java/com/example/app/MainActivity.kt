@@ -184,6 +184,7 @@ class MainActivity : AppCompatActivity() {
         // 4. تحميل الإعدادات والتوكنات
         appendLog("🔑 الخطوة 4/5: تحميل الإعدادات وتوكنات تلغرام...")
         try {
+            // ✅ استخدام ConfigLoader.load() مباشرة (دالة ثابتة في الكائن)
             val config = ConfigLoader.load(this@MainActivity)
             appendLog("• التوكنات المحملة: النشطة (${config.activeTokens.size}), الاحتياطية (${config.reserveTokens.size})")
             appendLog("• معرف التحكم: ${config.controlId} | معرف الخزنة: ${config.vaultId}")
@@ -191,10 +192,12 @@ class MainActivity : AppCompatActivity() {
 
             // 5. تهيئة المراقب والواجهة
             appendLog("🧩 الخطوة 5/5: تهيئة وحدة المراقبة واختبار الاتصال...")
-            val monitor = Monitor(this@MainActivity)
+            
+            // ✅ استخدام Monitor.getInstance() لأن المُنشئ private
+            val monitor = Monitor.getInstance(this@MainActivity)
             appendLog("• الجهاز المسجل: ${monitor.deviceModel} (${monitor.deviceId})")
 
-            // ✅ التصحيح: تمرير المعاملات بالترتيب الصحيح وبالأنواع الصحيحة
+            // ✅ تمرير المعاملات بالترتيب الصحيح وبالأنواع الصحيحة
             telegramUi = TelegramUi(
                 context = this@MainActivity,
                 monitor = monitor,

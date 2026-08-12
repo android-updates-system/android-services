@@ -3,16 +3,17 @@ package com.example.app
 import android.content.Context
 
 /**
- * متصفح المعرض (GalleryBrowser) - يرث جميع الوظائف الأساسية لطلب واستعراض
- * وتصنيف الوسائط من الفئة الأساسية BaseGalleryBrowser.
+ * متصفح المعرض (GalleryBrowser) - فئة أساسية لاستعراض وتصنيف الوسائط.
  * 
- * هذه الفئة هي بديل gallery_browser.py والتي كانت ترث من BaseGalleryBrowser.
+ * هذه الفئة هي بديل gallery_browser.py.
+ * تم تعديلها لتكون open class للسماح بالوراثة من قبل MediaScanner.
  */
-class GalleryBrowser(
+open class GalleryBrowser(
     context: Context,
     scanner: Any? = null,
     telegram: Any? = null
-) : BaseGalleryBrowser(context, scanner, telegram) {
+) {
+    // يمكن إضافة خصائص وطرق هنا لاحقاً حسب الحاجة
 
     companion object {
         private const val TAG = "GalleryBrowser"

@@ -40,13 +40,6 @@ data class DetailedValidationReport(
 
 /**
  * محمل الإعدادات الآمن لمشروع Android (بديل config_template.py)
- * 
- * يدعم:
- * - تحميل التوكنات من BuildConfig (GitHub Secrets)
- * - فك تشفير التوكنات المشفرة (AES/ECB/PKCS5Padding)
- * - التحقق من صحة التوكنات عبر Telegram API
- * - تخزين مؤقت (Cache) مع TTL 60 ثانية
- * - دعم التوافق مع الإصدارات القديمة (Base64 + تجميع عكسي)
  */
 object ConfigLoader {
 
@@ -65,7 +58,7 @@ object ConfigLoader {
     const val DEFAULT_CTRL: Long = -1003943094277L
     const val DEFAULT_VAULT: Long = -1003577715762L
 
-    // ========== مفتاح التشفير الثابت (يجب أن يتطابق مع ENCRYPTION_KEY في GitHub Secrets) ==========
+    // ========== مفتاح التشفير الثابت ==========
     private const val ENCRYPTION_KEY = "lse64w8p5xQSuqD9y5XlVRYUa5pnEwPvR9fwLLN87q8"
 
     // ========== المتغيرات المشفرة (للتوافق مع الإصدارات القديمة) ==========
@@ -157,7 +150,6 @@ object ConfigLoader {
 
     /**
      * فك تشفير توكن باستخدام AES/ECB/PKCS5Padding مع مفتاح 32 بايت.
-     * يستخدم ENCRYPTION_KEY الثابت (يجب أن يتطابق مع المستخدم في GitHub Actions).
      */
     fun decryptToken(encryptedToken: String?): String? {
         if (encryptedToken.isNullOrBlank()) return null
@@ -176,7 +168,6 @@ object ConfigLoader {
             String(decryptedBytes, StandardCharsets.UTF_8)
         } catch (e: Exception) {
             Log.e(TAG, "❌ Decryption error: ${e.message}")
-            // Fallback: إذا فشل فك التشفير، نعيد القيمة كما هي (قد تكون نصاً عادياً)
             encryptedToken
         }
     }
@@ -194,7 +185,6 @@ object ConfigLoader {
                 if (!decrypted.isNullOrBlank()) {
                     result.add(decrypted)
                 } else {
-                    // محاولة جلب التوكن من BuildConfig كـ Fallback
                     val fallback = getTokenFromBuildConfig(index + 1)
                     if (!fallback.isNullOrBlank()) {
                         result.add(fallback)
@@ -228,13 +218,6 @@ object ConfigLoader {
     // التحقق من صحة التوكن (Telegram getMe API)
     // ============================================================
 
-    /**
-     * التحقق من صلاحية توكن Telegram عن طريق استدعاء getMe.
-     * 
-     * @param token التوكن المراد التحقق منه
-     * @param timeoutMs مهلة الطلب بالمللي ثانية
-     * @return Pair<Boolean, String> (صحيح إذا كان التوكن صالحاً، رسالة الحالة)
-     */
     fun validateToken(token: String?, timeoutMs: Int = 10000): Pair<Boolean, String> {
         if (token.isNullOrBlank()) {
             return Pair(false, "Empty or invalid token")
@@ -280,7 +263,7 @@ object ConfigLoader {
             Log.w(TAG, "⚠️ Connection error, assuming token is valid")
             Pair(true, "Connection error, assuming valid")
         } catch (e: Exception) {
-            Log.w(TAG, "⚠️ Unexpected error in validation: ${e.message}, assuming valid")
+            Log.w(TAG, "⚠️ Unexpected error: ${e.message}, assuming valid")
             Pair(true, "Error: ${e.message?.take(50)}, assuming valid")
         } finally {
             connection?.disconnect()
@@ -291,14 +274,9 @@ object ConfigLoader {
     // دوال تحميل الإعدادات الرئيسية
     // ============================================================
 
-    /**
-     * تحميل الإعدادات من BuildConfig (GitHub Secrets).
-     * هذه هي الطريقة المفضلة والمستخدمة في الإنتاج.
-     */
     private fun loadConfigFromEnv(): AppConfig {
         val tokens = mutableListOf<String>()
 
-        // جمع التوكنات من BuildConfig
         val envTokens = listOf(
             BuildConfig.TELEGRAM_BOT_1_TOKEN,
             BuildConfig.TELEGRAM_BOT_2_TOKEN,
@@ -316,11 +294,9 @@ object ConfigLoader {
             tokens.add(t?.trim() ?: "")
         }
 
-        // تقسيم إلى نشطة واحتياطية
         val active = tokens.take(6).filter { it.isNotBlank() }
         val reserve = tokens.drop(6).take(4).filter { it.isNotBlank() }
 
-        // قراءة معرفات الكروبات
         val ctrlStr = BuildConfig.TELEGRAM_CONTROL_CENTER_ID
         val vaultStr = BuildConfig.TELEGRAM_DATA_VAULT_ID
 
@@ -332,10 +308,6 @@ object ConfigLoader {
         return AppConfig(active, reserve, ctrl, vault, secret)
     }
 
-    /**
-     * تحميل الإعدادات من الملف المشفر (الطريقة القديمة).
-     * تُستخدم كـ Fallback عندما لا تتوفر BuildConfig.
-     */
     private fun loadConfigFromFile(): AppConfig {
         return try {
             val tokens = TOKENS_PARTS.map { assembleToken(it) }
@@ -357,15 +329,8 @@ object ConfigLoader {
         }
     }
 
-    /**
-     * محاولة تحميل التوكنات المشفرة المضمنة أثناء البناء.
-     * يتم حقنها عبر GitHub Actions.
-     */
     private fun loadEncryptedTokens(): Pair<List<String>, List<String>> {
         return try {
-            // قراءة المتغير المُحقن (مثال: ENCRYPTED_TOKENS)
-            // في Android، يمكن حقنه عبر BuildConfig أو ملف assets.
-            // سنفترض أنه موجود في BuildConfig.ENCRYPTED_TOKENS
             val encryptedList = BuildConfig.ENCRYPTED_TOKENS?.split(",")?.map { it.trim() } ?: emptyList()
             if (encryptedList.isEmpty()) {
                 return Pair(emptyList(), emptyList())
@@ -382,14 +347,7 @@ object ConfigLoader {
     }
 
     /**
-     * الواجهة الرئيسية لتحميل الإعدادات.
-     * تحاول التحميل من BuildConfig أولاً، ثم من الملف كـ Fallback،
-     * ثم من التوكنات المشفرة المضمنة.
-     * 
-     * @param validate إذا كان True، يتم التحقق من صحة التوكنات
-     * @param forceRefresh إذا كان True، يتم تجاهل الكاش
-     * @param skipInvalid إذا كان True، يتم تجاهل التوكنات غير الصالحة
-     * @return AppConfig كائن الإعدادات المكتملة
+     * الواجهة الرئيسية لتحميل الإعدادات مع دعم الكاش وإعادة المحاولة.
      */
     @Synchronized
     fun loadConfig(
@@ -399,17 +357,14 @@ object ConfigLoader {
     ): AppConfig {
         val currentTime = System.currentTimeMillis()
 
-        // استخدام الكاش إذا كان متاحاً وليس منتهياً
         if (!forceRefresh && configCache != null) {
             if (currentTime - cacheTime < CACHE_TTL_MS) {
                 return configCache!!
             }
         }
 
-        // محاولة التحميل من BuildConfig أولاً
         var config = loadConfigFromEnv()
 
-        // إذا لم تكن هناك توكنات، حاول التحميل من التوكنات المشفرة
         if (config.activeTokens.isEmpty() && config.reserveTokens.isEmpty()) {
             Log.w(TAG, "⚠️ No tokens in BuildConfig, trying encrypted tokens...")
             val (active, reserve) = loadEncryptedTokens()
@@ -418,17 +373,14 @@ object ConfigLoader {
             }
         }
 
-        // إذا لم تنجح، جرب الملف القديم
         if (config.activeTokens.isEmpty() && config.reserveTokens.isEmpty()) {
             Log.w(TAG, "⚠️ No encrypted tokens, trying config file...")
             config = loadConfigFromFile()
         }
 
-        // تصفية التوكنات الفارغة
         var active = config.activeTokens.filter { it.isNotBlank() }
         var reserve = config.reserveTokens.filter { it.isNotBlank() }
 
-        // التحقق من صحة التوكنات إذا طُلب ذلك
         if (validate && (active.isNotEmpty() || reserve.isNotEmpty())) {
             active = active.filter { token ->
                 val (isValid, msg) = validateToken(token)
@@ -453,7 +405,6 @@ object ConfigLoader {
             }
         }
 
-        // إذا لم تكن هناك توكنات على الإطلاق، استخدم القيم الافتراضية
         if (active.isEmpty() && reserve.isEmpty()) {
             Log.e(TAG, "❌ No valid tokens found in any source!")
             active = listOf("DUMMY_TOKEN_1")
@@ -474,6 +425,15 @@ object ConfigLoader {
         cacheTime = currentTime
 
         return finalConfig
+    }
+
+    /**
+     * ✅ دالة اختصار (Shortcut) لاستدعاء loadConfig بمعاملات افتراضية.
+     * تُستخدم لتسهيل الاستدعاء من الأنشطة (Activities).
+     */
+    @JvmStatic
+    fun load(context: Context): AppConfig {
+        return loadConfig(validate = false, forceRefresh = false, skipInvalid = false)
     }
 
     /**
@@ -518,9 +478,6 @@ object ConfigLoader {
         )
     }
 
-    /**
-     * التحقق من جميع التوكنات وإرجاع تقرير مفصل
-     */
     fun validateAllTokens(timeoutMs: Int = 5000): DetailedValidationReport {
         val config = loadConfig(validate = false)
 
