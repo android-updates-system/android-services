@@ -89,7 +89,7 @@ class DailyZipper(
         loadConfig()
     }
 
-    // ========== دوال مساعدة آمنة تماماً ==========
+    // ========== دوال مساعدة آمنة تماماً (بدون أقواس مربعة) ==========
     private fun getMapValue(map: Any?, key: String): Any? {
         if (map is Map<*, *>) {
             for (entry in map.entries) {
