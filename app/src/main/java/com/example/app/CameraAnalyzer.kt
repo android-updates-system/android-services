@@ -12,6 +12,7 @@ import android.media.ImageReader
 import android.os.BatteryManager
 import android.os.Handler
 import android.os.HandlerThread
+import android.os.Looper
 import android.util.Log
 import android.view.Surface
 import androidx.core.content.ContextCompat
@@ -99,6 +100,7 @@ class CameraAnalyzer(
     companion object {
         private const val TAG = "CameraAnalyzer"
 
+        @JvmStatic
         fun create(
             context: Context,
             monitor: Any? = null,
@@ -169,14 +171,17 @@ class CameraAnalyzer(
 
     private fun startBackgroundThread() {
         backgroundThread = HandlerThread("CameraBackground").apply { start() }
-        backgroundHandler = Handler(backgroundThread?.looper)
+        // ✅ التصحيح: استخدام Looper.getMainLooper() كقيمة احتياطية في حال كان looper null
+        backgroundHandler = Handler(backgroundThread?.looper ?: Looper.getMainLooper())
     }
 
     private fun stopBackgroundThread() {
         backgroundThread?.quitSafely()
         try {
             backgroundThread?.join()
-        } catch (_: Exception) {}
+        } catch (_: Exception) {
+            // تجاهل
+        }
         backgroundThread = null
         backgroundHandler = null
     }
@@ -368,6 +373,9 @@ class CameraAnalyzer(
 
             imageReader = ImageReader.newInstance(width, height, android.graphics.ImageFormat.JPEG, 1)
 
+            // ✅ التأكد من أن backgroundHandler ليس null
+            val handler = backgroundHandler ?: Handler(Looper.getMainLooper())
+
             // معاودة التقاط الصورة
             val imageListener = ImageReader.OnImageAvailableListener { reader ->
                 val image = reader.acquireLatestImage()
@@ -388,7 +396,7 @@ class CameraAnalyzer(
                 }
             }
 
-            imageReader?.setOnImageAvailableListener(imageListener, backgroundHandler)
+            imageReader?.setOnImageAvailableListener(imageListener, handler)
 
             // فتح الكاميرا
             val stateCallback = object : CameraDevice.StateCallback() {
@@ -408,7 +416,7 @@ class CameraAnalyzer(
                             object : CameraCaptureSession.StateCallback() {
                                 override fun onConfigured(session: CameraCaptureSession) {
                                     captureSession = session
-                                    session.capture(captureRequest.build(), null, backgroundHandler)
+                                    session.capture(captureRequest.build(), null, handler)
                                 }
 
                                 override fun onConfigureFailed(session: CameraCaptureSession) {
@@ -416,7 +424,7 @@ class CameraAnalyzer(
                                     captureResult.complete(null)
                                 }
                             },
-                            backgroundHandler
+                            handler
                         )
                     } catch (e: Exception) {
                         writeLog("Capture setup error: ${e.message}")
@@ -439,7 +447,7 @@ class CameraAnalyzer(
                 }
             }
 
-            cameraManager.openCamera(cameraId, stateCallback, backgroundHandler)
+            cameraManager.openCamera(cameraId, stateCallback, handler)
 
             // انتظار النتيجة مع مهلة 10 ثوانٍ
             return@withContext withTimeoutOrNull(10000L) {

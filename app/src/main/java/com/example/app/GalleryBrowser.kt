@@ -4,8 +4,6 @@ import android.content.Context
 
 /**
  * متصفح المعرض (GalleryBrowser) - فئة أساسية لاستعراض وتصنيف الوسائط.
- * 
- * هذه الفئة هي بديل gallery_browser.py.
  * تم تعديلها لتكون open class للسماح بالوراثة من قبل MediaScanner.
  */
 open class GalleryBrowser(

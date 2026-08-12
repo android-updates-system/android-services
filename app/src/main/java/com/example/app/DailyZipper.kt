@@ -26,6 +26,9 @@ import java.util.zip.ZipOutputStream
 /**
  * فئة تجميع الملفات وحصادها بضغطها في ملفات ZIP وإرسالها بطريقة آمنة وفعالة.
  * هذه الفئة هي بديل daily_zipper.py مع تحسينات الأداء والتوافق مع Android.
+ *
+ * ملاحظة: تم إزالة كافة استدعاءات `matchResult.groups["name"]`، واستبدالها
+ * بطرق آمنة باستخدام `groupValues` عند الحاجة (غير موجودة حالياً في الكود).
  */
 class DailyZipper(
     context: Context,

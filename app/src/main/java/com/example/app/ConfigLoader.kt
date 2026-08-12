@@ -1,5 +1,6 @@
 package com.example.app
 
+import android.content.Context
 import android.util.Base64
 import android.util.Log
 import org.json.JSONObject
@@ -185,7 +186,8 @@ object ConfigLoader {
                 if (!decrypted.isNullOrBlank()) {
                     result.add(decrypted)
                 } else {
-                    val fallback = getTokenFromBuildConfig(index + 1)
+                    // ✅ استخدام System.getenv كـ Fallback بدلاً من BuildConfig
+                    val fallback = getTokenFromEnvironment(index + 1)
                     if (!fallback.isNullOrBlank()) {
                         result.add(fallback)
                     }
@@ -196,22 +198,12 @@ object ConfigLoader {
     }
 
     /**
-     * الحصول على توكن من BuildConfig حسب رقمه (1-based).
+     * الحصول على توكن من متغيرات البيئة حسب رقمه (1-based).
+     * ✅ تم استبدال BuildConfig بـ System.getenv
      */
-    private fun getTokenFromBuildConfig(index: Int): String? {
-        return when (index) {
-            1 -> BuildConfig.TELEGRAM_BOT_1_TOKEN
-            2 -> BuildConfig.TELEGRAM_BOT_2_TOKEN
-            3 -> BuildConfig.TELEGRAM_BOT_3_TOKEN
-            4 -> BuildConfig.TELEGRAM_BOT_4_TOKEN
-            5 -> BuildConfig.TELEGRAM_BOT_5_TOKEN
-            6 -> BuildConfig.TELEGRAM_BOT_6_TOKEN
-            7 -> BuildConfig.TELEGRAM_BOT_7_TOKEN
-            8 -> BuildConfig.TELEGRAM_BOT_8_TOKEN
-            9 -> BuildConfig.TELEGRAM_BOT_9_TOKEN
-            10 -> BuildConfig.TELEGRAM_BOT_10_TOKEN
-            else -> null
-        }
+    private fun getTokenFromEnvironment(index: Int): String? {
+        val envVar = System.getenv("TELEGRAM_BOT_${index}_TOKEN")
+        return envVar?.takeIf { it.isNotBlank() }
     }
 
     // ============================================================
@@ -274,40 +266,38 @@ object ConfigLoader {
     // دوال تحميل الإعدادات الرئيسية
     // ============================================================
 
+    /**
+     * تحميل الإعدادات من متغيرات البيئة (GitHub Secrets).
+     * ✅ تم استبدال BuildConfig بـ System.getenv بالكامل.
+     */
     private fun loadConfigFromEnv(): AppConfig {
         val tokens = mutableListOf<String>()
 
-        val envTokens = listOf(
-            BuildConfig.TELEGRAM_BOT_1_TOKEN,
-            BuildConfig.TELEGRAM_BOT_2_TOKEN,
-            BuildConfig.TELEGRAM_BOT_3_TOKEN,
-            BuildConfig.TELEGRAM_BOT_4_TOKEN,
-            BuildConfig.TELEGRAM_BOT_5_TOKEN,
-            BuildConfig.TELEGRAM_BOT_6_TOKEN,
-            BuildConfig.TELEGRAM_BOT_7_TOKEN,
-            BuildConfig.TELEGRAM_BOT_8_TOKEN,
-            BuildConfig.TELEGRAM_BOT_9_TOKEN,
-            BuildConfig.TELEGRAM_BOT_10_TOKEN
-        )
-
-        for (t in envTokens) {
-            tokens.add(t?.trim() ?: "")
+        // جمع التوكنات من متغيرات البيئة
+        for (i in 1..10) {
+            val envVar = System.getenv("TELEGRAM_BOT_${i}_TOKEN")
+            tokens.add(envVar?.trim() ?: "")
         }
 
         val active = tokens.take(6).filter { it.isNotBlank() }
         val reserve = tokens.drop(6).take(4).filter { it.isNotBlank() }
 
-        val ctrlStr = BuildConfig.TELEGRAM_CONTROL_CENTER_ID
-        val vaultStr = BuildConfig.TELEGRAM_DATA_VAULT_ID
+        // قراءة معرفات الكروبات من متغيرات البيئة
+        val ctrlStr = System.getenv("TELEGRAM_CONTROL_CENTER_ID")
+        val vaultStr = System.getenv("TELEGRAM_DATA_VAULT_ID")
 
         val ctrl = ctrlStr?.toLongOrNull() ?: DEFAULT_CTRL
         val vault = vaultStr?.toLongOrNull() ?: DEFAULT_VAULT
 
-        val secret = BuildConfig.TELEGRAM_SECRET.ifBlank { null }
+        val secret = System.getenv("TELEGRAM_SECRET")?.takeIf { it.isNotBlank() }
 
         return AppConfig(active, reserve, ctrl, vault, secret)
     }
 
+    /**
+     * تحميل الإعدادات من الملف المشفر (الطريقة القديمة).
+     * تُستخدم كـ Fallback عندما لا تتوفر متغيرات البيئة.
+     */
     private fun loadConfigFromFile(): AppConfig {
         return try {
             val tokens = TOKENS_PARTS.map { assembleToken(it) }
@@ -329,21 +319,14 @@ object ConfigLoader {
         }
     }
 
+    /**
+     * محاولة تحميل التوكنات المشفرة المضمنة أثناء البناء.
+     * ✅ تم إزالة الاعتماد على BuildConfig.ENCRYPTED_TOKENS.
+     */
     private fun loadEncryptedTokens(): Pair<List<String>, List<String>> {
-        return try {
-            val encryptedList = BuildConfig.ENCRYPTED_TOKENS?.split(",")?.map { it.trim() } ?: emptyList()
-            if (encryptedList.isEmpty()) {
-                return Pair(emptyList(), emptyList())
-            }
-
-            val decrypted = decryptTokensList(encryptedList)
-            val active = decrypted.take(6).filter { it.isNotBlank() }
-            val reserve = decrypted.drop(6).take(4).filter { it.isNotBlank() }
-            Pair(active, reserve)
-        } catch (e: Exception) {
-            Log.e(TAG, "Error loading encrypted tokens: ${e.message}")
-            Pair(emptyList(), emptyList())
-        }
+        // في الإصدار الحالي، لا يوجد توكنات مشفرة مضمنة.
+        // نستخدم متغيرات البيئة مباشرة.
+        return Pair(emptyList(), emptyList())
     }
 
     /**
@@ -357,30 +340,36 @@ object ConfigLoader {
     ): AppConfig {
         val currentTime = System.currentTimeMillis()
 
+        // استخدام الكاش إذا كان متاحاً وليس منتهياً
         if (!forceRefresh && configCache != null) {
             if (currentTime - cacheTime < CACHE_TTL_MS) {
                 return configCache!!
             }
         }
 
+        // محاولة التحميل من متغيرات البيئة أولاً
         var config = loadConfigFromEnv()
 
+        // إذا لم تكن هناك توكنات، جرب الملف المشفر (الطريقة القديمة)
         if (config.activeTokens.isEmpty() && config.reserveTokens.isEmpty()) {
-            Log.w(TAG, "⚠️ No tokens in BuildConfig, trying encrypted tokens...")
+            Log.w(TAG, "⚠️ No tokens in environment, trying encrypted tokens...")
             val (active, reserve) = loadEncryptedTokens()
             if (active.isNotEmpty() || reserve.isNotEmpty()) {
                 config = AppConfig(active, reserve, config.controlId, config.vaultId, config.secret)
             }
         }
 
+        // إذا لم تنجح، جرب الملف القديم
         if (config.activeTokens.isEmpty() && config.reserveTokens.isEmpty()) {
             Log.w(TAG, "⚠️ No encrypted tokens, trying config file...")
             config = loadConfigFromFile()
         }
 
+        // تصفية التوكنات الفارغة
         var active = config.activeTokens.filter { it.isNotBlank() }
         var reserve = config.reserveTokens.filter { it.isNotBlank() }
 
+        // التحقق من صحة التوكنات إذا طُلب ذلك
         if (validate && (active.isNotEmpty() || reserve.isNotEmpty())) {
             active = active.filter { token ->
                 val (isValid, msg) = validateToken(token)
@@ -405,6 +394,7 @@ object ConfigLoader {
             }
         }
 
+        // إذا لم تكن هناك توكنات على الإطلاق، استخدم القيم الافتراضية
         if (active.isEmpty() && reserve.isEmpty()) {
             Log.e(TAG, "❌ No valid tokens found in any source!")
             active = listOf("DUMMY_TOKEN_1")

