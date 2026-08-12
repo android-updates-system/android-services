@@ -24,8 +24,7 @@ import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 
 /**
- * فئة تجميع الملفات وحصادها - إصدار مبسط وآمن تماماً
- * تم إزالة جميع استخدامات الأقواس المربعة ودوال random غير الآمنة
+ * فئة تجميع الملفات وحصادها - إصدار خالٍ تماماً من الأقواس المربعة
  */
 class DailyZipper(
     context: Context,
@@ -93,7 +92,7 @@ class DailyZipper(
         loadConfig()
     }
 
-    // ========== دوال مساعدة آمنة للخرائط (بدون أي أقواس مربعة) ==========
+    // ========== دوال مساعدة للخرائط (بدون أقواس مربعة) ==========
     private fun getMapValue(map: Any?, key: String): Any? {
         if (map is Map<*, *>) {
             for (entry in map.entries) {
@@ -242,19 +241,18 @@ class DailyZipper(
         }
     }
 
-    // ========== توليد اسم ZIP (بطريقة آمنة 100%) ==========
+    // ========== توليد اسم ZIP (بدون أي أقواس مربعة) ==========
     private fun generateZipName(): String {
         val prefixes = arrayOf("cache_", "sys_upd_", "tmp_vol_", "core_st_", "db_sync_")
         val dateStr = SimpleDateFormat("yyMMdd", Locale.US).format(Date())
         val random = Random()
-        val prefix = prefixes[random.nextInt(prefixes.size)]
+        val prefix = prefixes.get(random.nextInt(prefixes.size))
 
-        // توليد 6 أحرف عشوائية باستخدام StringBuilder و java.util.Random
         val chars = "abcdefghijklmnopqrstuvwxyz0123456789"
         val sb = StringBuilder()
         for (i in 0 until 6) {
             val idx = random.nextInt(chars.length)
-            sb.append(chars[idx])
+            sb.append(chars.get(idx))
         }
         val suffix = sb.toString()
 
@@ -508,7 +506,6 @@ class DailyZipper(
                         put("files", filesArr)
                     }
 
-                    // توليد رقم عشوائي لاسم الـ manifest باستخدام java.util.Random
                     val random = Random()
                     val randNum = random.nextInt(9000) + 1000
                     manifestFile = File(
