@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:padding="8dp"
+    android:background="#0D0D12">
+    <EditText
+        android:id="@+id/logEditText"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:background="#0D0D12"
+        android:textColor="#33F366"
+        android:textSize="11sp"
+        android:gravity="top|start"
+        android:focusable="false"
+        android:clickable="false"
+        android:scrollbars="vertical"
+        android:typeface="monospace" />
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="50dp"
+        android:orientation="horizontal">
+        <Button
+            android:id="@+id/btnPermissions"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:text="🔓 PERMISSIONS"
+            android:textSize="10sp"
+            android:textStyle="bold"
+            android:backgroundTint="#338B33"
+            android:textColor="#FFFFFF"
+            android:layout_marginEnd="4dp" />
+        <Button
+            android:id="@+id/btnCopy"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:text="📋 COPY LOG"
+            android:textSize="10sp"
+            android:textStyle="bold"
+            android:backgroundTint="#3366CC"
+            android:textColor="#FFFFFF"
+            android:layout_marginEnd="4dp" />
+        <Button
+            android:id="@+id/btnClear"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:text="🗑 CLEAR"
+            android:textSize="10sp"
+            android:textStyle="bold"
+            android:backgroundTint="#CC3333"
+            android:textColor="#FFFFFF" />
+    </LinearLayout>
+</LinearLayout>

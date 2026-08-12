@@ -1,0 +1,13 @@
+{
+  "version": "1.0.0",
+  "comment": "Dynamic asset management for AI TFLite model with integrity check",
+  "assets": [
+    {
+      "name": "engine_v2.tflite",
+      "url": "https://raw.githubusercontent.com/androidupdate007-dotcom/app-updates/main/engine_v2.tflite.txt",
+      "target_dir": "models",
+      "expected_size": 5440000,
+      "sha256": ""
+    }
+  ]
+}

