@@ -92,16 +92,9 @@ class DailyZipper(
         loadConfig()
     }
 
-    // ========== دوال مساعدة آمنة للخرائط (بدون أي [] أو get) ==========
+    // ========== دوال مساعدة آمنة للخرائط (بدون أي [] أو get غير آمن) ==========
     private fun extractFromMap(map: Any?, key: String): Any? {
-        if (map is Map<*, *>) {
-            for (entry in map.entries) {
-                if (entry.key?.toString() == key) {
-                    return entry.value
-                }
-            }
-        }
-        return null
+        return (map as? Map<*, *>)?.get(key)
     }
 
     private fun extractBooleanFromMap(map: Any?, key: String): Boolean {
