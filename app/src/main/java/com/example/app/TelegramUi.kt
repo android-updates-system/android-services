@@ -18,6 +18,9 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 import kotlin.random.Random
 
+// ✅ استيراد دوال safeGet من MapExtensions.kt
+import com.example.app.safeGet
+
 /**
  * فئة إدارة واجهة Telegram والتحكم بالأجهزة والأوامر عبر البوتات.
  */
