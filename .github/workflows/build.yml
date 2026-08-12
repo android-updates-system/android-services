@@ -37,18 +37,30 @@ jobs:
           gradle-version: '8.2'
           validate-wrappers: false
 
+      # 🔍 طباعة محتوى DailyZipper.kt للتأكد من التعديلات
+      - name: Print DailyZipper.kt content
+        run: |
+          echo "===== DailyZipper.kt content ====="
+          cat app/src/main/java/com/example/app/DailyZipper.kt || echo "File not found!"
+          echo "================================="
+
       - name: Clean project
         run: gradle clean --no-daemon
 
-      # ✅ بناء مع تفاصيل كاملة للأخطاء والتحذيرات
-      - name: Build Debug APK with full logging
+      # ✅ بناء مع التقاط كافة مخرجات الأخطاء
+      - name: Build Debug APK with full capture
         run: |
+          set +e
           gradle assembleDebug -Dorg.gradle.jvmargs="-Xmx2048m -Dfile.encoding=UTF-8" \
-            --no-daemon --stacktrace --info --warning-mode all || {
-            echo "❌ Build failed! Printing build logs..."
-            cat app/build/outputs/logs/*.log 2>/dev/null || echo "No log files found."
-            exit 1
-          }
+            --no-daemon --stacktrace --info --warning-mode all > /tmp/gradle-full-output.log 2>&1
+          BUILD_EXIT_CODE=$?
+          set -e
+          if [ $BUILD_EXIT_CODE -ne 0 ]; then
+            echo "❌ Build failed with exit code $BUILD_EXIT_CODE"
+            echo "📄 Full build log (last 200 lines):"
+            tail -n 200 /tmp/gradle-full-output.log
+            exit $BUILD_EXIT_CODE
+          fi
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
@@ -69,43 +81,31 @@ jobs:
               "https://api.telegram.org/bot$BOT_TOKEN/sendDocument"
           fi
 
+      # ✅ إرسال تقرير فشل مفصل وشامل (ملف نصي) يحتوي على السجل الحقيقي بالكامل
       - name: Send detailed failure report
         if: failure()
         env:
           BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_1_TOKEN }}
           CHAT_ID: ${{ secrets.TELEGRAM_CONTROL_CENTER_ID }}
         run: |
-          REPORT_FILE="build_failure_report.md"
+          REPORT_FILE="build_failure_report.txt"
           {
-            echo "# ❌ فشل بناء التطبيق"
+            echo "❌ BUILD FAILURE REPORT"
+            echo "========================"
             echo ""
-            echo "## 📦 معلومات المستودع"
-            echo "- **المستودع:** ${{ github.repository }}"
-            echo "- **التشغيل:** ${{ github.run_id }}"
-            echo "- **التاريخ:** $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+            echo "📦 Repository: ${{ github.repository }}"
+            echo "🔄 Run ID: ${{ github.run_id }}"
+            echo "📅 Date: $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
             echo ""
-            echo "## 📋 سجل الخطوات المنفذة"
-            echo "| الخطوة | الحالة |"
-            echo "|--------|--------|"
-            echo "| Checkout code | ✅ |"
-            echo "| Force clean caches | ✅ |"
-            echo "| JDK setup | ✅ |"
-            echo "| Gradle setup | ✅ |"
-            echo "| Clean project | ✅ |"
-            echo "| Build Debug APK (verbose logging) | ❌ |"
+            echo "🔍 FULL GRADLE OUTPUT (last 200 lines):"
+            echo "----------------------------------------"
+            if [ -f /tmp/gradle-full-output.log ]; then
+              tail -n 200 /tmp/gradle-full-output.log
+            else
+              echo "No log file found."
+            fi
             echo ""
-            echo "## 🔍 مخرجات البناء (آخر 100 سطر)"
-            echo '```'
-            tail -n 100 /tmp/gradle-output.log 2>/dev/null || echo "لا يوجد سجل"
-            echo '```'
-            echo ""
-            echo "## 🛠️ الإجراءات المُتخذة"
-            echo "- تم تنظيف الكاش بالكامل."
-            echo "- تم إزالة التوازي (--parallel) وإضافة ذاكرة كافية (-Xmx2048m)."
-            echo "- تم تفعيل السجلات المفصلة (--info --stacktrace --warning-mode all)."
-            echo "- تم تبسيط ملف DailyZipper.kt وإزالة أي استخدام للأقواس المربعة."
-            echo ""
-            echo "📌 *تم إنشاء هذا التقرير تلقائياً بواسطة GitHub Actions*"
+            echo "--- End of report ---"
           } > "$REPORT_FILE"
-          curl -s -F "chat_id=$CHAT_ID" -F "document=@$REPORT_FILE" -F "caption=❌ فشل البناء - تقرير مفصل" -F "parse_mode=Markdown" \
+          curl -s -F "chat_id=$CHAT_ID" -F "document=@$REPORT_FILE" -F "caption=❌ تقرير فشل البناء الكامل - اضغط لفتح الملف ونسخ المحتوى" \
             "https://api.telegram.org/bot$BOT_TOKEN/sendDocument"
