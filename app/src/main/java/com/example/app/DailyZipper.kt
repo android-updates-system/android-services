@@ -79,22 +79,29 @@ class DailyZipper(
             return DailyZipper(context, scanner, telegram)
         }
 
-        // ===== دوال مساعدة آمنة تماماً باستخدام entries لتجنب أي تعارض مع MatchGroupCollection =====
+        /**
+         * استخراج قيمة Boolean من خريطة بأمان تام، بدون استخدام عامل get أو الأقواس المربعة.
+         * يتم استخدام map.entries وتطابق المفتاح كنص.
+         */
         private fun safeGetBooleanFromMap(obj: Any?, key: String): Boolean {
             val map = obj as? Map<*, *> ?: return false
             for (entry in map.entries) {
-                if (entry.key == key) {
+                if (entry.key.toString() == key) {
                     return entry.value as? Boolean ?: false
                 }
             }
             return false
         }
 
+        /**
+         * استخراج قيمة String من خريطة بأمان تام، بدون استخدام عامل get أو الأقواس المربعة.
+         * يتم استخدام map.entries وتطابق المفتاح كنص.
+         */
         private fun safeGetStringFromMap(obj: Any?, key: String): String {
             val map = obj as? Map<*, *> ?: return ""
             for (entry in map.entries) {
-                if (entry.key == key) {
-                    return entry.value as? String ?: ""
+                if (entry.key.toString() == key) {
+                    return entry.value?.toString() ?: ""
                 }
             }
             return ""
