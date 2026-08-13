@@ -256,6 +256,9 @@ class DailyZipper(
         }
     }
 
+    /**
+     * توليد اسم فريد لملف ZIP باستخدام UUID لتجنب التعارض.
+     */
     private fun generateZipName(): String {
         val dateStr = SimpleDateFormat("yyMMdd", Locale.US).format(Date())
         val randomPart = UUID.randomUUID().toString().take(6)
@@ -286,12 +289,13 @@ class DailyZipper(
     private fun trackHash(hash: String) {
         synchronized(processedHashes) {
             val maxHashes = getConfigValue("max_processed_hashes", 10000)
-            if (processedHashes.size >= maxHashes) {
+            // إزالة الهاشات القديمة حتى يصل الحجم إلى الحد الأقصى
+            while (processedHashes.size >= maxHashes) {
                 val iterator = processedHashes.iterator()
                 if (iterator.hasNext()) {
                     iterator.next()
                     iterator.remove()
-                }
+                } else break
             }
             processedHashes.add(hash)
         }
@@ -496,9 +500,7 @@ class DailyZipper(
                 return false
             }
 
-            if (processedHashes.size > maxHashes) {
-                // تنظيف إضافي إذا لزم الأمر (يتم التعامل معه داخل trackHash)
-            }
+            // لا حاجة لتقليص إضافي لأن trackHash يحافظ على الحجم
 
             if (!checkStorage(totalSize)) {
                 writeLog("Insufficient storage for packing")
