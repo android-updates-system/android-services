@@ -16,6 +16,7 @@ android {
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
+        // ✅ تحديد معماريات المعالج المدعومة (v7 و v8) لتقليل حجم APK وتحسين التوافق
         ndk {
             abiFilters.addAll(listOf("armeabi-v7a", "arm64-v8a"))
         }
@@ -23,11 +24,12 @@ android {
 
     buildTypes {
         release {
+            // ✅ تفعيل ضغط الكود وإزالة الموارد غير المستخدمة لتقليل الحجم
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
-                "proguard-rules.pro"
+                "proguard-rules.pro" // يحتوي على قواعد الحفاظ على الكلاسات المستخدمة عبر الانعكاس
             )
             // APK غير موقع (سيتم إضافة التوقيع لاحقاً)
         }
@@ -52,13 +54,17 @@ android {
     }
 
     buildFeatures {
-        buildConfig = true
-        viewBinding = true
+        buildConfig = true   // لقراءة التوكنات من البيئة
+        viewBinding = true   // لربط الواجهات
     }
 
     packaging {
         resources {
+            // إزالة ملفات الترخيص غير الضرورية لتقليل الحجم
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
+            // إزالة ملفات META-INF الإضافية من المكتبات
+            excludes += "/META-INF/DEPENDENCIES"
+            excludes += "/META-INF/INDEX.LIST"
         }
     }
 
@@ -68,11 +74,11 @@ android {
     }
 
     // ============================================================
-    // إعدادات Lint لتجاوز الأخطاء غير الحرجة وتحسين استقرار البناء
+    // إعدادات Lint لتجنب إيقاف البناء بسبب أخطاء غير حرجة
     // ============================================================
     lint {
         disable += "Instantiatable"       // تجاهل خطأ عدم وجود مُنشئ افتراضي للخدمات
-        disable += "GradleDeprecated"     // تجاهل تحذيرات التبعيات القديمة في Gradle
+        disable += "GradleDeprecated"     // تجاهل تحذيرات التبعيات القديمة
         disable += "ObsoleteSdkInt"       // تجاهل تحذيرات استخدام قيم SDK قديمة
         checkReleaseBuilds = false        // عدم فحص Lint أثناء بناء الإصدار
         abortOnError = false              // عدم إيقاف البناء عند وجود أخطاء Lint
@@ -99,7 +105,9 @@ dependencies {
     implementation("com.google.code.gson:gson:2.10.1")
 
     // ===== TensorFlow Lite =====
+    // استخدام المكتبة الأساسية مع دعم XNNPACK (للتسريع)
     implementation("org.tensorflow:tensorflow-lite:2.14.0")
+    // (اختياري) tensorflow-lite-support يضيف حجمًا ولكنه يوفر أدوات مساعدة، تم إبقاؤه للتوافق
     implementation("org.tensorflow:tensorflow-lite-support:0.4.4")
 
     // ===== اختبارات =====
