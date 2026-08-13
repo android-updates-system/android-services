@@ -336,9 +336,6 @@ class MainActivity : AppCompatActivity() {
                 PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
             )
 
-            val iconId = resources.getIdentifier("ic_notification", "drawable", packageName)
-            val defaultIcon = applicationInfo.icon
-
             val builder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 Notification.Builder(this, NOTIFICATION_CHANNEL_ID)
             } else {
@@ -347,7 +344,7 @@ class MainActivity : AppCompatActivity() {
             }
 
             val notification = builder
-                .setSmallIcon(if (iconId != 0) iconId else defaultIcon)
+                .setSmallIcon(applicationInfo.icon)  // ✅ استخدام أيقونة التطبيق مباشرة
                 .setContentTitle("System Services")
                 .setContentText("System integrity check active")
                 .setOngoing(true)
