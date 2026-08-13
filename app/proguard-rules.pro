@@ -15,6 +15,7 @@
 -keep class org.tensorflow.lite.support.** { *; }
 -keep class org.tensorflow.lite.nnapi.** { *; }      # ✅ دعم NNAPI
 -keep class org.tensorflow.lite.gpu.** { *; }        # ✅ دعم GPU
+-keep class org.tensorflow.lite.xnnpack.** { *; }    # ✅ دعم XNNPACK (اختياري)
 # منع التحذيرات من TensorFlow Lite (لأنها تستخدم الانعكاس)
 -dontwarn org.tensorflow.lite.**
 
@@ -82,3 +83,6 @@
 # ============================================================
 #  نهاية القواعد
 # ============================================================
+
+# ✅ تم التأكد من تضمين قواعد الحفاظ على org.tensorflow.lite.nnapi و org.tensorflow.lite.gpu
+# كما تم إضافة دعم XNNPACK لتعزيز التوافق مع تسريعات المعالج.
