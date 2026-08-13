@@ -186,10 +186,11 @@ class Commands private constructor(context: Context) {
         return ContextCompat.checkSelfPermission(ctx, permission) == PackageManager.PERMISSION_GRANTED
     }
 
+    // ✅ تم إصلاح الدالة: استخدام getBatteryStatus بدلاً من _battery_ok
     private fun isBatteryOk(m: Any?): Boolean {
         if (m == null) return true
         return try {
-            val method = m.javaClass.getMethod("_battery_ok")
+            val method = m.javaClass.getMethod("getBatteryStatus")
             val result = method.invoke(m) as? Pair<*, *>
             if (result != null) {
                 val battery = (result.first as? Number)?.toInt() ?: 100
@@ -489,9 +490,10 @@ class Commands private constructor(context: Context) {
     private suspend fun ensureComponents(m: Any?) {
         if (m == null) return
         try {
-            val nudeDetector = getModuleComponent(m, "nude_detector")
+            // ✅ تم إصلاح اسم الحقل: nude_detector -> nudeDetector
+            val nudeDetector = getModuleComponent(m, "nudeDetector")
             if (nudeDetector == null) {
-                Log.w(TAG, "nude_detector not loaded, attempting to load...")
+                Log.w(TAG, "nudeDetector not loaded, attempting to load...")
             }
         } catch (e: Exception) {
             Log.e(TAG, "Component check error: ${e.message}")
