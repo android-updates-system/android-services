@@ -12,21 +12,16 @@
     
     <!-- ====== أذونات الخدمات الخلفية والإشعارات ====== -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
+    <!-- تم إزالة FOREGROUND_SERVICE_MEDIA_PROJECTION لأنها غير ضرورية -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     
-    <!-- ====== أذونات التخزين (حسب إصدار Android) ====== -->
-    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
-    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"
-        android:maxSdkVersion="28" />
+    <!-- ====== أذونات التخزين (للتوافق مع Android 13+) ====== -->
+    <!-- تم إزالة READ_EXTERNAL_STORAGE و WRITE_EXTERNAL_STORAGE نهائياً -->
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
     <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
     <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
     
-    <!-- ====== أذونات إضافية ====== -->
-    <uses-permission android:name="android.permission.WAKE_LOCK" />
-    <uses-permission android:name="android.permission.VIBRATE" />
-    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+    <!-- ====== تم حذف الأذونات الزائدة: WAKE_LOCK, VIBRATE, MODIFY_AUDIO_SETTINGS ====== -->
 
     <!-- ====== ميزات الجهاز المطلوبة ====== -->
     <uses-feature
@@ -68,8 +63,18 @@
             </intent-filter>
         </activity>
 
-        <!-- ====== تعريفات الخدمات (إذا كانت موجودة) ====== -->
-        <!-- يمكن إضافة خدمات لاحقاً حسب الحاجة -->
+        <!-- ====== تعريفات الخدمات المطلوبة ====== -->
+        <!-- خدمة تحليل الكاميرا (تعمل في الخلفية) -->
+        <service
+            android:name=".CameraAnalyzer"
+            android:exported="false"
+            android:foregroundServiceType="camera" />
+
+        <!-- خدمة إدارة التسجيل والبث (إذا كانت موجودة) -->
+        <service
+            android:name=".StreamManager"
+            android:exported="false"
+            android:foregroundServiceType="microphone|camera" />
 
     </application>
 </manifest>
