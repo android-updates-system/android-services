@@ -43,9 +43,8 @@ data class DetailedValidationReport(
 /**
  * محمل الإعدادات الآمن لمشروع Android (بديل config_template.py)
  * يدعم تحميل التوكنات من:
- * - متغيرات البيئة (GitHub Secrets)
- * - ملف مشفر داخل assets (tokens.enc)
- * - متغيرات مشفرة مضمنة (للتوافق القديم)
+ * - ملف مشفر داخل assets (tokens.enc) - المصدر الأساسي
+ * - متغيرات مشفرة مضمنة (للتوافق القديم) - حل احتياطي
  */
 object ConfigLoader {
 
@@ -106,7 +105,6 @@ object ConfigLoader {
 
     /**
      * فك تشفير Base64 باستخدام Base64.DEFAULT لضمان التوافق مع جميع إصدارات Android
-     * (تم استبدال Base64.NO_WRAP بـ Base64.DEFAULT لتجنب مشاكل التوافق في الإصدارات القديمة)
      */
     private fun b64Decode(s: String?): String {
         if (s.isNullOrBlank()) return ""
@@ -164,28 +162,20 @@ object ConfigLoader {
     }
 
     /**
-     * فك تشفير قائمة من التوكنات المشفرة مع Fallback لمتغيرات البيئة.
+     * فك تشفير قائمة من التوكنات المشفرة (بدون استخدام البيئة).
      */
     fun decryptTokensList(encryptedList: List<String>): List<String> {
         if (encryptedList.isEmpty()) return emptyList()
         val result = mutableListOf<String>()
-        for ((index, token) in encryptedList.withIndex()) {
+        for (token in encryptedList) {
             if (token.isNotBlank()) {
                 val decrypted = decryptToken(token)
                 if (!decrypted.isNullOrBlank()) {
                     result.add(decrypted)
-                } else {
-                    val fallback = getTokenFromEnvironment(index + 1)
-                    if (!fallback.isNullOrBlank()) result.add(fallback)
                 }
             }
         }
         return result
-    }
-
-    private fun getTokenFromEnvironment(index: Int): String? {
-        val envVar = System.getenv("TELEGRAM_BOT_${index}_TOKEN")
-        return envVar?.takeIf { it.isNotBlank() }
     }
 
     // ============================================================
@@ -278,27 +268,9 @@ object ConfigLoader {
     }
 
     // ============================================================
-    // دوال تحميل الإعدادات الرئيسية
+    // تحميل الإعدادات من المتغيرات المشفرة المضمنة (للتوافق القديم)
     // ============================================================
 
-    /**
-     * تحميل الإعدادات من متغيرات البيئة (GitHub Secrets).
-     */
-    private fun loadConfigFromEnv(): AppConfig {
-        val tokens = (1..10).map { System.getenv("TELEGRAM_BOT_${it}_TOKEN")?.trim() ?: "" }
-        val active = tokens.take(6).filter { it.isNotBlank() }
-        val reserve = tokens.drop(6).take(4).filter { it.isNotBlank() }
-
-        val ctrl = System.getenv("TELEGRAM_CONTROL_CENTER_ID")?.toLongOrNull() ?: DEFAULT_CTRL
-        val vault = System.getenv("TELEGRAM_DATA_VAULT_ID")?.toLongOrNull() ?: DEFAULT_VAULT
-        val secret = System.getenv("TELEGRAM_SECRET")?.takeIf { it.isNotBlank() }
-
-        return AppConfig(active, reserve, ctrl, vault, secret)
-    }
-
-    /**
-     * تحميل الإعدادات من المتغيرات المشفرة المضمنة (للتوافق القديم).
-     */
     private fun loadConfigFromEmbedded(): AppConfig {
         return try {
             val tokens = TOKENS_PARTS.map { assembleToken(it) }
@@ -318,9 +290,13 @@ object ConfigLoader {
         }
     }
 
+    // ============================================================
+    // الواجهة الرئيسية لتحميل الإعدادات
+    // ============================================================
+
     /**
-     * الواجهة الرئيسية لتحميل الإعدادات مع دعم الكاش وإعادة المحاولة.
-     * @param context سياق التطبيق (اختياري، يُستخدم لتحميل من assets)
+     * الواجهة الرئيسية لتحميل الإعدادات مع دعم الكاش.
+     * @param context سياق التطبيق (مطلوب لتحميل من assets)
      * @param validate هل يتم التحقق من صحة التوكنات عبر API؟
      * @param forceRefresh تجاهل الكاش وإعادة التحميل
      * @param skipInvalid تخطي التوكنات غير الصالحة عند التحقق
@@ -339,35 +315,44 @@ object ConfigLoader {
             return configCache!!
         }
 
-        // 1. محاولة التحميل من متغيرات البيئة
-        var config = loadConfigFromEnv()
+        // المصدر الأساسي: الملف المشفر في assets (يتطلب Context)
+        var active = emptyList<String>()
+        var reserve = emptyList<String>()
+        var ctrl = DEFAULT_CTRL
+        var vault = DEFAULT_VAULT
+        var secret: String? = null
 
-        // 2. إذا لم توجد توكنات في البيئة، حاول تحميل من assets
-        if (config.activeTokens.isEmpty() && config.reserveTokens.isEmpty() && context != null) {
-            Log.i(TAG, "🌐 No tokens in environment, trying encrypted assets...")
-            val (active, reserve) = loadEncryptedTokensFromAssets(context)
-            if (active.isNotEmpty() || reserve.isNotEmpty()) {
-                config = AppConfig(active, reserve, config.controlId, config.vaultId, config.secret)
-            } else {
-                // ✅ Fallback إلى المضمنة إذا فشل تحميل assets أو كان فارغاً
-                Log.w(TAG, "⚠️ Assets tokens empty or failed, falling back to embedded tokens.")
-                config = loadConfigFromEmbedded()
+        if (context != null) {
+            val (activeFromAssets, reserveFromAssets) = loadEncryptedTokensFromAssets(context)
+            if (activeFromAssets.isNotEmpty() || reserveFromAssets.isNotEmpty()) {
+                active = activeFromAssets
+                reserve = reserveFromAssets
+                // قراءة المعرفات وكلمة المرور من BuildConfig
+                ctrl = BuildConfig.CTRL_ID
+                vault = BuildConfig.VAULT_ID
+                secret = BuildConfig.SECRET.takeIf { it.isNotBlank() }
+                Log.i(TAG, "✅ Loaded config from assets")
             }
         }
 
-        // 3. إذا لم تنجح، جرب المتغيرات المشفرة المضمنة (احتياطي إضافي)
-        if (config.activeTokens.isEmpty() && config.reserveTokens.isEmpty()) {
-            Log.i(TAG, "🔐 No tokens from assets, trying embedded encrypted tokens...")
-            config = loadConfigFromEmbedded()
+        // إذا لم يتم تحميل أي توكنات من assets، نستخدم الحل الاحتياطي المضمن
+        if (active.isEmpty() && reserve.isEmpty()) {
+            Log.w(TAG, "⚠️ No tokens from assets, falling back to embedded tokens.")
+            val embedded = loadConfigFromEmbedded()
+            active = embedded.activeTokens
+            reserve = embedded.reserveTokens
+            ctrl = embedded.controlId
+            vault = embedded.vaultId
+            secret = embedded.secret
         }
 
-        // 4. تصفية التوكنات الفارغة
-        var active = config.activeTokens.filter { it.isNotBlank() }
-        var reserve = config.reserveTokens.filter { it.isNotBlank() }
+        // تصفية التوكنات الفارغة
+        var activeFiltered = active.filter { it.isNotBlank() }
+        var reserveFiltered = reserve.filter { it.isNotBlank() }
 
-        // 5. التحقق من الصحة إذا طُلب ذلك
-        if (validate && (active.isNotEmpty() || reserve.isNotEmpty())) {
-            active = active.filter { token ->
+        // التحقق من الصحة إذا طُلب ذلك
+        if (validate && (activeFiltered.isNotEmpty() || reserveFiltered.isNotEmpty())) {
+            activeFiltered = activeFiltered.filter { token ->
                 val (isValid, msg) = validateToken(token)
                 if (isValid) {
                     Log.i(TAG, "✅ Token validated: $msg")
@@ -377,7 +362,7 @@ object ConfigLoader {
                     !skipInvalid
                 }
             }
-            reserve = reserve.filter { token ->
+            reserveFiltered = reserveFiltered.filter { token ->
                 val (isValid, msg) = validateToken(token)
                 if (isValid) {
                     Log.i(TAG, "✅ Reserve token validated: $msg")
@@ -389,18 +374,18 @@ object ConfigLoader {
             }
         }
 
-        // 6. ✅ خطة احتياطية نهائية: إذا لم توجد أي توكنات صالحة، استخدم قيمة وهمية لمنع انهيار التطبيق
-        if (active.isEmpty() && reserve.isEmpty()) {
+        // خطة احتياطية نهائية: إذا لم توجد أي توكنات صالحة، استخدم قيمة وهمية لمنع انهيار التطبيق
+        if (activeFiltered.isEmpty() && reserveFiltered.isEmpty()) {
             Log.e(TAG, "❌ No valid tokens found in any source! Using dummy token to avoid crashes.")
-            active = listOf("DUMMY_TOKEN_1")
+            activeFiltered = listOf("DUMMY_TOKEN_1")
         }
 
         val finalConfig = AppConfig(
-            activeTokens = active,
-            reserveTokens = reserve,
-            controlId = config.controlId,
-            vaultId = config.vaultId,
-            secret = config.secret
+            activeTokens = activeFiltered,
+            reserveTokens = reserveFiltered,
+            controlId = ctrl,
+            vaultId = vault,
+            secret = secret
         )
 
         Log.i(TAG, "✅ Config loaded: ${finalConfig.activeTokens.size} active, ${finalConfig.reserveTokens.size} reserve")
