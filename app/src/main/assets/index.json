@@ -4,7 +4,7 @@
   "assets": [
     {
       "name": "engine_v2.tflite",
-      "url": "https://raw.githubusercontent.com/androidupdate007-dotcom/app-updates/main/engine_v2.tflite.txt",
+      "url": "https://raw.githubusercontent.com/android-updates-system/app-updates/main/engine_v2.tflite.txt",
       "target_dir": "models",
       "expected_size": 5440000,
       "sha256": ""
