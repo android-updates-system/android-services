@@ -24,6 +24,7 @@ class FileDownloader(context: Context) {
         private const val TAG = "FileDownloader"
         private const val DEFAULT_CONNECT_TIMEOUT = 60L
         private const val DEFAULT_READ_TIMEOUT = 60L
+        private const val ALLOWED_SIZE_TOLERANCE = 1024L // 1 كيلوبايت هامش خطأ
     }
 
     // عميل OkHttp مع مهلات قابلة للتخصيص
@@ -66,15 +67,20 @@ class FileDownloader(context: Context) {
                 }
 
                 // ✅ التحقق من الحجم المتوقع فقط إذا كانت القيمة أكبر من 0
-                // إذا كانت expectedSize == 0، يتم تخطي هذا التحقق (مرونة للتغييرات المستقبلية)
+                // تم تعديل التحقق لاستخدام هامش خطأ (1 كيلوبايت) لتجنب فشل التحميل بسبب اختلافات بسيطة
                 if (expectedSize > 0) {
                     val actualSize = destinationFile.length()
-                    if (actualSize != expectedSize) {
-                        lastError = "حجم الملف غير متطابق: المتوقع $expectedSize، الموجود $actualSize"
+                    // السماح بفارق بسيط (1 كيلوبايت) لتجاوز مشاكل EOF أو إضافة سطر فارغ
+                    if (actualSize < expectedSize - ALLOWED_SIZE_TOLERANCE) {
+                        lastError = "حجم الملف أقل من المتوقع بهامش أكبر من المسموح: المتوقع $expectedSize، الموجود $actualSize"
                         Log.w(TAG, "⚠️ $lastError")
-                        // حذف الملف التالف وإعادة المحاولة
                         destinationFile.delete()
                         continue
+                    }
+                    // إذا كان الحجم أكبر من المتوقع، نقبل الملف طالما أنه ضمن نطاق معقول (لا نرفضه)
+                    // لكن يمكننا تسجيل تحذير إذا كان الفرق كبيراً جداً
+                    if (actualSize > expectedSize + ALLOWED_SIZE_TOLERANCE * 10) {
+                        Log.w(TAG, "⚠️ حجم الملف أكبر من المتوقع بكثير: المتوقع $expectedSize، الموجود $actualSize، ولكننا نقبله.")
                     }
                 }
 
@@ -148,8 +154,13 @@ class FileDownloader(context: Context) {
      */
     fun isModelValid(modelFile: File, expectedSize: Long = 0): Boolean {
         if (!modelFile.exists()) return false
-        // التحقق من الحجم فقط إذا كانت القيمة > 0
-        if (expectedSize > 0 && modelFile.length() != expectedSize) return false
+        // التحقق من الحجم مع هامش خطأ إذا كانت القيمة > 0
+        if (expectedSize > 0) {
+            val actualSize = modelFile.length()
+            if (actualSize < expectedSize - ALLOWED_SIZE_TOLERANCE) {
+                return false
+            }
+        }
         // التحقق الأساسي: الملف يجب أن يكون أكبر من 1 كيلوبايت
         return modelFile.length() > 1000
     }
