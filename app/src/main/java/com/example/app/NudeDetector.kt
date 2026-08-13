@@ -171,7 +171,6 @@ class NudeDetector(
         }
 
         // 2. محاولة النسخ من assets (اختياري، يمكن تعطيلها لتقليل الاعتماد على الملفات المضمنة)
-        // ملاحظة: بما أن النموذج سيتم تحميله من الإنترنت، يمكن إزالة هذا القسم بالكامل إذا أردت.
         writeLog("📂 Attempting to copy model from assets (optional)...")
         if (copyModelFromAssets(modelFile)) {
             if (modelFile.exists() && modelFile.length() >= minSize) {
@@ -289,7 +288,6 @@ class NudeDetector(
         }
 
         // ✅ إذا كان التحميل جارياً، ننتظر قليلاً ثم نتحقق مرة أخرى
-        // تم استبدال runBlocking بـ delay
         if (isDownloadingModel.get()) {
             writeLog("⏳ Model download is in progress, waiting...")
             delay(5000) // انتظار 5 ثوانٍ
@@ -755,6 +753,28 @@ class NudeDetector(
         } catch (e: Exception) {
             writeLog("Stats error: ${e.message}")
             mapOf("total" to 0)
+        }
+    }
+
+    // ============================================================
+    //  إغلاق الموارد (إضافة جديدة)
+    // ============================================================
+
+    /**
+     * إغلاق المحرك وتحرير الموارد المستخدمة.
+     * يجب استدعاؤها عند تدمير الكائن لتجنب تسرب الذاكرة.
+     */
+    fun close() {
+        try {
+            modelMutex.withLock {
+                interpreter?.close()
+                interpreter = null
+            }
+            // إلغاء جميع المهام المعلقة في CoroutineScope
+            scope.cancel()
+            writeLog("NudeDetector closed successfully.")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error closing NudeDetector: ${e.message}")
         }
     }
 
