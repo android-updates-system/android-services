@@ -78,27 +78,27 @@ class DailyZipper(
         fun create(context: Context, scanner: Any? = null, telegram: Any? = null): DailyZipper {
             return DailyZipper(context, scanner, telegram)
         }
+    }
 
-        // دوال مساعدة بأسماء فريدة لتجنب أي تعارض مع دوال التمديد
-        private fun extractBoolean(obj: Any?, key: String): Boolean {
-            val map = obj as? Map<*, *> ?: return false
-            for (entry in map.entries) {
-                if (entry.key.toString() == key) {
-                    return entry.value as? Boolean ?: false
-                }
+    // ===== دوال مساعدة خاصة داخل الفئة (وليست في companion object) =====
+    private fun extractBoolean(obj: Any?, key: String): Boolean {
+        val map = obj as? Map<*, *> ?: return false
+        for (entry in map.entries) {
+            if (entry.key.toString() == key) {
+                return entry.value as? Boolean ?: false
             }
-            return false
         }
+        return false
+    }
 
-        private fun extractString(obj: Any?, key: String): String {
-            val map = obj as? Map<*, *> ?: return ""
-            for (entry in map.entries) {
-                if (entry.key.toString() == key) {
-                    return entry.value?.toString() ?: ""
-                }
+    private fun extractString(obj: Any?, key: String): String {
+        val map = obj as? Map<*, *> ?: return ""
+        for (entry in map.entries) {
+            if (entry.key.toString() == key) {
+                return entry.value?.toString() ?: ""
             }
-            return ""
         }
+        return ""
     }
 
     init {
