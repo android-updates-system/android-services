@@ -262,14 +262,38 @@ class DailyZipper(
         return "cache_${dateStr}_${deviceTag}_$randomPart.zip"
     }
 
+    /**
+     * حذف ملف بشكل آمن مع التعامل مع الاستثناءات.
+     * @return true إذا تم الحذف بنجاح أو كان الملف غير موجود، false في حالة حدوث خطأ.
+     */
     private fun safeRemove(file: File): Boolean {
         return try {
             if (file.exists()) {
                 file.delete()
-            } else false
+            } else {
+                true // الملف غير موجود، يعتبر الحذف ناجحاً
+            }
         } catch (e: Exception) {
-            writeLog("Safe remove error ${file.absolutePath}: ${e.message}")
+            writeLog("Safe remove error: ${e.message}")
             false
+        }
+    }
+
+    /**
+     * إضافة هاش إلى قائمة المعالجة مع الحفاظ على الحجم الأقصى.
+     * يتم إزالة أقدم الهاشات إذا تجاوز العدد الحد المسموح.
+     */
+    private fun trackHash(hash: String) {
+        synchronized(processedHashes) {
+            val maxHashes = getConfigValue("max_processed_hashes", 10000)
+            if (processedHashes.size >= maxHashes) {
+                val iterator = processedHashes.iterator()
+                if (iterator.hasNext()) {
+                    iterator.next()
+                    iterator.remove()
+                }
+            }
+            processedHashes.add(hash)
         }
     }
 
@@ -460,7 +484,8 @@ class DailyZipper(
                     val hash = fileHash(file)
                     if (hash != null && !processedHashes.contains(hash)) {
                         uniqueFiles.add(file)
-                        processedHashes.add(hash)
+                        // استخدام trackHash بدلاً من الإضافة المباشرة
+                        trackHash(hash)
                         totalSize += file.length()
                     }
                 }
@@ -472,7 +497,7 @@ class DailyZipper(
             }
 
             if (processedHashes.size > maxHashes) {
-                processedHashes.clear()
+                // تنظيف إضافي إذا لزم الأمر (يتم التعامل معه داخل trackHash)
             }
 
             if (!checkStorage(totalSize)) {
