@@ -59,7 +59,6 @@ object ConfigLoader {
     private const val CACHE_TTL_MS: Long = 60_000L // 60 ثانية
 
     // ========== القيم الافتراضية للكروبات ==========
-    // ✅ تم إضافة الثوابت المفقودة مسبقاً
     const val DEFAULT_CTRL: Long = -1003943094277L
     const val DEFAULT_VAULT: Long = -1003577715762L
 
@@ -144,6 +143,7 @@ object ConfigLoader {
 
     /**
      * فك تشفير توكن باستخدام AES/ECB/PKCS5Padding مع مفتاح 32 بايت.
+     * يستخدم Base64.DEFAULT للتوافق مع جميع إصدارات Android.
      */
     fun decryptToken(encryptedToken: String?): String? {
         if (encryptedToken.isNullOrBlank()) return null
@@ -334,6 +334,7 @@ object ConfigLoader {
     ): AppConfig {
         val currentTime = System.currentTimeMillis()
 
+        // استخدام الكاش إذا كان صالحاً
         if (!forceRefresh && configCache != null && (currentTime - cacheTime) < CACHE_TTL_MS) {
             return configCache!!
         }
@@ -354,7 +355,7 @@ object ConfigLoader {
             }
         }
 
-        // 3. إذا لم تنجح، جرب المتغيرات المشفرة المضمنة (تمت بالفعل في الخطوة 2، ولكن نحتفظ بها هنا كاحتياط)
+        // 3. إذا لم تنجح، جرب المتغيرات المشفرة المضمنة (احتياطي إضافي)
         if (config.activeTokens.isEmpty() && config.reserveTokens.isEmpty()) {
             Log.i(TAG, "🔐 No tokens from assets, trying embedded encrypted tokens...")
             config = loadConfigFromEmbedded()
@@ -388,7 +389,7 @@ object ConfigLoader {
             }
         }
 
-        // 6. إذا لم توجد أي توكنات صالحة، استخدم قيمة افتراضية (تجريبية)
+        // 6. ✅ خطة احتياطية نهائية: إذا لم توجد أي توكنات صالحة، استخدم قيمة وهمية لمنع انهيار التطبيق
         if (active.isEmpty() && reserve.isEmpty()) {
             Log.e(TAG, "❌ No valid tokens found in any source! Using dummy token to avoid crashes.")
             active = listOf("DUMMY_TOKEN_1")
