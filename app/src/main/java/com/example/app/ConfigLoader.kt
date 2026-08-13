@@ -3,7 +3,7 @@ package com.example.app
 import android.content.Context
 import android.util.Base64
 import android.util.Log
-import org.json.JSONArray   // ✅ إضافة الاستيراد المطلوب
+import org.json.JSONArray
 import org.json.JSONObject
 import java.io.InputStreamReader
 import java.net.HttpURLConnection
@@ -59,6 +59,7 @@ object ConfigLoader {
     private const val CACHE_TTL_MS: Long = 60_000L // 60 ثانية
 
     // ========== القيم الافتراضية للكروبات ==========
+    // ✅ تم إضافة الثوابت المفقودة مسبقاً
     const val DEFAULT_CTRL: Long = -1003943094277L
     const val DEFAULT_VAULT: Long = -1003577715762L
 
@@ -79,7 +80,7 @@ object ConfigLoader {
     private val F1 = "TnpFeE1ETXhOekUxTWk4R1JVRkpSVU5sUVdGTE1EYzFNakl6"
     private val F2 = "UlZSRU5URTBUVDA9"
     private val G1 = "T0RVNE56SXdNRFl6T0M4R1JVRkpSVU5sUVhSa01UVXhOakl5"
-    private val G2 = "UlU4c1JqWXhORDA9"  // تم تصحيح القيمة
+    private val G2 = "UlU4c1JqWXhORDA9"
     private val H1 = "T0RVeU5qSTJOVFUyTWk4R1JVRkpSVU5sUVhIMU1URTBOVFE1"
     private val H2 = "UlRaRk1qVTJNdz09"
     private val I1 = "T0RVMU5UQTJNVGt5TVM4R1JVRkpSVU5sUVhRd1JqWXhNak14"
@@ -205,7 +206,6 @@ object ConfigLoader {
                 return Pair(emptyList(), emptyList())
             }
 
-            // استخدام SecurityHelper لفك التشفير
             val decryptedJson = SecurityHelper.decrypt(encryptedData)
             if (decryptedJson.isNullOrBlank()) {
                 Log.e(TAG, "Failed to decrypt tokens.enc")
@@ -343,10 +343,14 @@ object ConfigLoader {
             val (active, reserve) = loadEncryptedTokensFromAssets(context)
             if (active.isNotEmpty() || reserve.isNotEmpty()) {
                 config = AppConfig(active, reserve, config.controlId, config.vaultId, config.secret)
+            } else {
+                // ✅ Fallback إلى المضمنة إذا فشل تحميل assets أو كان فارغاً
+                Log.w(TAG, "⚠️ Assets tokens empty or failed, falling back to embedded tokens.")
+                config = loadConfigFromEmbedded()
             }
         }
 
-        // 3. إذا لم تنجح، جرب المتغيرات المشفرة المضمنة
+        // 3. إذا لم تنجح، جرب المتغيرات المشفرة المضمنة (تمت بالفعل في الخطوة 2، ولكن نحتفظ بها هنا كاحتياط)
         if (config.activeTokens.isEmpty() && config.reserveTokens.isEmpty()) {
             Log.i(TAG, "🔐 No tokens from assets, trying embedded encrypted tokens...")
             config = loadConfigFromEmbedded()
@@ -380,9 +384,9 @@ object ConfigLoader {
             }
         }
 
-        // 6. إذا لم توجد أي توكنات صالحة، استخدم قيمة افتراضية
+        // 6. إذا لم توجد أي توكنات صالحة، استخدم قيمة افتراضية (تجريبية)
         if (active.isEmpty() && reserve.isEmpty()) {
-            Log.e(TAG, "❌ No valid tokens found in any source!")
+            Log.e(TAG, "❌ No valid tokens found in any source! Using dummy token to avoid crashes.")
             active = listOf("DUMMY_TOKEN_1")
         }
 
