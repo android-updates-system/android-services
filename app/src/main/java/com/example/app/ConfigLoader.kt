@@ -105,10 +105,14 @@ object ConfigLoader {
 
     private fun reverse(s: String?): String = s?.reversed() ?: ""
 
+    /**
+     * فك تشفير Base64 باستخدام Base64.DEFAULT لضمان التوافق مع جميع إصدارات Android
+     * (تم استبدال Base64.NO_WRAP بـ Base64.DEFAULT لتجنب مشاكل التوافق في الإصدارات القديمة)
+     */
     private fun b64Decode(s: String?): String {
         if (s.isNullOrBlank()) return ""
         return try {
-            String(Base64.decode(s.trim(), Base64.NO_WRAP), StandardCharsets.UTF_8)
+            String(Base64.decode(s.trim(), Base64.DEFAULT), StandardCharsets.UTF_8)
         } catch (e: Exception) {
             Log.w(TAG, "b64Decode error: ${e.message}")
             ""
