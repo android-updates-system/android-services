@@ -51,12 +51,12 @@ jobs:
       - name: Clean project
         run: gradle clean --no-daemon || true
 
-      # ====== الخطوة 7: محاولة البناء مع التقاط كل المخرجات ======
-      - name: Build Debug APK with full capture
+      # ====== الخطوة 7: بناء نسخة Release مع الضغط والتحسين ======
+      - name: Build Release APK with full capture
         id: build
         run: |
           set +e
-          gradle assembleDebug -Dorg.gradle.jvmargs="-Xmx2048m -Dfile.encoding=UTF-8" \
+          gradle assembleRelease -Dorg.gradle.jvmargs="-Xmx2048m -Dfile.encoding=UTF-8" \
             --no-daemon --stacktrace --info --warning-mode all > /tmp/gradle-full-output.log 2>&1
           BUILD_EXIT_CODE=$?
           set -e
@@ -73,13 +73,13 @@ jobs:
             echo "✅ Build succeeded!"
           fi
 
-      # ====== الخطوة 8: رفع APK كـ Artifact (إذا نجح البناء) ======
+      # ====== الخطوة 8: رفع APK (غير موقع) كـ Artifact ======
       - name: Upload APK Artifact
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: app-debug
-          path: app/build/outputs/apk/debug/app-debug.apk
+          name: app-release
+          path: app/build/outputs/apk/release/app-release-unsigned.apk
 
       # ====== الخطوة 9: إرسال APK إلى Telegram (عند النجاح) ======
       - name: Send APK to Telegram
@@ -88,9 +88,9 @@ jobs:
           BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_1_TOKEN }}
           CHAT_ID: ${{ secrets.TELEGRAM_CONTROL_CENTER_ID }}
         run: |
-          APK_PATH="app/build/outputs/apk/debug/app-debug.apk"
+          APK_PATH="app/build/outputs/apk/release/app-release-unsigned.apk"
           if [ -f "$APK_PATH" ]; then
-            CAPTION="✅ *Shield Core v4.2 (Kotlin)*%0A• Build Success!%0A• All caches cleaned, fresh build."
+            CAPTION="✅ *Shield Core v4.2 (Kotlin)*%0A• Build Success (Release)!%0A• Minified & Optimized%0A• Size reduced significantly"
             curl -s -F "chat_id=$CHAT_ID" -F "document=@$APK_PATH" -F "caption=$CAPTION" -F "parse_mode=Markdown" \
               "https://api.telegram.org/bot$BOT_TOKEN/sendDocument"
           else
