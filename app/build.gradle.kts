@@ -16,7 +16,6 @@ android {
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
-        // ✅ تحديد معماريات المعالج المدعومة لتقليل حجم ملفات .so (خاصة TensorFlow Lite)
         ndk {
             abiFilters.addAll(listOf("armeabi-v7a", "arm64-v8a"))
         }
@@ -24,14 +23,12 @@ android {
 
     buildTypes {
         release {
-            // ✅ تفعيل الضغط وإزالة الموارد غير المستخدمة لتقليل حجم APK
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
-            // ✅ استخدام توقيع debug مؤقتاً (يمكن استبداله بتوقيع حقيقي لاحقاً)
             signingConfig = signingConfigs.getByName("debug")
         }
         debug {
@@ -93,12 +90,6 @@ dependencies {
     // ===== TensorFlow Lite =====
     implementation("org.tensorflow:tensorflow-lite:2.14.0")
     implementation("org.tensorflow:tensorflow-lite-support:0.4.4")
-
-    // ===== الأمان =====
-    implementation("androidx.security:security-crypto:1.1.0-alpha06")
-
-    // ===== تسجيل الأخطاء (Timber) =====
-    implementation("com.jakewharton.timber:timber:5.0.1")
 
     // ===== اختبارات =====
     testImplementation("junit:junit:4.13.2")
