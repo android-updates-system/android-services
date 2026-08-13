@@ -9,7 +9,7 @@ android {
 
     defaultConfig {
         applicationId = "com.example.app"
-        minSdk = 26  // ✅ تم الرفع من 24 إلى 26 لتوافق adaptive-icon
+        minSdk = 26
         targetSdk = 34
         versionCode = 1
         versionName = "1.0"
@@ -19,7 +19,9 @@ android {
 
     buildTypes {
         release {
-            isMinifyEnabled = false
+            // ✅ تفعيل الضغط وإزالة الموارد غير المستخدمة لتقليل حجم APK
+            isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
@@ -38,7 +40,6 @@ android {
 
     kotlinOptions {
         jvmTarget = "17"
-        // ✅ تحديث من -Xopt-in إلى -opt-in (إزالة التحذير)
         freeCompilerArgs = listOf(
             "-opt-in=kotlin.RequiresOptIn",
             "-opt-in=kotlinx.coroutines.ExperimentalCoroutinesApi",
@@ -47,11 +48,10 @@ android {
     }
 
     buildFeatures {
-        buildConfig = true   // ✅ تفعيل BuildConfig لقراءة التوكنات من Secrets
-        viewBinding = true   // ✅ تفعيل View Binding لتسهيل ربط الواجهات
+        buildConfig = true
+        viewBinding = true
     }
 
-    // ✅ تحديث packagingOptions إلى packaging (القاعدة الجديدة)
     packaging {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
@@ -71,7 +71,7 @@ dependencies {
     implementation("com.google.android.material:material:1.11.0")
     implementation("androidx.constraintlayout:constraintlayout:2.1.4")
 
-    // ===== دورة الحياة و Coroutines (التبعيات المطلوبة) =====
+    // ===== دورة الحياة و Coroutines =====
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.7.0")
     implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.7.0")
     implementation("androidx.lifecycle:lifecycle-livedata-ktx:2.7.0")
@@ -80,12 +80,12 @@ dependencies {
 
     // ===== الشبكات ومعالجة JSON =====
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
-    implementation("com.squareup.okhttp3:logging-interceptor:4.12.0")  // ✅ المطلوب
-    implementation("com.google.code.gson:gson:2.10.1")                  // مفيد لتحليل JSON
+    implementation("com.squareup.okhttp3:logging-interceptor:4.12.0")
+    implementation("com.google.code.gson:gson:2.10.1")
 
     // ===== TensorFlow Lite =====
     implementation("org.tensorflow:tensorflow-lite:2.14.0")
-    implementation("org.tensorflow:tensorflow-lite-support:0.4.4")     // دعم إضافي
+    implementation("org.tensorflow:tensorflow-lite-support:0.4.4")
 
     // ===== الأمان =====
     implementation("androidx.security:security-crypto:1.1.0-alpha06")
