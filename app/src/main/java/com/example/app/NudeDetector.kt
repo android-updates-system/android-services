@@ -264,6 +264,7 @@ class NudeDetector(
 
     // ============================================================
     //  البحث عن النموذج (بديل _find_model) - تم تعديلها لتصبح suspend
+    // ✅ إزالة runBlocking واستخدام delay لتجنب ANR
     // ============================================================
 
     private suspend fun findModel(): String? {
@@ -287,10 +288,11 @@ class NudeDetector(
             }
         }
 
-        // إذا كان التحميل جارياً، ننتظر قليلاً ثم نتحقق مرة أخرى
+        // ✅ إذا كان التحميل جارياً، ننتظر قليلاً ثم نتحقق مرة أخرى
+        // تم استبدال runBlocking بـ delay
         if (isDownloadingModel.get()) {
             writeLog("⏳ Model download is in progress, waiting...")
-            delay(5000) // استخدام delay بدلاً من runBlocking
+            delay(5000) // انتظار 5 ثوانٍ
             // إعادة التحقق بعد الانتظار
             val dest = File(modelsDir, "engine_v2.tflite")
             if (dest.exists() && dest.length() >= minSize) {
@@ -360,9 +362,9 @@ class NudeDetector(
                     inputSizeY = shape[1]
                 }
 
-                // استبدال المحرك القديم
+                // ✅ استبدال المحرك القديم مع إغلاق المحرك السابق بشكل صحيح لمنع تسريب الذاكرة
                 modelMutex.withLock {
-                    interpreter?.close()
+                    interpreter?.close()  // إغلاق المحرك القديم
                     interpreter = newInterpreter
                 }
 
@@ -375,6 +377,7 @@ class NudeDetector(
                 loadErrorCount++
                 writeLog("Load attempt ${attempt + 1} failed: ${e.message}")
                 modelMutex.withLock {
+                    interpreter?.close()  // إغلاق المحرك في حالة الفشل
                     interpreter = null
                 }
                 waitTime = minOf(waitTime + 2000L, 60000L)
