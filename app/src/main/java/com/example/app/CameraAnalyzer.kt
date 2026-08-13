@@ -694,19 +694,26 @@ class CameraAnalyzer(
 
     /**
      * استدعاء دالة على كائن عبر الانعكاس (بديل عن استدعاء الدوال مباشرة في Python)
+     * تم تحسين الدالة لاستخدام getMethod أولاً (للدوال العامة) ثم getDeclaredMethod كحل بديل
+     * لتجنب IllegalAccessException على بعض الأجهزة.
      */
     private fun invokeMethod(target: Any?, methodName: String, vararg args: Any?): Any? {
         if (target == null) return null
 
+        // تحويل المعاملات إلى مصفوفة من الأنواع
+        val paramTypes = args.map { it?.javaClass ?: Any::class.java }.toTypedArray()
+
         return try {
-            val method = target.javaClass.getDeclaredMethod(methodName, *args.map { it?.javaClass ?: Any::class.java }.toTypedArray())
+            // محاولة استخدام getMethod للدوال العامة أولاً
+            val method = target.javaClass.getMethod(methodName, *paramTypes)
             method.isAccessible = true
             method.invoke(target, *args)
         } catch (e: NoSuchMethodException) {
+            // محاولة بديلة باستخدام getDeclaredMethod للدوال غير العامة (protected/private)
             try {
-                val method = target.javaClass.methods.firstOrNull { it.name == methodName }
-                method?.isAccessible = true
-                method?.invoke(target, *args)
+                val method = target.javaClass.getDeclaredMethod(methodName, *paramTypes)
+                method.isAccessible = true
+                method.invoke(target, *args)
             } catch (e2: Exception) {
                 writeLog("Method invocation error ($methodName): ${e2.message}")
                 null
