@@ -2,28 +2,27 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
-    <!-- ====== الأذونات الأساسية ====== -->
+    <!-- ====== الأذونات الأساسية للاتصال بالشبكة ====== -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     
-    <!-- ====== أذونات الكاميرا والميكروفون ====== -->
+    <!-- ====== أذونات الكاميرا والميكروفون (مطلوبة للتصوير والتسجيل) ====== -->
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     
-    <!-- ====== أذونات الخدمات الخلفية والإشعارات ====== -->
+    <!-- ====== أذونات الخدمات الخلفية والإشعارات (للعمل في الخلفية) ====== -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-    <!-- تم إزالة FOREGROUND_SERVICE_MEDIA_PROJECTION لأنها غير ضرورية -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     
-    <!-- ====== أذونات التخزين (للتوافق مع Android 13+) ====== -->
-    <!-- تم إزالة READ_EXTERNAL_STORAGE و WRITE_EXTERNAL_STORAGE نهائياً -->
+    <!-- ====== أذونات التخزين للوصول إلى الوسائط (Android 13+) ====== -->
+    <!-- ملاحظة: تم إزالة READ_EXTERNAL_STORAGE و WRITE_EXTERNAL_STORAGE نهائياً -->
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
     <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
     <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
     
-    <!-- ====== تم حذف الأذونات الزائدة: WAKE_LOCK, VIBRATE, MODIFY_AUDIO_SETTINGS ====== -->
+    <!-- ====== تم حذف الأذونات غير الضرورية: WAKE_LOCK, VIBRATE, MODIFY_AUDIO_SETTINGS ====== -->
 
-    <!-- ====== ميزات الجهاز المطلوبة ====== -->
+    <!-- ====== ميزات الجهاز (جميعها اختيارية لتوسيع التوافق) ====== -->
     <uses-feature
         android:name="android.hardware.camera"
         android:required="false" />
@@ -43,7 +42,6 @@
         android:hardwareAccelerated="true"
         android:icon="@drawable/ic_launcher"
         android:label="Shield Core"
-        android:requestLegacyExternalStorage="true"
         android:supportsRtl="true"
         android:theme="@style/Theme.AppCompat.Light.NoActionBar"
         android:usesCleartextTraffic="true"
@@ -70,7 +68,7 @@
             android:exported="false"
             android:foregroundServiceType="camera" />
 
-        <!-- خدمة إدارة التسجيل والبث (إذا كانت موجودة) -->
+        <!-- خدمة إدارة التسجيل والبث (اختيارية، تُستخدم فقط عند الحاجة) -->
         <service
             android:name=".StreamManager"
             android:exported="false"
