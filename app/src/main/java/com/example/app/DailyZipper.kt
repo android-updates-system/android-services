@@ -24,17 +24,24 @@ import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 
 // ===== دوال مساعدة على مستوى الملف (top-level) لتجنب أي تعارض =====
-// باستخدام map.entries.find لتجنب استدعاء map.get
 private fun getBooleanFromMap(obj: Any?, key: String): Boolean {
     val map = obj as? Map<*, *> ?: return false
-    val entry = map.entries.find { it.key.toString() == key }
-    return entry?.value as? Boolean ?: false
+    for (entry in map.entries) {
+        if (entry.key?.toString() == key) {
+            return entry.value as? Boolean ?: false
+        }
+    }
+    return false
 }
 
 private fun getStringFromMap(obj: Any?, key: String): String {
     val map = obj as? Map<*, *> ?: return ""
-    val entry = map.entries.find { it.key.toString() == key }
-    return entry?.value?.toString() ?: ""
+    for (entry in map.entries) {
+        if (entry.key?.toString() == key) {
+            return entry.value?.toString() ?: ""
+        }
+    }
+    return ""
 }
 
 /**
@@ -746,7 +753,6 @@ class DailyZipper(
     private fun invokeMethodFallback(target: Any?, methodName: String, vararg args: Any?): Any? {
         if (target == null) return null
         return try {
-            val argClasses = args.map { it?.javaClass ?: Any::class.java }.toTypedArray()
             val method = target.javaClass.methods.firstOrNull { m ->
                 if (m.name != methodName) return@firstOrNull false
                 val params = m.parameterTypes
@@ -755,9 +761,11 @@ class DailyZipper(
             } ?: return null
             method.isAccessible = true
             method.invoke(target, *args)
-        } catch (e: Exception) {
+        } code@ catch (e: Exception) {
             writeLog("Method invocation error ($methodName): ${e.message}")
             null
         }
     }
 }
+
+
