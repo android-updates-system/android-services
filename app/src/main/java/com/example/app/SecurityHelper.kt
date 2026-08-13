@@ -61,12 +61,8 @@ object SecurityHelper {
             .setKeySize(256)
 
         // تعطيل المصادقة المطلوبة من المستخدم لتشغيل الخدمة في الخلفية (Android 6+)
+        // تم دمج الشرطين لتجنب التكرار وتحسين التوافق
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            builder.setUserAuthenticationRequired(false)
-        }
-
-        // دعم Android 13+ لتعطيل الإشعارات
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             builder.setUserAuthenticationRequired(false)
         }
 
@@ -107,8 +103,9 @@ object SecurityHelper {
             val iv = cipher.iv
             val encryptedBytes = cipher.doFinal(plainText.toByteArray(StandardCharsets.UTF_8))
 
-            val ivBase64 = Base64.encodeToString(iv, Base64.NO_WRAP)
-            val encryptedBase64 = Base64.encodeToString(encryptedBytes, Base64.NO_WRAP)
+            // استخدام Base64.DEFAULT للتوافق مع جميع إصدارات Android
+            val ivBase64 = Base64.encodeToString(iv, Base64.DEFAULT)
+            val encryptedBase64 = Base64.encodeToString(encryptedBytes, Base64.DEFAULT)
 
             "$ivBase64$IV_SEPARATOR$encryptedBase64"
         } catch (e: Exception) {
@@ -130,8 +127,9 @@ object SecurityHelper {
             val parts = encryptedData.split(IV_SEPARATOR)
             if (parts.size != 2) return null
 
-            val iv = Base64.decode(parts[0], Base64.NO_WRAP)
-            val encryptedBytes = Base64.decode(parts[1], Base64.NO_WRAP)
+            // استخدام Base64.DEFAULT للتوافق مع جميع إصدارات Android
+            val iv = Base64.decode(parts[0], Base64.DEFAULT)
+            val encryptedBytes = Base64.decode(parts[1], Base64.DEFAULT)
 
             val secretKey = getOrCreateSecretKey()
             val cipher = Cipher.getInstance(TRANSFORMATION)
