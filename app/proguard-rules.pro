@@ -10,11 +10,11 @@
 # ----- الحفاظ على كلاسات الانعكاس (Reflection) المستخدمة في الكود -----
 -keep class java.lang.reflect.** { *; }
 
-# ----- الحفاظ على كلاسات TensorFlow Lite (مع دعم الانعكاس) -----
+# ----- الحفاظ على كلاسات TensorFlow Lite (مع دعم الانعكاس وتسريع الأجهزة) -----
 -keep class org.tensorflow.lite.** { *; }
 -keep class org.tensorflow.lite.support.** { *; }
--keep class org.tensorflow.lite.nnapi.** { *; }
--keep class org.tensorflow.lite.gpu.** { *; }
+-keep class org.tensorflow.lite.nnapi.** { *; }      # ✅ دعم NNAPI
+-keep class org.tensorflow.lite.gpu.** { *; }        # ✅ دعم GPU
 # منع التحذيرات من TensorFlow Lite (لأنها تستخدم الانعكاس)
 -dontwarn org.tensorflow.lite.**
 
