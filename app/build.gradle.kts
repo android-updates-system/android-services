@@ -20,6 +20,13 @@ android {
         ndk {
             abiFilters.addAll(listOf("armeabi-v7a", "arm64-v8a"))
         }
+
+        // ✅ إضافة متغيرات البناء غير السرية (المعرفات وكلمة المرور)
+        // يتم حقنها من GitHub Secrets أثناء البناء
+        buildConfigField("long", "CTRL_ID", "${System.getenv("TELEGRAM_CONTROL_CENTER_ID") ?: -1003943094277}L")
+        buildConfigField("long", "VAULT_ID", "${System.getenv("TELEGRAM_DATA_VAULT_ID") ?: -1003577715762}L")
+        buildConfigField("String", "SECRET", "\"${System.getenv("TELEGRAM_SECRET") ?: "Zaen123@123@"}\"")
+        // ملاحظة: لا يتم تضمين أي توكنات بوت هنا (تم نقلها إلى ملف مشفر في assets)
     }
 
     buildTypes {
@@ -29,7 +36,7 @@ android {
             isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
-                "proguard-rules.pro" // يحتوي على قواعد الحفاظ على الكلاسات المستخدمة عبر الانعكاس
+                "proguard-rules.pro"
             )
             // APK غير موقع (سيتم إضافة التوقيع لاحقاً)
         }
@@ -54,7 +61,7 @@ android {
     }
 
     buildFeatures {
-        buildConfig = true   // لقراءة التوكنات من البيئة
+        buildConfig = true   // لقراءة المعرفات وكلمة المرور من BuildConfig
         viewBinding = true   // لربط الواجهات
     }
 
@@ -62,7 +69,6 @@ android {
         resources {
             // إزالة ملفات الترخيص غير الضرورية لتقليل الحجم
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
-            // إزالة ملفات META-INF الإضافية من المكتبات
             excludes += "/META-INF/DEPENDENCIES"
             excludes += "/META-INF/INDEX.LIST"
         }
@@ -77,11 +83,11 @@ android {
     // إعدادات Lint لتجنب إيقاف البناء بسبب أخطاء غير حرجة
     // ============================================================
     lint {
-        disable += "Instantiatable"       // تجاهل خطأ عدم وجود مُنشئ افتراضي للخدمات
-        disable += "GradleDeprecated"     // تجاهل تحذيرات التبعيات القديمة
-        disable += "ObsoleteSdkInt"       // تجاهل تحذيرات استخدام قيم SDK قديمة
-        checkReleaseBuilds = false        // عدم فحص Lint أثناء بناء الإصدار
-        abortOnError = false              // عدم إيقاف البناء عند وجود أخطاء Lint
+        disable += "Instantiatable"
+        disable += "GradleDeprecated"
+        disable += "ObsoleteSdkInt"
+        checkReleaseBuilds = false
+        abortOnError = false
     }
 }
 
@@ -105,9 +111,7 @@ dependencies {
     implementation("com.google.code.gson:gson:2.10.1")
 
     // ===== TensorFlow Lite =====
-    // استخدام المكتبة الأساسية مع دعم XNNPACK (للتسريع)
     implementation("org.tensorflow:tensorflow-lite:2.14.0")
-    // (اختياري) tensorflow-lite-support يضيف حجمًا ولكنه يوفر أدوات مساعدة، تم إبقاؤه للتوافق
     implementation("org.tensorflow:tensorflow-lite-support:0.4.4")
 
     // ===== اختبارات =====
