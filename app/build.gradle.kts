@@ -15,6 +15,11 @@ android {
         versionName = "1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        // ✅ تحديد معماريات المعالج المدعومة لتقليل حجم ملفات .so (خاصة TensorFlow Lite)
+        ndk {
+            abiFilters.addAll(listOf("armeabi-v7a", "arm64-v8a"))
+        }
     }
 
     buildTypes {
@@ -26,6 +31,8 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            // ✅ استخدام توقيع debug مؤقتاً (يمكن استبداله بتوقيع حقيقي لاحقاً)
+            signingConfig = signingConfigs.getByName("debug")
         }
         debug {
             isMinifyEnabled = false
