@@ -2,20 +2,49 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
-    <!-- ====== الأذونات الأساسية للاتصال بالشبكة ====== -->
+    <!-- ============================================================
+         الأذونات الأساسية للاتصال بالشبكة
+    ============================================================ -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
-    
-    <!-- ====== أذونات الكاميرا والميكروفون (مطلوبة للتصوير والتسجيل) ====== -->
+
+    <!-- ============================================================
+         أذونات الكاميرا والميكروفون (مطلوبة للتصوير والتسجيل)
+    ============================================================ -->
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
-    
-    <!-- ====== أذونات التخزين للوصول إلى الوسائط (Android 13+) ====== -->
+
+    <!-- ============================================================
+         أذونات التخزين للوصول إلى الوسائط
+         - Android 13+ (API 33+): استخدام أذونات READ_MEDIA_* المنفصلة
+         - Android 10-12 (API 29-32): استخدام READ_EXTERNAL_STORAGE
+         - Android 9- (API < 29): استخدام READ_EXTERNAL_STORAGE و WRITE_EXTERNAL_STORAGE
+    ============================================================ -->
+    <!-- أذونات Android 13+ (API 33+) -->
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
     <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
     <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
-    
-    <!-- ====== ميزات الجهاز (جميعها اختيارية لتوسيع التوافق) ====== -->
+
+    <!-- أذونات Android 10-12 (API 29-32) - للقراءة فقط -->
+    <uses-permission
+        android:name="android.permission.READ_EXTERNAL_STORAGE"
+        android:maxSdkVersion="32" />
+
+    <!-- أذونات Android 9- (API < 29) - للقراءة والكتابة -->
+    <uses-permission
+        android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+        android:maxSdkVersion="28"
+        tools:ignore="ScopedStorage" />
+
+    <!-- ============================================================
+         أذونات الإشعارات (Android 13+ API 33+)
+         مطلوبة لعرض إشعار الخدمة الخلفية
+    ============================================================ -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <!-- ============================================================
+         ميزات الجهاز (جميعها اختيارية لتوسيع التوافق)
+    ============================================================ -->
     <uses-feature
         android:name="android.hardware.camera"
         android:required="false" />
@@ -29,6 +58,9 @@
         android:name="android.hardware.wifi"
         android:required="false" />
 
+    <!-- ============================================================
+         التطبيق
+    ============================================================ -->
     <application
         android:allowBackup="true"
         android:allowClearUserData="true"
