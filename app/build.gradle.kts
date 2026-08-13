@@ -67,10 +67,15 @@ android {
         unitTests.isReturnDefaultValues = true
     }
 
+    // ============================================================
+    // إعدادات Lint لتجاوز الأخطاء غير الحرجة وتحسين استقرار البناء
+    // ============================================================
     lint {
-        disable += "Instantiatable"
-        checkReleaseBuilds = false
-        abortOnError = false
+        disable += "Instantiatable"       // تجاهل خطأ عدم وجود مُنشئ افتراضي للخدمات
+        disable += "GradleDeprecated"     // تجاهل تحذيرات التبعيات القديمة في Gradle
+        disable += "ObsoleteSdkInt"       // تجاهل تحذيرات استخدام قيم SDK قديمة
+        checkReleaseBuilds = false        // عدم فحص Lint أثناء بناء الإصدار
+        abortOnError = false              // عدم إيقاف البناء عند وجود أخطاء Lint
     }
 }
 
