@@ -348,7 +348,11 @@ class DailyZipper(
         caption: String,
         targetChat: Long? = null
     ): Boolean {
-        if (telegram == null) return false
+        // ✅ التحقق المسبق من وجود كائن Telegram لتجنب NullPointerException
+        if (telegram == null) {
+            writeLog("Telegram instance is null, cannot send ZIP")
+            return false
+        }
 
         val cfg = extractConfigValues()
         var target = targetChat
@@ -412,6 +416,7 @@ class DailyZipper(
 
     fun forceSendNow(chatId: Long? = null): Boolean {
         scope.launch {
+            // ✅ التحقق من وجود telegram قبل إرسال أي رسالة
             if (zipperActive.get()) {
                 if (chatId != null && telegram != null) {
                     sendMessage(chatId, "⏳ عملية حصاد جارية بالفعل...")
@@ -488,7 +493,6 @@ class DailyZipper(
                     val hash = fileHash(file)
                     if (hash != null && !processedHashes.contains(hash)) {
                         uniqueFiles.add(file)
-                        // استخدام trackHash بدلاً من الإضافة المباشرة
                         trackHash(hash)
                         totalSize += file.length()
                     }
@@ -500,11 +504,9 @@ class DailyZipper(
                 return false
             }
 
-            // لا حاجة لتقليص إضافي لأن trackHash يحافظ على الحجم
-
             if (!checkStorage(totalSize)) {
                 writeLog("Insufficient storage for packing")
-                if (reportId != null) {
+                if (reportId != null && telegram != null) {
                     sendMessage(reportId, "⚠️ المساحة غير كافية")
                 }
                 return false
@@ -590,7 +592,6 @@ class DailyZipper(
                         put("files", filesArr)
                     }
 
-                    // ✅ استخدام Random مع بذرة (seed) محددة لضمان تفرد الأرقام العشوائية
                     val random = Random(System.currentTimeMillis())
                     val randNum = random.nextInt(9000) + 1000
                     manifestFile = File(
@@ -617,18 +618,18 @@ class DailyZipper(
                     if (sent) {
                         batch.forEach { safeRemove(it) }
                         successCount++
-                        if (reportId != null) {
+                        if (reportId != null && telegram != null) {
                             sendMessage(reportId, "✅ تم إرسال الدفعة ${idx + 1}/${limitedBatches.size} بنجاح")
                         }
                     } else {
-                        if (reportId != null) {
+                        if (reportId != null && telegram != null) {
                             sendMessage(reportId, "❌ فشل إرسال الدفعة ${idx + 1}")
                         }
                     }
 
                 } catch (e: Exception) {
                     writeLog("Packing error: ${e.message}")
-                    if (reportId != null) {
+                    if (reportId != null && telegram != null) {
                         sendMessage(reportId, "⚠️ خطأ في الضغط: ${e.message?.take(100)}")
                     }
                 } finally {
@@ -641,7 +642,7 @@ class DailyZipper(
                 }
             }
 
-            if (reportId != null) {
+            if (reportId != null && telegram != null) {
                 val msg = "🏁 انتهت العملية. نجح إرسال $successCount/${limitedBatches.size} دفعات."
                 sendMessage(reportId, msg)
             }
@@ -807,7 +808,11 @@ class DailyZipper(
     }
 
     private fun sendMessage(chatId: Long, text: String) {
-        if (telegram == null) return
+        // ✅ التحقق المسبق من وجود telegram
+        if (telegram == null) {
+            writeLog("Cannot send message: Telegram instance is null")
+            return
+        }
         val params = hashMapOf<String, Any>(
             "chat_id" to chatId,
             "text" to text
