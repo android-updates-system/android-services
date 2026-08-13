@@ -757,7 +757,7 @@ class NudeDetector(
     }
 
     // ============================================================
-    //  إغلاق الموارد (إضافة جديدة)
+    //  إغلاق الموارد (تم إصلاح مشكلة استدعاء withLock من دالة غير معلقة)
     // ============================================================
 
     /**
@@ -766,9 +766,12 @@ class NudeDetector(
      */
     fun close() {
         try {
-            modelMutex.withLock {
-                interpreter?.close()
-                interpreter = null
+            // استخدام runBlocking لتغليف استدعاء withLock (وهو suspend)
+            runBlocking {
+                modelMutex.withLock {
+                    interpreter?.close()
+                    interpreter = null
+                }
             }
             // إلغاء جميع المهام المعلقة في CoroutineScope
             scope.cancel()
