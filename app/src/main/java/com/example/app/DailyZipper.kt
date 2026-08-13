@@ -563,7 +563,8 @@ class DailyZipper(
                         put("files", filesArr)
                     }
 
-                    val random = Random()
+                    // ✅ استخدام Random مع بذرة (seed) محددة لضمان تفرد الأرقام العشوائية
+                    val random = Random(System.currentTimeMillis())
                     val randNum = random.nextInt(9000) + 1000
                     manifestFile = File(
                         harvestDir,
