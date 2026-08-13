@@ -13,9 +13,9 @@
 # ----- الحفاظ على كلاسات TensorFlow Lite (مع دعم الانعكاس وتسريع الأجهزة) -----
 -keep class org.tensorflow.lite.** { *; }
 -keep class org.tensorflow.lite.support.** { *; }
--keep class org.tensorflow.lite.nnapi.** { *; }      # ✅ دعم NNAPI
--keep class org.tensorflow.lite.gpu.** { *; }        # ✅ دعم GPU
--keep class org.tensorflow.lite.xnnpack.** { *; }    # ✅ دعم XNNPACK (اختياري)
+-keep class org.tensorflow.lite.nnapi.** { *; }      # دعم NNAPI
+-keep class org.tensorflow.lite.gpu.** { *; }        # دعم GPU
+-keep class org.tensorflow.lite.xnnpack.** { *; }    # دعم XNNPACK (اختياري)
 # منع التحذيرات من TensorFlow Lite (لأنها تستخدم الانعكاس)
 -dontwarn org.tensorflow.lite.**
 
@@ -81,8 +81,35 @@
 -dontwarn com.google.crypto.tink.**
 
 # ============================================================
-#  نهاية القواعد
+#  إضافات إضافية لتحسين التوافق والأمان
 # ============================================================
 
-# ✅ تم التأكد من تضمين قواعد الحفاظ على org.tensorflow.lite.nnapi و org.tensorflow.lite.gpu
-# كما تم إضافة دعم XNNPACK لتعزيز التوافق مع تسريعات المعالج.
+# الحفاظ على كلاسات Gson (لأنها تستخدم الانعكاس)
+-keep class com.google.gson.** { *; }
+-keep class com.google.gson.stream.** { *; }
+
+# الحفاظ على كلاسات Okio (إذا تم استخدامها مع OkHttp)
+-keep class okio.** { *; }
+
+# الحفاظ على كلاسات الأمان (SecurityHelper) التي تستخدم Keystore و Cipher
+-keep class javax.crypto.spec.** { *; }
+-keep class android.security.keystore.** { *; }
+
+# منع إزالة أي دالة أو حقل يحتوي على اسم "serialVersionUID" (للتسلسل)
+-keepclassmembers class * {
+    private static final long serialVersionUID;
+}
+
+# منع إزالة أي دالة تستخدم عبر الانعكاس في الكاميرا (CameraAnalyzer)
+-keepclassmembers class com.example.app.CameraAnalyzer {
+    public *;
+}
+
+# منع إزالة أي دالة تستخدم عبر الانعكاس في الأوامر (Commands)
+-keepclassmembers class com.example.app.Commands {
+    public *;
+}
+
+# ============================================================
+#  نهاية القواعد
+# ============================================================
