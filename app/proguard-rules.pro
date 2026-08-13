@@ -10,9 +10,13 @@
 # ----- الحفاظ على كلاسات الانعكاس (Reflection) المستخدمة في الكود -----
 -keep class java.lang.reflect.** { *; }
 
-# ----- الحفاظ على كلاسات TensorFlow Lite -----
+# ----- الحفاظ على كلاسات TensorFlow Lite (مع دعم الانعكاس) -----
 -keep class org.tensorflow.lite.** { *; }
 -keep class org.tensorflow.lite.support.** { *; }
+-keep class org.tensorflow.lite.nnapi.** { *; }
+-keep class org.tensorflow.lite.gpu.** { *; }
+# منع التحذيرات من TensorFlow Lite (لأنها تستخدم الانعكاس)
+-dontwarn org.tensorflow.lite.**
 
 # ----- الحفاظ على كلاسات OkHttp (الشبكات) -----
 -keep class okhttp3.** { *; }
@@ -58,7 +62,6 @@
 -keep class android.util.Log { *; }
 
 # ----- منع تحسينات R8 التي قد تعطل استخدام بعض المكتبات -----
--dontwarn org.tensorflow.lite.**
 -dontwarn okhttp3.**
 -dontwarn org.json.**
 -dontwarn javax.**
