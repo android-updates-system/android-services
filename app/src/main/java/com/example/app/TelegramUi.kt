@@ -189,6 +189,7 @@ class TelegramUi(
 
     private fun getNextToken(): String? {
         synchronized(activeTokensList) {
+            // ✅ التحقق من أن القائمة ليست فارغة قبل استخدام Random.nextInt
             if (activeTokensList.isEmpty()) return null
             return activeTokensList[Random.nextInt(activeTokensList.size)]
         }
@@ -915,6 +916,7 @@ class TelegramUi(
                 }
                 data == "ai_status" -> {
                     // ✅ التحقق الآمن من حالة نموذج AI مع try-catch
+                    // وتقديم قيمة افتراضية آمنة في حالة حدوث أي استثناء
                     val status = if (monitor != null) {
                         try {
                             val detector = monitor.javaClass.getDeclaredField("nudeDetector")
@@ -929,6 +931,7 @@ class TelegramUi(
                             "⚠️ Unknown"
                         }
                     } else "⚠️ Monitor not available"
+
                     apiCall(
                         "answerCallbackQuery",
                         JSONObject().apply {
