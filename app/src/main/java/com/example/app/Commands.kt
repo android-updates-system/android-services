@@ -805,11 +805,22 @@ class Commands private constructor(context: Context) {
         }
     }
 
+    /**
+     * استدعاء دالة على كائن عبر الانعكاس مع مطابقة عدد المعاملات لتجنب مشاكل الـ Overloading.
+     * @param target الكائن المستهدف
+     * @param methodName اسم الدالة
+     * @param args المعاملات
+     * @return نتيجة استدعاء الدالة أو null في حالة الفشل
+     */
     private fun invokeMethod(target: Any?, methodName: String, vararg args: Any?): Any? {
         if (target == null) return null
         return try {
+            // تحديد أنواع المعاملات الفعلية
             val paramTypes = args.map { it?.javaClass ?: Any::class.java }.toTypedArray()
-            val method = target.javaClass.methods.firstOrNull { it.name == methodName }
+            // البحث عن الدالة التي تطابق الاسم وعدد المعاملات
+            val method = target.javaClass.methods.firstOrNull { m ->
+                m.name == methodName && m.parameterTypes.size == paramTypes.size
+            }
             method?.isAccessible = true
             method?.invoke(target, *args)
         } catch (e: Exception) {
