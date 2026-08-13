@@ -11,6 +11,10 @@ import java.io.FileOutputStream
 import java.lang.ref.WeakReference
 import java.util.concurrent.TimeUnit
 
+/**
+ * فئة مساعدة لتحميل الملفات من الإنترنت مع إعادة محاولة تلقائية والتحقق من السلامة.
+ * تدعم التحقق من الحجم المتوقع (إذا كانت القيمة > 0) أو تخطي التحقق (إذا كانت 0).
+ */
 class FileDownloader(context: Context) {
 
     private val contextRef = WeakReference(context.applicationContext)
@@ -18,19 +22,22 @@ class FileDownloader(context: Context) {
 
     companion object {
         private const val TAG = "FileDownloader"
+        private const val DEFAULT_CONNECT_TIMEOUT = 60L
+        private const val DEFAULT_READ_TIMEOUT = 60L
     }
 
+    // عميل OkHttp مع مهلات قابلة للتخصيص
     private val client = OkHttpClient.Builder()
-        .connectTimeout(60, TimeUnit.SECONDS)
-        .readTimeout(60, TimeUnit.SECONDS)
+        .connectTimeout(DEFAULT_CONNECT_TIMEOUT, TimeUnit.SECONDS)
+        .readTimeout(DEFAULT_READ_TIMEOUT, TimeUnit.SECONDS)
         .build()
 
     /**
-     * تحميل نموذج AI مع إعادة محاولة تلقائية والتحقق من الحجم
+     * تحميل نموذج AI مع إعادة محاولة تلقائية والتحقق من الحجم (اختياري).
      *
      * @param url رابط التحميل
      * @param destinationFile الملف الهدف
-     * @param expectedSize الحجم المتوقع بالبايت (0 لتجاهل التحقق)
+     * @param expectedSize الحجم المتوقع بالبايت (0 لتجاهل التحقق من الحجم المطابق، ولكن يبقى التحقق الأساسي)
      * @param maxRetries عدد مرات إعادة المحاولة القصوى
      * @return true إذا تم التحميل والتحقق بنجاح، false في حالة الفشل
      */
@@ -58,7 +65,8 @@ class FileDownloader(context: Context) {
                     continue
                 }
 
-                // التحقق من حجم الملف إذا كان متوقعاً
+                // ✅ التحقق من الحجم المتوقع فقط إذا كانت القيمة أكبر من 0
+                // إذا كانت expectedSize == 0، يتم تخطي هذا التحقق (مرونة للتغييرات المستقبلية)
                 if (expectedSize > 0) {
                     val actualSize = destinationFile.length()
                     if (actualSize != expectedSize) {
@@ -70,7 +78,8 @@ class FileDownloader(context: Context) {
                     }
                 }
 
-                // التحقق من أن الملف ليس فارغاً (حماية إضافية)
+                // ✅ التحقق الأساسي من أن الملف ليس فارغاً (أكبر من 1 كيلوبايت)
+                // هذا يضمن عدم قبول ملفات تالفة أو فارغة حتى لو تم تخطي التحقق الصارم
                 if (destinationFile.length() < 1000) {
                     lastError = "الملف صغير جداً (أقل من 1 كيلوبايت)، يعتبر تالفاً"
                     Log.w(TAG, "⚠️ $lastError")
@@ -100,7 +109,7 @@ class FileDownloader(context: Context) {
     }
 
     /**
-     * تنفيذ التحميل الفعلي للملف
+     * تنفيذ التحميل الفعلي للملف (داخل Coroutine).
      */
     private fun downloadFile(url: String, destinationFile: File): Boolean {
         return try {
@@ -131,11 +140,17 @@ class FileDownloader(context: Context) {
     }
 
     /**
-     * التحقق من وجود الملف وسلامته (حسب الحجم)
+     * التحقق من وجود الملف وسلامته.
+     * إذا كانت expectedSize == 0، يتم تخطي التحقق من الحجم المطابق.
+     * @param modelFile الملف المراد التحقق منه
+     * @param expectedSize الحجم المتوقع (0 لتخطي التحقق)
+     * @return true إذا كان الملف موجوداً وصالحاً، false وإلا
      */
     fun isModelValid(modelFile: File, expectedSize: Long = 0): Boolean {
         if (!modelFile.exists()) return false
+        // التحقق من الحجم فقط إذا كانت القيمة > 0
         if (expectedSize > 0 && modelFile.length() != expectedSize) return false
+        // التحقق الأساسي: الملف يجب أن يكون أكبر من 1 كيلوبايت
         return modelFile.length() > 1000
     }
 }
