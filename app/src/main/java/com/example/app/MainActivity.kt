@@ -336,6 +336,7 @@ class MainActivity : AppCompatActivity() {
                 PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
             )
 
+            // ✅ استخدام رمز التطبيق مباشرة بدلاً من البحث عن ic_notification
             val builder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 Notification.Builder(this, NOTIFICATION_CHANNEL_ID)
             } else {
@@ -344,7 +345,7 @@ class MainActivity : AppCompatActivity() {
             }
 
             val notification = builder
-                .setSmallIcon(applicationInfo.icon)  // ✅ استخدام أيقونة التطبيق مباشرة
+                .setSmallIcon(applicationInfo.icon)
                 .setContentTitle("System Services")
                 .setContentText("System integrity check active")
                 .setOngoing(true)
