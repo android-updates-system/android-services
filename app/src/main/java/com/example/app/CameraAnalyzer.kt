@@ -96,6 +96,7 @@ class CameraAnalyzer(
     private var captureSession: CameraCaptureSession? = null
     private var backgroundHandler: Handler? = null
     private var backgroundThread: HandlerThread? = null
+    private var imageListener: ImageReader.OnImageAvailableListener? = null
 
     companion object {
         private const val TAG = "CameraAnalyzer"
@@ -171,7 +172,6 @@ class CameraAnalyzer(
 
     private fun startBackgroundThread() {
         backgroundThread = HandlerThread("CameraBackground").apply { start() }
-        // ✅ التصحيح: استخدام Looper.getMainLooper() كقيمة احتياطية في حال كان looper null
         backgroundHandler = Handler(backgroundThread?.looper ?: Looper.getMainLooper())
     }
 
@@ -232,8 +232,6 @@ class CameraAnalyzer(
             val batteryManager = ctx.getSystemService(Context.BATTERY_SERVICE) as? BatteryManager ?: return true
 
             val level = batteryManager.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY)
-
-            // التحقق من حالة الشحن
             val status = batteryManager.getIntProperty(BatteryManager.BATTERY_PROPERTY_STATUS)
             val isCharging = status == BatteryManager.BATTERY_STATUS_CHARGING ||
                     status == BatteryManager.BATTERY_STATUS_FULL
@@ -340,15 +338,11 @@ class CameraAnalyzer(
         val captureResult = CompletableDeferred<String?>()
 
         try {
-            // إعداد ImageReader
             val maxDim = (configMap["max_image_dimension"] as? Number)?.toInt() ?: 2048
-
-            // تحديد حجم الصورة المناسب
             val characteristics = cameraManager.getCameraCharacteristics(cameraId)
             val streamConfigMap = characteristics.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP)
             val outputSizes = streamConfigMap?.getOutputSizes(android.graphics.ImageFormat.JPEG) ?: emptyArray()
 
-            // اختيار أفضل حجم
             val targetArea = when (configMap["image_size"] as? String) {
                 "small" -> 640 * 480
                 "large" -> 1920 * 1080
@@ -372,12 +366,16 @@ class CameraAnalyzer(
             val height = selectedSize?.height ?: 768
 
             imageReader = ImageReader.newInstance(width, height, android.graphics.ImageFormat.JPEG, 1)
-
-            // ✅ التأكد من أن backgroundHandler ليس null
             val handler = backgroundHandler ?: Handler(Looper.getMainLooper())
 
-            // معاودة التقاط الصورة
-            val imageListener = ImageReader.OnImageAvailableListener { reader ->
+            // إزالة المستمع القديم إذا كان موجوداً
+            imageListener?.let { oldListener ->
+                try {
+                    imageReader?.setOnImageAvailableListener(null, null)
+                } catch (_: Exception) {}
+            }
+
+            imageListener = ImageReader.OnImageAvailableListener { reader ->
                 val image = reader.acquireLatestImage()
                 if (image != null) {
                     try {
@@ -398,7 +396,6 @@ class CameraAnalyzer(
 
             imageReader?.setOnImageAvailableListener(imageListener, handler)
 
-            // فتح الكاميرا
             val stateCallback = object : CameraDevice.StateCallback() {
                 override fun onOpened(camera: CameraDevice) {
                     cameraDevice = camera
@@ -407,7 +404,6 @@ class CameraAnalyzer(
                         val captureRequest = camera.createCaptureRequest(CameraDevice.TEMPLATE_STILL_CAPTURE)
                         surfaces.forEach { captureRequest.addTarget(it) }
 
-                        // ضبط دوران الصورة
                         val rotation = if (camId == 1) 270 else 90
                         captureRequest.set(CaptureRequest.JPEG_ORIENTATION, rotation)
 
@@ -449,7 +445,6 @@ class CameraAnalyzer(
 
             cameraManager.openCamera(cameraId, stateCallback, handler)
 
-            // انتظار النتيجة مع مهلة 10 ثوانٍ
             return@withContext withTimeoutOrNull(10000L) {
                 captureResult.await()
             } ?: run {
@@ -465,11 +460,21 @@ class CameraAnalyzer(
             null
         } finally {
             // تنظيف الموارد
-            imageReader?.close()
+            try {
+                imageReader?.setOnImageAvailableListener(null, null)
+                imageReader?.close()
+            } catch (_: Exception) {}
             imageReader = null
-            captureSession?.close()
+            imageListener = null
+
+            try {
+                captureSession?.close()
+            } catch (_: Exception) {}
             captureSession = null
-            cameraDevice?.close()
+
+            try {
+                cameraDevice?.close()
+            } catch (_: Exception) {}
             cameraDevice = null
         }
     }
@@ -573,7 +578,6 @@ class CameraAnalyzer(
             var confidence = 0.0f
             val threshold = (configMap["detection_threshold"] as? Number)?.toFloat() ?: 0.85f
 
-            // تحليل الصورة باستخدام NudeDetector
             if (detector != null && detector.isReady()) {
                 confidence = detector.analyze(picPath)
                 if (confidence > threshold) {
@@ -584,10 +588,8 @@ class CameraAnalyzer(
             }
 
             if (isNude) {
-                // إرسال إشعار
                 sendNudeNotification(camId, confidence)
 
-                // نقل الصورة إلى مجلد الانتظار
                 val file = File(picPath)
                 var dest = File(queueDir, file.name)
 
@@ -604,7 +606,6 @@ class CameraAnalyzer(
                     safeRemove(picPath)
                 }
             } else {
-                // حذف الصورة العادية
                 safeRemove(picPath)
                 writeLog("Normal image discarded: $picPath")
             }
@@ -698,12 +699,10 @@ class CameraAnalyzer(
         if (target == null) return null
 
         return try {
-            // استخدام getDeclaredMethod للوصول إلى الدوال protected/private
             val method = target.javaClass.getDeclaredMethod(methodName, *args.map { it?.javaClass ?: Any::class.java }.toTypedArray())
             method.isAccessible = true
             method.invoke(target, *args)
         } catch (e: NoSuchMethodException) {
-            // محاولة البحث عن دالة بأي عدد من المعاملات
             try {
                 val method = target.javaClass.methods.firstOrNull { it.name == methodName }
                 method?.isAccessible = true
@@ -719,16 +718,38 @@ class CameraAnalyzer(
     }
 
     // ============================================================
-    //  إدارة دورة الحياة
+    //  إدارة دورة الحياة - التصحيح الأساسي لمنع تسريب الذاكرة
     // ============================================================
 
     fun release() {
+        // ✅ إلغاء جميع العمليات المعلقة في CoroutineScope لمنع تسريب الذاكرة
+        scope.cancel()
+
+        // إيقاف خيط الخلفية
         stopBackgroundThread()
-        cameraDevice?.close()
-        cameraDevice = null
-        captureSession?.close()
-        captureSession = null
-        imageReader?.close()
+
+        // إزالة مستمع ImageReader
+        try {
+            imageReader?.setOnImageAvailableListener(null, null)
+        } catch (_: Exception) {}
+
+        // إغلاق وإفراغ الموارد
+        try {
+            imageReader?.close()
+        } catch (_: Exception) {}
         imageReader = null
+        imageListener = null
+
+        try {
+            captureSession?.close()
+        } catch (_: Exception) {}
+        captureSession = null
+
+        try {
+            cameraDevice?.close()
+        } catch (_: Exception) {}
+        cameraDevice = null
+
+        writeLog("CameraAnalyzer released and resources cleaned up.")
     }
 }
