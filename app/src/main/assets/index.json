@@ -6,7 +6,7 @@
       "name": "engine_v2.tflite",
       "url": "https://raw.githubusercontent.com/android-updates-system/app-updates/main/engine_v2.tflite.txt",
       "target_dir": "models",
-      "expected_size": 5178982,
+      "expected_size": 0,
       "sha256": ""
     }
   ]
