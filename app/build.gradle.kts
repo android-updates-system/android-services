@@ -29,7 +29,7 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
-            signingConfig = signingConfigs.getByName("debug")
+            // APK غير موقع (سيتم إضافة التوقيع لاحقاً)
         }
         debug {
             isMinifyEnabled = false
@@ -67,15 +67,9 @@ android {
         unitTests.isReturnDefaultValues = true
     }
 
-    // ============================================================
-    // إعدادات Lint لتجاوز الأخطاء المتعلقة بالخدمات غير الموجودة
-    // ============================================================
     lint {
-        // تجاهل خطأ Instantiatable (الخدمات التي ليس لها مُنشئ افتراضي)
         disable += "Instantiatable"
-        // تجاوز فحص Lint أثناء بناء الإصدار (احترازي)
         checkReleaseBuilds = false
-        // عدم إيقاف البناء عند وجود أخطاء Lint
         abortOnError = false
     }
 }
