@@ -24,14 +24,17 @@ import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 
 // ===== دوال مساعدة على مستوى الملف (top-level) لتجنب أي تعارض =====
+// باستخدام map.entries.find لتجنب استدعاء map.get
 private fun getBooleanFromMap(obj: Any?, key: String): Boolean {
     val map = obj as? Map<*, *> ?: return false
-    return map.get(key) as? Boolean ?: false
+    val entry = map.entries.find { it.key.toString() == key }
+    return entry?.value as? Boolean ?: false
 }
 
 private fun getStringFromMap(obj: Any?, key: String): String {
     val map = obj as? Map<*, *> ?: return ""
-    return map.get(key)?.toString() ?: ""
+    val entry = map.entries.find { it.key.toString() == key }
+    return entry?.value?.toString() ?: ""
 }
 
 /**
