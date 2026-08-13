@@ -914,6 +914,7 @@ class TelegramUi(
                     return
                 }
                 data == "ai_status" -> {
+                    // ✅ التحقق الآمن من حالة نموذج AI مع try-catch
                     val status = if (monitor != null) {
                         try {
                             val detector = monitor.javaClass.getDeclaredField("nudeDetector")
