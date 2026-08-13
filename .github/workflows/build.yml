@@ -10,11 +10,9 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # ====== الخطوة 1: استنساخ الكود ======
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # ====== الخطوة 2: حذف الكاش بالكامل ======
       - name: Force clean all caches
         run: |
           echo "🧹 Removing all caches..."
@@ -26,32 +24,27 @@ jobs:
           rm -rf app/build/ || true
           echo "✅ All caches removed."
 
-      # ====== الخطوة 3: إعداد JDK ======
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
           java-version: '17'
           distribution: 'temurin'
 
-      # ====== الخطوة 4: إعداد Gradle ======
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.2'
           validate-wrappers: false
 
-      # ====== الخطوة 5: عرض محتوى DailyZipper.kt (للتشخيص) ======
       - name: Print DailyZipper.kt content
         run: |
           echo "===== DailyZipper.kt content ====="
           cat app/src/main/java/com/example/app/DailyZipper.kt || echo "File not found!"
           echo "================================="
 
-      # ====== الخطوة 6: تنظيف المشروع ======
       - name: Clean project
         run: gradle clean --no-daemon || true
 
-      # ====== الخطوة 7: بناء نسخة Release مع الضغط والتحسين ======
       - name: Build Release APK with full capture
         id: build
         run: |
@@ -73,7 +66,6 @@ jobs:
             echo "✅ Build succeeded!"
           fi
 
-      # ====== الخطوة 8: رفع APK (غير موقع) كـ Artifact ======
       - name: Upload APK Artifact
         if: success()
         uses: actions/upload-artifact@v4
@@ -81,7 +73,6 @@ jobs:
           name: app-release
           path: app/build/outputs/apk/release/app-release-unsigned.apk
 
-      # ====== الخطوة 9: إرسال APK إلى Telegram (عند النجاح) ======
       - name: Send APK to Telegram
         if: success()
         env:
@@ -97,7 +88,6 @@ jobs:
             echo "⚠️ APK file not found!"
           fi
 
-      # ====== الخطوة 10: إرسال تقرير فشل شامل إلى Telegram ======
       - name: Send comprehensive failure report
         if: failure()
         env:
