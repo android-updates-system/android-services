@@ -75,9 +75,6 @@ class Commands private constructor(context: Context) {
     private val maxRetries = 5
     private val retryInterval = 600_000L // 10 دقائق
 
-    private var gcCounter = 0
-    private val gcThreshold = 50
-
     companion object {
         private const val TAG = "Commands"
 
@@ -480,13 +477,8 @@ class Commands private constructor(context: Context) {
             } catch (e: Exception) {
                 Log.e(TAG, "Command handler error: ${e.message}")
                 sendTelegramMessage(tg, cid, "❌ خطأ داخلي: ${e.message?.take(100) ?: "Unknown"}")
-            } finally {
-                gcCounter++
-                if (gcCounter >= gcThreshold) {
-                    System.gc()
-                    gcCounter = 0
-                }
             }
+            // ✅ تم إزالة System.gc() نهائياً لتحسين الأداء
         }
     }
 
