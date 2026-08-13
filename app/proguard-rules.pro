@@ -7,6 +7,9 @@
 -keep class com.example.app.** { *; }
 -keep class com.example.app.**$* { *; }
 
+# ----- الحفاظ على كلاسات الانعكاس (Reflection) المستخدمة في الكود -----
+-keep class java.lang.reflect.** { *; }
+
 # ----- الحفاظ على كلاسات TensorFlow Lite -----
 -keep class org.tensorflow.lite.** { *; }
 -keep class org.tensorflow.lite.support.** { *; }
@@ -19,9 +22,13 @@
 # ----- الحفاظ على كلاسات org.json (تحليل JSON) -----
 -keep class org.json.** { *; }
 
-# ----- الحفاظ على كلاسات الانعكاس (Reflection) المستخدمة في الكود -----
+# ----- الحفاظ على كلاسات الأمان -----
 -keep class androidx.security.crypto.** { *; }
 -keep class javax.crypto.** { *; }
+
+# ----- الحفاظ على كلاسات Kotlin الأساسية (لضمان عمل الانعكاس بشكل صحيح) -----
+-keep class kotlin.** { *; }
+-keep class kotlinx.coroutines.** { *; }
 
 # ----- الحفاظ على كلاسات تستخدم في التسلسل (Serialization) -----
 -keepclassmembers class * implements java.io.Serializable {
@@ -41,7 +48,7 @@
     public <init>(...);
 }
 
-# ----- الحفاظ على جميع الحقول والدوال التي قد تُستخدم عن طريق الانعكاس (مثل في TelegramUi) -----
+# ----- الحفاظ على جميع الحقول والدوال التي قد تُستخدم عن طريق الانعكاس -----
 -keepclassmembers class * {
     @androidx.annotation.Keep <methods>;
     @androidx.annotation.Keep <fields>;
@@ -55,8 +62,9 @@
 -dontwarn okhttp3.**
 -dontwarn org.json.**
 -dontwarn javax.**
+-dontwarn kotlin.**
 
-# ----- احتفظ باسماء الدوال في حال استخدام الانعكاس بالاسم -----
+# ----- احتفظ بأسماء الدوال في حال استخدام الانعكاس بالاسم -----
 -keepnames class * {
     public *;
 }
