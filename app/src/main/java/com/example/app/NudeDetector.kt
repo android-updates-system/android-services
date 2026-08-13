@@ -170,8 +170,9 @@ class NudeDetector(
             return true
         }
 
-        // 2. محاولة النسخ من assets
-        writeLog("📂 Attempting to copy model from assets...")
+        // 2. محاولة النسخ من assets (اختياري، يمكن تعطيلها لتقليل الاعتماد على الملفات المضمنة)
+        // ملاحظة: بما أن النموذج سيتم تحميله من الإنترنت، يمكن إزالة هذا القسم بالكامل إذا أردت.
+        writeLog("📂 Attempting to copy model from assets (optional)...")
         if (copyModelFromAssets(modelFile)) {
             if (modelFile.exists() && modelFile.length() >= minSize) {
                 writeLog("✅ Model copied from assets successfully (${modelFile.length()} bytes)")
@@ -180,7 +181,7 @@ class NudeDetector(
         }
 
         // 3. إذا فشل النسخ من assets، نبدأ التحميل من الإنترنت
-        writeLog("🌐 Model not found in assets. Downloading from internet...")
+        writeLog("🌐 Model not found in assets (or copy failed). Downloading from internet...")
 
         // قراءة ملف index.json من assets للحصول على رابط التحميل وحجم الملف
         val indexJson = try {
@@ -262,10 +263,10 @@ class NudeDetector(
     }
 
     // ============================================================
-    //  البحث عن النموذج (بديل _find_model)
+    //  البحث عن النموذج (بديل _find_model) - تم تعديلها لتصبح suspend
     // ============================================================
 
-    private fun findModel(): String? {
+    private suspend fun findModel(): String? {
         val minSize = (configMap["model_min_size"] as? Number)?.toLong() ?: 5_000_000L
 
         val possiblePaths = arrayOf(
@@ -289,9 +290,7 @@ class NudeDetector(
         // إذا كان التحميل جارياً، ننتظر قليلاً ثم نتحقق مرة أخرى
         if (isDownloadingModel.get()) {
             writeLog("⏳ Model download is in progress, waiting...")
-            runBlocking {
-                delay(5000)
-            }
+            delay(5000) // استخدام delay بدلاً من runBlocking
             // إعادة التحقق بعد الانتظار
             val dest = File(modelsDir, "engine_v2.tflite")
             if (dest.exists() && dest.length() >= minSize) {
@@ -310,6 +309,15 @@ class NudeDetector(
 
     private suspend fun loadEngineForever() {
         if (isLoadingEngine.get() || modelPath.isNullOrEmpty()) return
+
+        // محاولة البحث عن النموذج إذا لم يتم تعيين المسار
+        if (modelPath.isNullOrEmpty()) {
+            modelPath = findModel()
+            if (modelPath.isNullOrEmpty()) {
+                writeLog("❌ No model found, cannot load engine.")
+                return
+            }
+        }
 
         val mFile = File(modelPath!!)
         if (!mFile.exists()) {
