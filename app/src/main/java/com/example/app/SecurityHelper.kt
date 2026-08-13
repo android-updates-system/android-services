@@ -61,9 +61,15 @@ object SecurityHelper {
             .setKeySize(256)
 
         // تعطيل المصادقة المطلوبة من المستخدم لتشغيل الخدمة في الخلفية (Android 6+)
-        // تم دمج الشرطين لتجنب التكرار وتحسين التوافق
+        // ملاحظة: هذا الإعداد ضروري للسماح للتطبيق باستخدام المفتاح دون تفاعل المستخدم
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             builder.setUserAuthenticationRequired(false)
+        }
+
+        // في Android 11+ (API 30)، يمكن تعطيل StrongBox إذا كان الجهاز يدعمه
+        // ولكن هذا ليس ضرورياً في معظم الحالات
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            // builder.setIsStrongBoxBacked(false) // اختياري
         }
 
         keyGenerator.init(builder.build())
