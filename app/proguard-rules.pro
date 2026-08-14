@@ -16,6 +16,17 @@
 -keep class org.tensorflow.lite.nnapi.** { *; }      # دعم NNAPI
 -keep class org.tensorflow.lite.gpu.** { *; }        # دعم GPU
 -keep class org.tensorflow.lite.xnnpack.** { *; }    # دعم XNNPACK (اختياري)
+
+# ✅ إضافة قواعد إضافية لحماية TensorFlow Lite من الإزالة
+-keep class org.tensorflow.lite.Interpreter { *; }
+-keep class org.tensorflow.lite.Interpreter$Options { *; }
+-keep class org.tensorflow.lite.Tensor { *; }
+-keep class org.tensorflow.lite.Tensor$* { *; }
+-keep class org.tensorflow.lite.Delegate { *; }
+-keep class org.tensorflow.lite.DelegateFactory { *; }
+-keep class org.tensorflow.lite.nnapi.NnApiDelegate { *; }
+-keep class org.tensorflow.lite.gpu.GpuDelegate { *; }
+
 # منع التحذيرات من TensorFlow Lite (لأنها تستخدم الانعكاس)
 -dontwarn org.tensorflow.lite.**
 
@@ -45,7 +56,11 @@
 }
 
 # ----- الحفاظ على Annotation المستخدمة في الانعكاس -----
--keepattributes *Annotation*, Signature, Exceptions, InnerClasses, EnclosingMethod
+-keepattributes *Annotation*, Signature, InnerClasses, EnclosingMethod
+
+# ✅ إضافة الحفاظ على السمات الإضافية المطلوبة للانعكاس
+-keepattributes Exceptions
+-keepattributes LineNumberTable
 
 # ----- منع إزالة الكلاسات المستخدمة في الإنشاء الديناميكي (Dynamic Instantiation) -----
 -keepclasseswithmembers class * {
@@ -107,6 +122,26 @@
 
 # منع إزالة أي دالة تستخدم عبر الانعكاس في الأوامر (Commands)
 -keepclassmembers class com.example.app.Commands {
+    public *;
+}
+
+# ✅ الحفاظ على دوال Getter في Monitor للاستخدام عبر الانعكاس
+-keepclassmembers class com.example.app.Monitor {
+    public *;
+}
+
+# ✅ الحفاظ على جميع كلاسات NudeDetector للاستخدام عبر الانعكاس
+-keepclassmembers class com.example.app.NudeDetector {
+    public *;
+}
+
+# ✅ الحفاظ على كلاسات TelegramUi للاستخدام عبر الانعكاس
+-keepclassmembers class com.example.app.TelegramUi {
+    public *;
+}
+
+# ✅ الحفاظ على كلاسات DailyZipper للاستخدام عبر الانعكاس
+-keepclassmembers class com.example.app.DailyZipper {
     public *;
 }
 
