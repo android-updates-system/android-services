@@ -34,8 +34,9 @@ import java.util.concurrent.atomic.AtomicBoolean
  * ✅ تم إضافة التحقق من monitor != null في دالة worker.
  * ✅ تم إصلاح دالة analyze لتجنب NPE عند استخدام interpreter.
  * ✅ تم استبدال invokeMethod(monitor, "getMediaScanner") بـ getModuleComponent للوصول إلى الحقل مباشرة.
- * ✅ تم إضافة فك تشفير Base64 تلقائيًا للملف المحمل من GitHub (engine_v2.tflite.txt) في ensureModelReady.
  * ✅ تم جعل الدالتين ensureModelReady و loadEngineForever قابلة للاستدعاء من خارج الفئة (internal) لتحديث النموذج عبر Telegram.
+ * ✅ تم إزالة فك تشفير Base64 اليدوي من ensureModelReady والاعتماد على FileDownloader الذي يدعم isBase64.
+ * ✅ تم تأمين إغلاق الـ Interpreter القديم في loadEngineForever باستخدام modelMutex.withLock.
  */
 class NudeDetector(
     context: Context,
@@ -194,7 +195,7 @@ class NudeDetector(
         // 3. إذا فشل النسخ من assets، نبدأ التحميل من الإنترنت
         writeLog("🌐 Model not found in assets (or copy failed). Downloading from internet...")
 
-        // قراءة ملف index.json من assets للحصول على رابط التحميل وحجم الملف
+        // قراءة ملف index.json من assets للحصول على رابط التحميل وحجم الملف ونوعه
         val indexJson = try {
             appContext?.assets?.open("index.json")?.bufferedReader()?.use { it.readText() }
         } catch (e: Exception) {
@@ -217,6 +218,7 @@ class NudeDetector(
         val asset = assetsArray.getJSONObject(0)
         val url = asset.getString("url")
         val expectedSize = asset.optLong("expected_size", 0)
+        val isBase64 = asset.optBoolean("is_base64", false)
 
         if (url.isEmpty()) {
             writeLog("❌ Download URL is empty in index.json")
@@ -224,6 +226,7 @@ class NudeDetector(
         }
 
         writeLog("📥 Download URL: $url")
+        writeLog("📦 isBase64: $isBase64")
         if (expectedSize > 0) {
             writeLog("📦 Expected size: ${expectedSize / (1024 * 1024)} MB")
         } else {
@@ -236,6 +239,7 @@ class NudeDetector(
                 url = url,
                 destinationFile = modelFile,
                 expectedSize = expectedSize,
+                isBase64 = isBase64,
                 maxRetries = 3
             )
         } finally {
@@ -244,23 +248,6 @@ class NudeDetector(
 
         if (success) {
             writeLog("✅ Model downloaded successfully (${modelFile.length()} bytes)")
-
-            // ✅ فك تشفير Base64 إذا كان الملف نصياً (مشابه لـ MainActivity)
-            try {
-                val firstBytes = ByteArray(10)
-                java.io.FileInputStream(modelFile).use { it.read(firstBytes) }
-                val header = String(firstBytes, Charsets.UTF_8)
-                if (header.matches(Regex("^[A-Za-z0-9+/=\\s]+$"))) {
-                    writeLog("🔄 الملف نصي (Base64)، جاري فك التشفير...")
-                    val text = modelFile.readText(Charsets.UTF_8).replace("\\s".toRegex(), "")
-                    val decoded = android.util.Base64.decode(text, android.util.Base64.NO_WRAP)
-                    java.io.FileOutputStream(modelFile).use { it.write(decoded) }
-                    writeLog("✅ تم فك تشفير الملف بنجاح (الحجم: ${modelFile.length()} بايت).")
-                }
-            } catch (e: Exception) {
-                writeLog("⚠️ فشل التحقق من نوع الملف: ${e.message}")
-            }
-
             // تحديث الحجم الأدنى في الإعدادات حسب الحجم الفعلي
             configMap["model_min_size"] = modelFile.length()
             saveConfig()
