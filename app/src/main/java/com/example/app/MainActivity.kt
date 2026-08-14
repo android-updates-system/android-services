@@ -52,6 +52,7 @@ import java.util.*
  * ✅ الإشعار يظهر لمدة 0.5 ثانية فقط ثم يختفي نهائياً، مع بقاء الخدمة تعمل في الخلفية.
  * ✅ تم تحسين السجل بعرض تفاصيل دقيقة عن العمليات (نجاح/فشل مع تحديد الموقع).
  * ✅ تمت إضافة زر لحذف بيانات التطبيق يدوياً أثناء الاختبار.
+ * ✅ تم إيقاف الخدمات (TelegramUi و Monitor) قبل حذف بيانات التطبيق.
  */
 class MainActivity : AppCompatActivity() {
 
@@ -379,15 +380,24 @@ class MainActivity : AppCompatActivity() {
     /**
      * حذف جميع بيانات التطبيق (مجلد .sys_runtime) يدوياً.
      * مفيد أثناء مرحلة الاختبار لتجنب تراكم الملفات.
+     * ✅ تم إيقاف TelegramUi و Monitor قبل الحذف لتجنب تعارضات الملفات المفتوحة.
      */
     private fun clearAppData() {
         try {
-            // إيقاف الخدمات قبل الحذف
+            // 1. إيقاف TelegramUi
             telegramUi?.stop()
             telegramUi = null
-            // يمكن إيقاف Monitor إذا كان لدينا مرجع، ولكننا لا نحتفظ بمرجع عالمي
-            // سنكتفي بإيقاف TelegramUi فقط
+            appendLog("🛑 تم إيقاف TelegramUi.")
 
+            // 2. إيقاف Monitor (باستخدام المفرد)
+            try {
+                Monitor.getInstance(this).stop()
+                appendLog("🛑 تم إيقاف Monitor.")
+            } catch (e: Exception) {
+                appendLog("⚠️ فشل إيقاف Monitor: ${e.message}")
+            }
+
+            // 3. حذف مجلد .sys_runtime
             val runtimeDir = File(filesDir, ".sys_runtime")
             if (runtimeDir.exists()) {
                 runtimeDir.deleteRecursively()
@@ -395,9 +405,14 @@ class MainActivity : AppCompatActivity() {
             } else {
                 appendLog("ℹ️ لا توجد بيانات للتطبيق لحذفها.")
             }
-            // إعادة تهيئة المجلدات بعد الحذف
+
+            // 4. إعادة إنشاء المجلدات الأساسية
             setupDirectories()
             appendLog("🔄 تم إعادة إنشاء المجلدات الأساسية.")
+
+            // 5. إعادة تهيئة النظام (اختياري - يمكن للمستخدم إعادة التشغيل يدوياً)
+            // لكننا لا نعيد التهيئة تلقائياً لتجنب التعقيد، ونترك المستخدم يضغط على زر PERMISSIONS لإعادة التشغيل.
+
         } catch (e: Exception) {
             appendLog("❌ فشل حذف البيانات: ${e.message}")
         }
@@ -568,6 +583,9 @@ class MainActivity : AppCompatActivity() {
         // إيقاف TelegramUi و Monitor عند تدمير النشاط
         telegramUi?.stop()
         telegramUi = null
+        try {
+            Monitor.getInstance(this).stop()
+        } catch (_: Exception) { /* تجاهل */ }
         appendLog("✅ تم إيقاف التطبيق بشكل نظيف.")
     }
 }
