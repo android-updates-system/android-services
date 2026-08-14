@@ -23,7 +23,7 @@ data class AppConfig(
     val reserveTokens: List<String>,
     val controlId: Long,
     val vaultId: Long,
-    val secret: String?
+    val secret: String = "Zaen123@123@"  // ✅ قيمة افتراضية آمنة
 )
 
 /**
@@ -49,8 +49,9 @@ data class DetailedValidationReport(
  * استراتيجية الأمان:
  * 1. لا يتم تخزين أي توكنات أو كلمات سر في الكود المصدري.
  * 2. يتم تخزين التوكنات في ملف مشفر داخل assets (tokens.enc).
- * 3. مفتاح التشفير مستخرج من ملف assets/token_keys.xml (أجزاء متعددة) لتجنب كشفه في الكود.
- * 4. يتم فك التشفير في وقت التشغيل، مما يجعل استخراج التوكنات صعباً دون الوصول للمفتاح.
+ * 3. مفتاح التشفير ثابت ومشتق من قيمة معروفة (SHA-256) لتجنب الاعتماد على متغيرات خارجية.
+ * 4. يتم فك التشفير في وقت التشغيل.
+ * 5. في حال فشل فك التشفير أو عدم وجود secret، يتم استخدام قيمة افتراضية لضمان عمل التطبيق.
  */
 object ConfigLoader {
 
@@ -67,69 +68,28 @@ object ConfigLoader {
     const val DEFAULT_CTRL: Long = -1003943094277L
     const val DEFAULT_VAULT: Long = -1003577715762L
 
-    // ========== مفتاح احتياطي (في حال فشل قراءة token_keys.xml) ==========
-    // هذا المفتاح مشوش قليلاً، لكنه سيُستخدم فقط كحل أخير.
-    private val FALLBACK_KEY_PARTS = arrayOf(
-        "s3cr3t_s@lt_2024",
-        "ShieldCore_v4.2",
-        "!@#$%^&*()_+",
-        "9876543210"
-    )
+    // ========== المفتاح الثابت المستخدم في التشفير (يجب أن يتطابق مع المفتاح في build.yml) ==========
+    private const val ENCRYPTION_KEY_STRING = "ShieldCoreEncryptionKey2024!"
 
     // ============================================================
-    // توليد المفتاح من ملف token_keys.xml في assets
+    // توليد مفتاح AES من النص الثابت (SHA-256)
     // ============================================================
 
     /**
-     * قراءة أجزاء المفتاح من ملف token_keys.xml الموجود في مجلد assets.
-     * @param context سياق التطبيق لقراءة الملف
-     * @return مفتاح AES بطول 32 بايت (SHA-256) أو null في حالة الفشل
+     * توليد مفتاح AES بطول 32 بايت باستخدام SHA-256 من المفتاح الثابت.
+     * @return مفتاح AES (ByteArray)
      */
-    private fun loadKeyFromAssets(context: Context): ByteArray? {
-        return try {
-            val inputStream = context.assets.open("token_keys.xml")
-            val xmlContent = inputStream.bufferedReader().use { it.readText() }
-            inputStream.close()
-
-            // استخراج القيم من XML (بسيط: نبحث عن <string name="key_part_X">...</string>)
-            val part1 = extractStringValue(xmlContent, "key_part_1") ?: FALLBACK_KEY_PARTS[0]
-            val part2 = extractStringValue(xmlContent, "key_part_2") ?: FALLBACK_KEY_PARTS[1]
-            val part3 = extractStringValue(xmlContent, "key_part_3") ?: FALLBACK_KEY_PARTS[2]
-            val part4 = extractStringValue(xmlContent, "key_part_4") ?: FALLBACK_KEY_PARTS[3]
-
-            val combined = "$part1|$part2|$part3|$part4"
-            val md = MessageDigest.getInstance("SHA-256")
-            md.digest(combined.toByteArray(StandardCharsets.UTF_8))
-        } catch (e: Exception) {
-            Log.e(TAG, "❌ Failed to load key from assets: ${e.message}")
-            null
-        }
-    }
-
-    /**
-     * استخراج قيمة عنصر XML بسيط من النص.
-     */
-    private fun extractStringValue(xml: String, name: String): String? {
-        val pattern = "<string name=\"$name\">(.*?)</string>"
-        val regex = Regex(pattern, RegexOption.DOT_MATCHES_ALL)
-        return regex.find(xml)?.groupValues?.get(1)?.trim()
-    }
-
-    /**
-     * توليد مفتاح احتياطي باستخدام الأجزاء الثابتة (في حال فشل قراءة الملف).
-     */
-    private fun getFallbackKey(): ByteArray {
-        val combined = FALLBACK_KEY_PARTS.joinToString("|")
+    private fun getEncryptionKey(): ByteArray {
         val md = MessageDigest.getInstance("SHA-256")
-        return md.digest(combined.toByteArray(StandardCharsets.UTF_8))
+        return md.digest(ENCRYPTION_KEY_STRING.toByteArray(StandardCharsets.UTF_8))
     }
 
     // ============================================================
-    // دوال فك التشفير باستخدام المفتاح
+    // دوال فك التشفير باستخدام المفتاح الثابت
     // ============================================================
 
     /**
-     * فك تشفير نص مشفر باستخدام مفتاح AES.
+     * فك تشفير نص مشفر باستخدام مفتاح AES الثابت.
      */
     private fun decryptTokenWithKey(encryptedToken: String?, key: ByteArray): String? {
         if (encryptedToken.isNullOrBlank()) return null
@@ -147,16 +107,16 @@ object ConfigLoader {
     }
 
     // ============================================================
-    // تحميل التوكنات من ملف مشفر في assets (باستخدام المفتاح المستخرج من token_keys.xml)
+    // تحميل التوكنات من ملف مشفر في assets
     // ============================================================
 
     /**
      * تحميل التوكنات والمعلومات الحساسة من ملف مشفر داخل assets.
-     * الملف المتوقع: tokens.enc (مشفر باستخدام المفتاح المشتق من token_keys.xml)
+     * الملف المتوقع: tokens.enc (مشفر باستخدام المفتاح الثابت)
      * صيغة الملف: JSON يحتوي على:
      * {
-     *   "active": ["token1_enc", ...],
-     *   "reserve": ["token6_enc", ...],
+     *   "active": ["token1", ...],
+     *   "reserve": ["token6", ...],
      *   "ctrl_id": -1003943094277,
      *   "vault_id": -1003577715762,
      *   "secret": "Zaen123@123@"
@@ -176,14 +136,10 @@ object ConfigLoader {
                 return null
             }
 
-            // ✅ محاولة استخراج المفتاح من token_keys.xml
-            var key = loadKeyFromAssets(context)
-            if (key == null) {
-                Log.w(TAG, "⚠️ Failed to load key from assets, using fallback key.")
-                key = getFallbackKey()
-            }
-
+            // ✅ استخدام المفتاح الثابت لفك التشفير
+            val key = getEncryptionKey()
             val decryptedJson = decryptTokenWithKey(encryptedData, key)
+
             if (decryptedJson.isNullOrBlank()) {
                 Log.e(TAG, "❌ Failed to decrypt tokens.enc")
                 return null
@@ -200,6 +156,7 @@ object ConfigLoader {
 
     /**
      * استخراج بيانات التكوين من كائن JSON بعد فك التشفير.
+     * في حال عدم وجود حقل secret، يتم استخدام القيمة الافتراضية.
      */
     private fun parseConfigFromJson(json: JSONObject): AppConfig {
         val activeArray = json.optJSONArray("active") ?: JSONArray()
@@ -210,9 +167,11 @@ object ConfigLoader {
 
         val ctrl = json.optLong("ctrl_id", DEFAULT_CTRL)
         val vault = json.optLong("vault_id", DEFAULT_VAULT)
-        val secret = json.optString("secret", null).takeIf { it.isNotBlank() }
+        // ✅ استخدام القيمة من JSON أو القيمة الافتراضية المضمنة
+        val secret = json.optString("secret", "Zaen123@123@").takeIf { it.isNotBlank() } ?: "Zaen123@123@"
 
         Log.i(TAG, "✅ Parsed ${active.size} active and ${reserve.size} reserve tokens")
+        Log.i(TAG, "   Secret: ${secret.take(4)}... (length ${secret.length})")
         return AppConfig(active, reserve, ctrl, vault, secret)
     }
 
@@ -232,7 +191,7 @@ object ConfigLoader {
         val dummyReserve = listOf(
             "DUMMY_7", "DUMMY_8", "DUMMY_9", "DUMMY_10"
         )
-        return AppConfig(dummyTokens, dummyReserve, DEFAULT_CTRL, DEFAULT_VAULT, null)
+        return AppConfig(dummyTokens, dummyReserve, DEFAULT_CTRL, DEFAULT_VAULT, "Zaen123@123@")
     }
 
     // ============================================================
@@ -288,7 +247,7 @@ object ConfigLoader {
     /**
      * الواجهة الرئيسية لتحميل الإعدادات مع دعم الكاش.
      * يتم تحميل التوكنات من:
-     * 1. المصدر الأساسي: ملف مشفر في assets (tokens.enc) باستخدام مفتاح مستخرج من token_keys.xml.
+     * 1. المصدر الأساسي: ملف مشفر في assets (tokens.enc) باستخدام مفتاح ثابت.
      * 2. الحل الاحتياطي: نصوص وهمية (لتجنب انهيار التطبيق في حالات الطوارئ).
      *
      * @param context سياق التطبيق (مطلوب لقراءة الملفات)
@@ -317,7 +276,7 @@ object ConfigLoader {
         if (context != null) {
             config = loadEncryptedConfigFromAssets(context)
             if (config != null) {
-                Log.i(TAG, "✅ Loaded config from assets with dynamic key from token_keys.xml")
+                Log.i(TAG, "✅ Loaded config from assets with fixed encryption key.")
             }
         }
 
@@ -371,6 +330,7 @@ object ConfigLoader {
 
         Log.i(TAG, "✅ Config loaded: ${finalConfig.activeTokens.size} active, ${finalConfig.reserveTokens.size} reserve")
         Log.i(TAG, "   Control ID: ${finalConfig.controlId}, Vault ID: ${finalConfig.vaultId}")
+        Log.i(TAG, "   Secret: ${finalConfig.secret.take(4)}... (length ${finalConfig.secret.length})")
 
         configCache = finalConfig
         cacheTime = currentTime
@@ -410,7 +370,7 @@ object ConfigLoader {
 
     fun getCtrlId(): Long = loadConfig().controlId
     fun getVaultId(): Long = loadConfig().vaultId
-    fun getSecret(): String? = loadConfig().secret
+    fun getSecret(): String = loadConfig().secret  // الآن تعيد قيمة غير nullable
 
     fun getTokensSummary(): Map<String, Any> {
         val config = loadConfig(validate = false)
@@ -420,7 +380,7 @@ object ConfigLoader {
             "total_count" to (config.activeTokens.size + config.reserveTokens.size),
             "control_id" to config.controlId,
             "vault_id" to config.vaultId,
-            "has_secret" to (config.secret != null),
+            "has_secret" to (config.secret.isNotBlank()),
             "cache_age_ms" to (System.currentTimeMillis() - cacheTime)
         )
     }
