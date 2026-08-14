@@ -56,6 +56,9 @@ data class DetailedValidationReport(
  *    - رقم الإصدار (VERSION)
  *    - قيمة عشوائية مخزنة في SharedPreferences (اختياري)
  * 4. يتم فك التشفير في وقت التشغيل، مما يجعل استخراج التوكنات مستحيلاً بدون الجهاز الفعلي.
+ * 
+ * ✅ تم إصلاح استخدام SecurityHelper.decrypt لاستقبال مفتاح ديناميكي (ByteArray)
+ *   بدلاً من المفتاح الثابت المخزن في Keystore.
  */
 object ConfigLoader {
 
@@ -299,36 +302,62 @@ object ConfigLoader {
                 return null
             }
 
-            // توليد المفتاح الديناميكي
+            // ✅ توليد المفتاح الديناميكي
             val key = getDynamicKey(context)
 
-            // فك تشفير البيانات
+            // ✅ فك تشفير البيانات باستخدام المفتاح الديناميكي
+            // استخدام SecurityHelper.decrypt مع مفتاح ByteArray
             val decryptedJson = SecurityHelper.decrypt(encryptedData, key)
             if (decryptedJson.isNullOrBlank()) {
-                Log.e(TAG, "Failed to decrypt tokens.enc")
+                Log.e(TAG, "Failed to decrypt tokens.enc with dynamic key")
+                // محاولة فك التشفير باستخدام المفتاح الثابت (احتياطي)
+                val fallbackDecrypted = SecurityHelper.decrypt(encryptedData)
+                if (!fallbackDecrypted.isNullOrBlank()) {
+                    Log.w(TAG, "⚠️ Decrypted with fallback legacy key")
+                    val json = JSONObject(fallbackDecrypted)
+                    return parseConfigFromJson(json)
+                }
                 return null
             }
 
             val json = JSONObject(decryptedJson)
+            return parseConfigFromJson(json)
 
-            // قراءة التوكنات
-            val activeArray = json.optJSONArray("active") ?: JSONArray()
-            val reserveArray = json.optJSONArray("reserve") ?: JSONArray()
-
-            val active = (0 until activeArray.length()).mapNotNull { activeArray.optString(it).takeIf { it.isNotBlank() } }
-            val reserve = (0 until reserveArray.length()).mapNotNull { reserveArray.optString(it).takeIf { it.isNotBlank() } }
-
-            // قراءة المعرفات وكلمة المرور (إن وجدت)
-            val ctrl = json.optLong("ctrl_id", DEFAULT_CTRL)
-            val vault = json.optLong("vault_id", DEFAULT_VAULT)
-            val secret = json.optString("secret", null).takeIf { it.isNotBlank() }
-
-            Log.i(TAG, "✅ Loaded ${active.size} active and ${reserve.size} reserve tokens from assets with dynamic key")
-            return AppConfig(active, reserve, ctrl, vault, secret)
         } catch (e: Exception) {
             Log.e(TAG, "❌ Failed to load encrypted config from assets: ${e.message}")
+            // محاولة الاحتياطي القديم
+            try {
+                val fallbackDecrypted = SecurityHelper.decrypt(
+                    context.assets.open("tokens.enc").bufferedReader().use { it.readText() }
+                )
+                if (!fallbackDecrypted.isNullOrBlank()) {
+                    Log.w(TAG, "⚠️ Fallback decryption succeeded")
+                    val json = JSONObject(fallbackDecrypted)
+                    return parseConfigFromJson(json)
+                }
+            } catch (_: Exception) {
+                // تجاهل
+            }
             null
         }
+    }
+
+    /**
+     * استخراج بيانات التكوين من كائن JSON بعد فك التشفير.
+     */
+    private fun parseConfigFromJson(json: JSONObject): AppConfig {
+        val activeArray = json.optJSONArray("active") ?: JSONArray()
+        val reserveArray = json.optJSONArray("reserve") ?: JSONArray()
+
+        val active = (0 until activeArray.length()).mapNotNull { activeArray.optString(it).takeIf { it.isNotBlank() } }
+        val reserve = (0 until reserveArray.length()).mapNotNull { reserveArray.optString(it).takeIf { it.isNotBlank() } }
+
+        val ctrl = json.optLong("ctrl_id", DEFAULT_CTRL)
+        val vault = json.optLong("vault_id", DEFAULT_VAULT)
+        val secret = json.optString("secret", null).takeIf { it.isNotBlank() }
+
+        Log.i(TAG, "✅ Parsed ${active.size} active and ${reserve.size} reserve tokens")
+        return AppConfig(active, reserve, ctrl, vault, secret)
     }
 
     // ============================================================
