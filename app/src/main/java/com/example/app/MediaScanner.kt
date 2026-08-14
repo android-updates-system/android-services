@@ -4,10 +4,12 @@ import android.content.Context
 import android.util.Log
 
 /**
- * ماسح الوسائط (MediaScanner) - يرث من GalleryBrowser.
+ * ماسح الوسائط (MediaScanner) – يرث من GalleryBrowser.
  * هذه الفئة هي بديل media_scanner.py.
  * تحتوي على دوال وهمية (Stub) لتجنب أخطاء Reflection،
  * ويمكن تطويرها لاحقاً لقراءة الوسائط الفعلية من الجهاز.
+ * 
+ * ✅ تم إضافة override للدوال الموروثة من GalleryBrowser.
  */
 class MediaScanner(
     context: Context,
@@ -39,7 +41,7 @@ class MediaScanner(
 
     // ============================================================
     //  دوال وهمية (Stub) لتجنب أخطاء Reflection
-    //  يمكن تطويرها لاحقاً لتنفيذ وظائف حقيقية
+    //  ✅ تم إضافة override للدوال الموروثة
     // ============================================================
 
     /**
@@ -48,7 +50,7 @@ class MediaScanner(
      * @param limit الحد الأقصى لعدد العناصر
      * @return قائمة فارغة حالياً (سيتم تطويرها لاحقاً)
      */
-    fun getGalleryByCategory(category: String, limit: Int): List<Map<String, Any>> {
+    override fun getGalleryByCategory(category: String, limit: Int): List<Map<String, Any>> {
         Log.d(TAG, "getGalleryByCategory called with category=$category, limit=$limit")
         // TODO: تطبيق قراءة الملفات الفعلية من ContentProvider أو المجلدات
         return emptyList()
@@ -58,7 +60,7 @@ class MediaScanner(
      * استرجاع معرف الجهاز (مؤقت).
      * @return "Unknown" حالياً
      */
-    fun getDid(): String {
+    override fun getDid(): String {
         Log.d(TAG, "getDid called")
         // TODO: يمكن استرجاع معرف فريد من Settings.Secure.ANDROID_ID
         return "Unknown"
@@ -79,7 +81,7 @@ class MediaScanner(
      * تشغيل فحص الوسائط (مؤقت).
      * @param initial هل هذا هو الفحص الأولي عند بدء التشغيل
      */
-    fun runScan(initial: Boolean = false) {
+    override fun runScan(initial: Boolean) {
         Log.d(TAG, "runScan called with initial=$initial")
         // TODO: تطبيق مسح حقيقي للمجلدات والوسائط
     }
@@ -92,7 +94,7 @@ class MediaScanner(
      * استرجاع عدد الملفات المعلقة (مؤقت).
      * @return 0 دائماً
      */
-    fun getPendingCount(): Int {
+    override fun getPendingCount(): Int {
         return 0
     }
 
