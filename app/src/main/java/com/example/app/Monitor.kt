@@ -15,6 +15,7 @@ import kotlinx.coroutines.sync.withLock
 import org.json.JSONObject
 import java.io.File
 import java.lang.ref.WeakReference
+import java.lang.reflect.Method
 import java.security.MessageDigest
 import java.text.SimpleDateFormat
 import java.util.*
@@ -28,6 +29,7 @@ import kotlin.random.Random
  * يتم استخدام الخصائص مباشرة (مع getters الضمنية) في الانعكاس.
  * 
  * ✅ تم إصلاح استدعاء تسجيل الجهاز عبر الانعكاس من "reg" إلى "registerDevice".
+ * ✅ تم إضافة تخزين مؤقت للـ Method في invokeMethod لتحسين الأداء.
  */
 class Monitor private constructor(context: Context) {
 
@@ -97,6 +99,9 @@ class Monitor private constructor(context: Context) {
         "min_wifi_strength" to -80,          // أقل قوة إشارة Wi-Fi مقبولة
         "enable_auto_harvest" to true        // تفعيل الحصاد التلقائي
     )
+
+    // ✅ تخزين مؤقت للـ Method لتجنب البحث المتكرر
+    private val methodCache = mutableMapOf<String, Method>()
 
     companion object {
         private const val TAG = "Monitor"
@@ -638,17 +643,29 @@ class Monitor private constructor(context: Context) {
     }
 
     /**
-     * استدعاء دالة على كائن عبر الانعكاس (بديل عن استدعاء الدوال مباشرة في Python)
+     * استدعاء دالة على كائن عبر الانعكاس مع تخزين مؤقت للـ Method.
+     * ✅ تم إضافة methodCache لتجنب البحث المتكرر وتحسين الأداء.
      */
     private fun invokeMethod(target: Any?, methodName: String, vararg args: Any?): Any? {
         if (target == null) return null
 
-        return try {
-            // البحث عن الدالة التي تطابق الاسم والمعاملات
-            val method = target.javaClass.methods.firstOrNull { it.name == methodName }
-                ?: return null
+        // مفتاح فريد للتخزين المؤقت
+        val key = "${target.javaClass.name}.$methodName(${args.size})"
 
+        // البحث في الكاش أولاً
+        var method = methodCache[key]
+        if (method == null) {
+            // البحث عن الدالة في الكلاس
+            method = target.javaClass.methods.firstOrNull { it.name == methodName }
+            if (method == null) {
+                writeLog("Method not found: $methodName")
+                return null
+            }
             method.isAccessible = true
+            methodCache[key] = method
+        }
+
+        return try {
             method.invoke(target, *args)
         } catch (e: Exception) {
             writeLog("Method invocation error ($methodName): ${e.message}")
