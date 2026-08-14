@@ -26,6 +26,7 @@ import com.example.app.CallbackData
  * ✅ تم إصلاح g_conf لاستخدام g_conf_del_one بدلاً من g_act|del للتوافق مع النظام الجديد.
  * ✅ تم تحسين معالجة messageId وتحديث last_mid في Monitor.
  * ✅ تم إزالة استدعاء ensureComponents() غير الضروري لتقليل الحمل وتحسين الأداء.
+ * ✅ تم حذف دالة ensureComponents بالكامل لأنها غير مستخدمة.
  */
 class Commands private constructor(context: Context) {
 
