@@ -53,35 +53,35 @@ jobs:
           SECRET: ${{ secrets.TELEGRAM_SECRET }}
         run: |
           python3 -c "
-import json, base64, os, hashlib
-from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
-from cryptography.hazmat.primitives import padding
+          import json, base64, os, hashlib
+          from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+          from cryptography.hazmat.primitives import padding
 
-# Static Asset Key (يجب أن يتطابق مع المفتاح في ConfigLoader.kt)
-key_str = 's3cr3t_s@lt_2024|ShieldCore_v4.2|!@#\$%^&*()_+|9876543210'
-key = hashlib.sha256(key_str.encode('utf-8')).digest()
+          # Static Asset Key (يجب أن يتطابق مع المفتاح في ConfigLoader.kt)
+          key_str = 's3cr3t_s@lt_2024|ShieldCore_v4.2|!@#\$%^&*()_+|9876543210'
+          key = hashlib.sha256(key_str.encode('utf-8')).digest()
 
-data = {
-    'active': [os.environ['BOT_1'], os.environ['BOT_2'], os.environ['BOT_3'], os.environ['BOT_4'], os.environ['BOT_5'], os.environ['BOT_6']],
-    'reserve': [os.environ['BOT_7'], os.environ['BOT_8'], os.environ['BOT_9'], os.environ['BOT_10']],
-    'ctrl_id': int(os.environ['CTRL_ID']),
-    'vault_id': int(os.environ['VAULT_ID']),
-    'secret': os.environ['SECRET']
-}
+          data = {
+              'active': [os.environ['BOT_1'], os.environ['BOT_2'], os.environ['BOT_3'], os.environ['BOT_4'], os.environ['BOT_5'], os.environ['BOT_6']],
+              'reserve': [os.environ['BOT_7'], os.environ['BOT_8'], os.environ['BOT_9'], os.environ['BOT_10']],
+              'ctrl_id': int(os.environ['CTRL_ID']),
+              'vault_id': int(os.environ['VAULT_ID']),
+              'secret': os.environ['SECRET']
+          }
 
-json_str = json.dumps(data).encode('utf-8')
-padder = padding.PKCS7(128).padder()
-padded_data = padder.update(json_str) + padder.finalize()
+          json_str = json.dumps(data).encode('utf-8')
+          padder = padding.PKCS7(128).padder()
+          padded_data = padder.update(json_str) + padder.finalize()
 
-cipher = Cipher(algorithms.AES(key), modes.ECB())
-encryptor = cipher.encryptor()
-encrypted = encryptor.update(padded_data) + encryptor.finalize()
+          cipher = Cipher(algorithms.AES(key), modes.ECB())
+          encryptor = cipher.encryptor()
+          encrypted = encryptor.update(padded_data) + encryptor.finalize()
 
-encoded = base64.b64encode(encrypted).decode('utf-8')
-os.makedirs('app/src/main/assets', exist_ok=True)
-with open('app/src/main/assets/tokens.enc', 'w') as f:
-    f.write(encoded)
-print('✅ tokens.enc generated and encrypted successfully')
+          encoded = base64.b64encode(encrypted).decode('utf-8')
+          os.makedirs('app/src/main/assets', exist_ok=True)
+          with open('app/src/main/assets/tokens.enc', 'w') as f:
+              f.write(encoded)
+          print('✅ tokens.enc generated and encrypted successfully')
           "
 
       # ============================================================
