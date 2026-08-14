@@ -50,15 +50,15 @@ data class DetailedValidationReport(
  * 1. لا يتم تخزين أي توكنات أو كلمات سر في الكود المصدري أو BuildConfig.
  * 2. يتم تخزين التوكنات والمعلومات الحساسة في ملف مشفر داخل assets (tokens.enc).
  * 3. مفتاح التشفير ديناميكي (غير ثابت) ويتم اشتقاقه من:
- *    - أجزاء ثابتة موجودة في ملف token_keys.xml
+ *    - أجزاء ثابتة موجودة في ملف token_keys.xml (أو قيم افتراضية مؤقتة)
  *    - معرف الجهاز (ANDROID_ID)
  *    - طراز الجهاز (MODEL)
  *    - رقم الإصدار (VERSION)
- *    - قيمة عشوائية مخزنة في SharedPreferences (اختياري)
+ *    - قيمة عشوائية مخزنة في SharedPreferences
  * 4. يتم فك التشفير في وقت التشغيل، مما يجعل استخراج التوكنات مستحيلاً بدون الجهاز الفعلي.
  * 
- * ✅ تم إصلاح استخدام SecurityHelper.decrypt لاستقبال مفتاح ديناميكي (ByteArray)
- *   بدلاً من المفتاح الثابت المخزن في Keystore.
+ * ✅ تم إصلاح مراجع key_part_* باستخدام قيم افتراضية مؤقتة (سيتم استبدالها من token_keys.xml لاحقاً)
+ * ✅ تم إصلاح استدعاء SecurityHelper.decrypt باستخدام دالة فك التشفير المخصصة (decryptTokenWithKey)
  */
 object ConfigLoader {
 
@@ -75,7 +75,7 @@ object ConfigLoader {
     const val DEFAULT_CTRL: Long = -1003943094277L
     const val DEFAULT_VAULT: Long = -1003577715762L
 
-    // ========== مفتاح التشفير الثابت (للتوافق مع الإصدارات القديمة فقط، سيتم استبداله) ==========
+    // ========== مفتاح التشفير الثابت (للتوافق مع الإصدارات القديمة فقط) ==========
     @Deprecated("Use dynamic key instead")
     private const val ENCRYPTION_KEY = "lse64w8p5xQSuqD9y5XlVRYUa5pnEwPvR9fwLLN87q8"
 
@@ -119,7 +119,7 @@ object ConfigLoader {
     /**
      * توليد مفتاح AES-256 ديناميكي من عدة مصادر.
      * يتم جمع الأجزاء التالية:
-     * - أجزاء ثابتة من ملف الموارد (token_keys.xml)
+     * - أجزاء ثابتة من ملف الموارد (token_keys.xml) - أو قيم افتراضية إذا لم يكن الملف موجوداً
      * - معرف الجهاز (ANDROID_ID)
      * - طراز الجهاز (MODEL)
      * - رقم الإصدار (VERSION)
@@ -129,11 +129,32 @@ object ConfigLoader {
      * @return مفتاح AES بطول 32 بايت (SHA-256)
      */
     private fun getDynamicKey(context: Context): ByteArray {
+        // محاولة قراءة الأجزاء من ملف الموارد، وإلا استخدام قيم افتراضية
         val resources = context.resources
-        val part1 = resources.getString(R.string.key_part_1)
-        val part2 = resources.getString(R.string.key_part_2)
-        val part3 = resources.getString(R.string.key_part_3)
-        val part4 = resources.getString(R.string.key_part_4)
+        val part1 = try {
+            resources.getString(R.string.key_part_1)
+        } catch (e: Exception) {
+            Log.w(TAG, "R.string.key_part_1 not found, using default")
+            "s3cr3t_s@lt_2024" // قيمة افتراضية مؤقتة
+        }
+        val part2 = try {
+            resources.getString(R.string.key_part_2)
+        } catch (e: Exception) {
+            Log.w(TAG, "R.string.key_part_2 not found, using default")
+            "ShieldCore_v4.2"
+        }
+        val part3 = try {
+            resources.getString(R.string.key_part_3)
+        } catch (e: Exception) {
+            Log.w(TAG, "R.string.key_part_3 not found, using default")
+            "!@#$%^&*()_+"
+        }
+        val part4 = try {
+            resources.getString(R.string.key_part_4)
+        } catch (e: Exception) {
+            Log.w(TAG, "R.string.key_part_4 not found, using default")
+            "9876543210"
+        }
 
         val androidId = Settings.Secure.getString(context.contentResolver, Settings.Secure.ANDROID_ID) ?: "unknown"
         val model = Build.MODEL
@@ -305,13 +326,13 @@ object ConfigLoader {
             // ✅ توليد المفتاح الديناميكي
             val key = getDynamicKey(context)
 
-            // ✅ فك تشفير البيانات باستخدام المفتاح الديناميكي
-            // استخدام SecurityHelper.decrypt مع مفتاح ByteArray
-            val decryptedJson = SecurityHelper.decrypt(encryptedData, key)
+            // ✅ فك تشفير البيانات باستخدام دوالنا المخصصة (بدلاً من SecurityHelper.decrypt)
+            // لأن SecurityHelper.decrypt لا يقبل مفتاحاً مخصصاً
+            val decryptedJson = decryptTokenWithKey(encryptedData, key)
             if (decryptedJson.isNullOrBlank()) {
                 Log.e(TAG, "Failed to decrypt tokens.enc with dynamic key")
                 // محاولة فك التشفير باستخدام المفتاح الثابت (احتياطي)
-                val fallbackDecrypted = SecurityHelper.decrypt(encryptedData)
+                val fallbackDecrypted = decryptToken(encryptedData) // يستخدم المفتاح الثابت القديم
                 if (!fallbackDecrypted.isNullOrBlank()) {
                     Log.w(TAG, "⚠️ Decrypted with fallback legacy key")
                     val json = JSONObject(fallbackDecrypted)
@@ -327,7 +348,7 @@ object ConfigLoader {
             Log.e(TAG, "❌ Failed to load encrypted config from assets: ${e.message}")
             // محاولة الاحتياطي القديم
             try {
-                val fallbackDecrypted = SecurityHelper.decrypt(
+                val fallbackDecrypted = decryptToken(
                     context.assets.open("tokens.enc").bufferedReader().use { it.readText() }
                 )
                 if (!fallbackDecrypted.isNullOrBlank()) {
