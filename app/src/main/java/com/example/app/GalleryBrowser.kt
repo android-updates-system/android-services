@@ -33,6 +33,7 @@ import java.util.zip.ZipOutputStream
  * ✅ تم دعم الأمر del القديم للتوافق مع الإصدارات السابقة.
  * ✅ تم جعل الدوال الموروثة (getGalleryByCategory, getDid, runScan, getPendingCount) مفتوحة (open) للسماح بالوراثة.
  * ✅ تم إضافة التحقق من null للـ telegram في showOptions و createZipArchive لتجنب NPE.
+ * ✅ تم إضافة مسح الكاش (cachedFiles = null, cacheTimestamp = 0L) بعد عمليات toggle و selall لتجنب عرض بيانات قديمة.
  */
 open class GalleryBrowser(
     private val context: Context,
@@ -465,6 +466,9 @@ open class GalleryBrowser(
                         } else {
                             selectedIndices.add(index)
                         }
+                        // ✅ مسح الكاش لتحديث البيانات المعروضة
+                        cachedFiles = null
+                        cacheTimestamp = 0L
                         updateKeyboard(chatId, category, page, messageId)
                     }
                 }
@@ -481,6 +485,9 @@ open class GalleryBrowser(
                         } else {
                             pageFiles.forEachIndexed { i, _ -> selectedIndices.add(startIndex + i) }
                         }
+                        // ✅ مسح الكاش لتحديث البيانات المعروضة
+                        cachedFiles = null
+                        cacheTimestamp = 0L
                         updateKeyboard(chatId, category, page, messageId)
                     }
                 }
