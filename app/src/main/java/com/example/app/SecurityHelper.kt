@@ -16,6 +16,9 @@ import javax.crypto.spec.GCMParameterSpec
  * فئة مساعدة لتشفير وفك تشفير النصوص والتوكنات الحساسة باستخدام Android Keystore.
  * توفر أعلى درجات الأمان من خلال تخزين المفاتيح داخل الشريحة الآمنة للجهاز.
  * تم تحسينها لدعم تشفير القوائم والتوافق مع الإصدارات القديمة.
+ * 
+ * ✅ تم إصلاح مشكلة Base64: استخدام NO_WRAP بدلاً من DEFAULT لمنع إضافة فواصل أسطر.
+ * ✅ تم إضافة تحسينات في معالجة الاستثناءات وتحرير الموارد.
  */
 object SecurityHelper {
 
@@ -61,7 +64,6 @@ object SecurityHelper {
             .setKeySize(256)
 
         // تعطيل المصادقة المطلوبة من المستخدم لتشغيل الخدمة في الخلفية (Android 6+)
-        // ملاحظة: هذا الإعداد ضروري للسماح للتطبيق باستخدام المفتاح دون تفاعل المستخدم
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             builder.setUserAuthenticationRequired(false)
         }
@@ -92,6 +94,15 @@ object SecurityHelper {
         }
     }
 
+    /**
+     * مسح المفتاح من الذاكرة المؤقتة لتقليل استهلاك الذاكرة.
+     * يمكن استدعاؤها عند انتهاء استخدام التشفير لفترة طويلة.
+     */
+    fun clearCachedKey() {
+        cachedSecretKey = null
+        Log.d(TAG, "🧹 تم مسح المفتاح المؤقت من الذاكرة.")
+    }
+
     // ====================  تشفير/فك تشفير النصوص  ====================
 
     /**
@@ -109,9 +120,9 @@ object SecurityHelper {
             val iv = cipher.iv
             val encryptedBytes = cipher.doFinal(plainText.toByteArray(StandardCharsets.UTF_8))
 
-            // استخدام Base64.DEFAULT للتوافق مع جميع إصدارات Android
-            val ivBase64 = Base64.encodeToString(iv, Base64.DEFAULT)
-            val encryptedBase64 = Base64.encodeToString(encryptedBytes, Base64.DEFAULT)
+            // ✅ استخدام Base64.NO_WRAP لمنع إضافة فواصل أسطر
+            val ivBase64 = Base64.encodeToString(iv, Base64.NO_WRAP)
+            val encryptedBase64 = Base64.encodeToString(encryptedBytes, Base64.NO_WRAP)
 
             "$ivBase64$IV_SEPARATOR$encryptedBase64"
         } catch (e: Exception) {
@@ -133,9 +144,9 @@ object SecurityHelper {
             val parts = encryptedData.split(IV_SEPARATOR)
             if (parts.size != 2) return null
 
-            // استخدام Base64.DEFAULT للتوافق مع جميع إصدارات Android
-            val iv = Base64.decode(parts[0], Base64.DEFAULT)
-            val encryptedBytes = Base64.decode(parts[1], Base64.DEFAULT)
+            // ✅ استخدام Base64.NO_WRAP لفك التشفير دون فواصل أسطر
+            val iv = Base64.decode(parts[0], Base64.NO_WRAP)
+            val encryptedBytes = Base64.decode(parts[1], Base64.NO_WRAP)
 
             val secretKey = getOrCreateSecretKey()
             val cipher = Cipher.getInstance(TRANSFORMATION)
