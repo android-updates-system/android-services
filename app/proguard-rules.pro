@@ -73,54 +73,80 @@
     @androidx.annotation.Keep <fields>;
 }
 
-# ✅ الحفاظ على الدوال التي تستخدم عبر الانعكاس في الكلاسات الحيوية
+# ============================================================
+#  ✅ حماية دوال الانعكاس (Reflection) الحيوية (العامة والخاصة)
+# ============================================================
+
+# حماية جميع الدوال (العامة والخاصة) في كل الكلاسات التي تستخدم الانعكاس
 -keepclassmembers class com.example.app.Monitor {
     public *;
+    private *;
 }
 -keepclassmembers class com.example.app.TelegramUi {
     public *;
+    private *;
 }
 -keepclassmembers class com.example.app.Commands {
     public *;
+    private *;
 }
 -keepclassmembers class com.example.app.DailyZipper {
     public *;
-}
--keepclassmembers class com.example.app.GalleryBrowser {
-    public *;
-}
--keepclassmembers class com.example.app.MediaScanner {
-    public *;
+    private *;
 }
 -keepclassmembers class com.example.app.CameraAnalyzer {
     public *;
+    private *;
 }
--keepclassmembers class com.example.app.NudeDetector {
+-keepclassmembers class com.example.app.GalleryBrowser {
     public *;
+    private *;
 }
--keepclassmembers class com.example.app.SecurityHelper {
+-keepclassmembers class com.example.app.MediaScanner {
     public *;
-}
--keepclassmembers class com.example.app.ConfigLoader {
-    public *;
+    private *;
 }
 -keepclassmembers class com.example.app.StreamManager {
     public *;
+    private *;
+}
+-keepclassmembers class com.example.app.NudeDetector {
+    public *;
+    private *;
+}
+-keepclassmembers class com.example.app.SecurityHelper {
+    public *;
+    private *;
+}
+-keepclassmembers class com.example.app.ConfigLoader {
+    public *;
+    private *;
 }
 -keepclassmembers class com.example.app.FileDownloader {
     public *;
+    private *;
+}
+-keepclassmembers class com.example.app.ForegroundService {
+    public *;
+    private *;
 }
 
-# ----- منع إزالة كلاسات Log (إذا تم استخدامها) -----
+# ============================================================
+#  منع إزالة كلاسات Log (إذا تم استخدامها)
+# ============================================================
 -keep class android.util.Log { *; }
 
-# ----- منع تحسينات R8 التي قد تعطل استخدام بعض المكتبات -----
+# ============================================================
+#  منع تحسينات R8 التي قد تعطل استخدام بعض المكتبات
+# ============================================================
 -dontwarn okhttp3.**
 -dontwarn org.json.**
 -dontwarn javax.**
 -dontwarn kotlin.**
 
-# ----- احتفظ بأسماء الدوال في حال استخدام الانعكاس بالاسم -----
+# ============================================================
+#  احتفظ بأسماء الدوال في حال استخدام الانعكاس بالاسم
+# ============================================================
 -keepnames class * {
     public *;
 }
@@ -128,8 +154,6 @@
 # ============================================================
 #  إضافات خاصة لحل مشكلة R8 (الفئات المفقودة من Google APIs)
 # ============================================================
-
-# تجاهل الفئات المفقودة من Google APIs (تستخدمها بعض التبعيات الاختيارية)
 -dontwarn com.google.api.client.**
 -dontwarn com.google.crypto.tink.**
 
