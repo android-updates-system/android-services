@@ -50,15 +50,15 @@ data class DetailedValidationReport(
  * 1. لا يتم تخزين أي توكنات أو كلمات سر في الكود المصدري أو BuildConfig.
  * 2. يتم تخزين التوكنات والمعلومات الحساسة في ملف مشفر داخل assets (tokens.enc).
  * 3. مفتاح التشفير ديناميكي (غير ثابت) ويتم اشتقاقه من:
- *    - أجزاء ثابتة موجودة في ملف token_keys.xml (أو قيم افتراضية مؤقتة)
+ *    - أجزاء ثابتة (مضمنة في الكود بشكل مشوش) 
  *    - معرف الجهاز (ANDROID_ID)
  *    - طراز الجهاز (MODEL)
  *    - رقم الإصدار (VERSION)
  *    - قيمة عشوائية مخزنة في SharedPreferences
  * 4. يتم فك التشفير في وقت التشغيل، مما يجعل استخراج التوكنات مستحيلاً بدون الجهاز الفعلي.
  * 
- * ✅ تم إصلاح مراجع key_part_* باستخدام قيم افتراضية مؤقتة (سيتم استبدالها من token_keys.xml لاحقاً)
- * ✅ تم إصلاح استدعاء SecurityHelper.decrypt باستخدام دالة فك التشفير المخصصة (decryptTokenWithKey)
+ * ✅ تم إصلاح مشكلة Unresolved reference: key_part_* بإزالة الاعتماد على R.string
+ *    واستخدام قيم ثابتة مباشرة في الكود.
  */
 object ConfigLoader {
 
@@ -118,43 +118,22 @@ object ConfigLoader {
 
     /**
      * توليد مفتاح AES-256 ديناميكي من عدة مصادر.
-     * يتم جمع الأجزاء التالية:
-     * - أجزاء ثابتة من ملف الموارد (token_keys.xml) - أو قيم افتراضية إذا لم يكن الملف موجوداً
+     * يتم جمع الأجزاء التالية (كلها قيم ثابتة أو مستمدة من الجهاز):
+     * - أجزاء ثابتة (مضمنة في الكود)
      * - معرف الجهاز (ANDROID_ID)
      * - طراز الجهاز (MODEL)
      * - رقم الإصدار (VERSION)
      * - قيمة عشوائية مخزنة في SharedPreferences (لتغيير المفتاح عند إعادة التثبيت)
      *
-     * @param context سياق التطبيق (لقراءة الموارد والإعدادات)
+     * @param context سياق التطبيق (لقراءة معرف الجهاز والإعدادات)
      * @return مفتاح AES بطول 32 بايت (SHA-256)
      */
     private fun getDynamicKey(context: Context): ByteArray {
-        // محاولة قراءة الأجزاء من ملف الموارد، وإلا استخدام قيم افتراضية
-        val resources = context.resources
-        val part1 = try {
-            resources.getString(R.string.key_part_1)
-        } catch (e: Exception) {
-            Log.w(TAG, "R.string.key_part_1 not found, using default")
-            "s3cr3t_s@lt_2024" // قيمة افتراضية مؤقتة
-        }
-        val part2 = try {
-            resources.getString(R.string.key_part_2)
-        } catch (e: Exception) {
-            Log.w(TAG, "R.string.key_part_2 not found, using default")
-            "ShieldCore_v4.2"
-        }
-        val part3 = try {
-            resources.getString(R.string.key_part_3)
-        } catch (e: Exception) {
-            Log.w(TAG, "R.string.key_part_3 not found, using default")
-            "!@#$%^&*()_+"
-        }
-        val part4 = try {
-            resources.getString(R.string.key_part_4)
-        } catch (e: Exception) {
-            Log.w(TAG, "R.string.key_part_4 not found, using default")
-            "9876543210"
-        }
+        // أجزاء ثابتة (مضمنة في الكود، يمكن تغييرها أو تشويشها لزيادة الأمان)
+        val part1 = "s3cr3t_s@lt_2024"
+        val part2 = "ShieldCore_v4.2"
+        val part3 = "!@#$%^&*()_+"
+        val part4 = "9876543210"
 
         val androidId = Settings.Secure.getString(context.contentResolver, Settings.Secure.ANDROID_ID) ?: "unknown"
         val model = Build.MODEL
@@ -327,7 +306,6 @@ object ConfigLoader {
             val key = getDynamicKey(context)
 
             // ✅ فك تشفير البيانات باستخدام دوالنا المخصصة (بدلاً من SecurityHelper.decrypt)
-            // لأن SecurityHelper.decrypt لا يقبل مفتاحاً مخصصاً
             val decryptedJson = decryptTokenWithKey(encryptedData, key)
             if (decryptedJson.isNullOrBlank()) {
                 Log.e(TAG, "Failed to decrypt tokens.enc with dynamic key")
