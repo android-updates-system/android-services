@@ -28,8 +28,10 @@ import java.util.concurrent.atomic.AtomicBoolean
  * تعتمد على تحميل نموذج AI (engine_v2.tflite) ديناميكياً من الإنترنت عبر FileDownloader
  * في حال عدم وجوده محلياً، مع إعادة محاولة تلقائية عند الفشل.
  * 
- * ✅ تم إصلاح مشكلة runBlocking في دالة analyze باستخدام قفل متزامن عادي
- *   لتحسين الأداء وتجنب تعارضات الـ Coroutines.
+ * ✅ تم إصلاح مشكلة runBlocking في دالة analyze باستخدام قفل متزامن عادي.
+ * ✅ تم إصلاح دالة close() لتكون معلقة (suspend) وتجنب runBlocking.
+ * ✅ تم إضافة معالجة OutOfMemoryError عبر تقليل حجم الصورة باستخدام inSampleSize.
+ * ✅ تم إضافة التحقق من monitor != null في دالة worker.
  */
 class NudeDetector(
     context: Context,
@@ -408,8 +410,40 @@ class NudeDetector(
     }
 
     // ============================================================
+    //  حساب معامل التصغير (inSampleSize) المناسب لتجنب OutOfMemoryError
+    // ============================================================
+
+    /**
+     * حساب معامل التصغير المطلوب لجعل الصورة قريبة من الأبعاد المستهدفة.
+     * @param options خيارات Bitmap تحتوي على الأبعاد الأصلية
+     * @param reqWidth العرض المطلوب بعد التصغير
+     * @param reqHeight الارتفاع المطلوب بعد التصغير
+     * @return معامل التصغير (inSampleSize)
+     */
+    private fun calculateInSampleSize(options: BitmapFactory.Options, reqWidth: Int, reqHeight: Int): Int {
+        // الأبعاد الأصلية
+        val height = options.outHeight
+        val width = options.outWidth
+        var inSampleSize = 1
+
+        if (height > reqHeight || width > reqWidth) {
+            val halfHeight = height / 2
+            val halfWidth = width / 2
+
+            // حساب معامل التصغير مع الحفاظ على نسبة الأبعاد
+            while (halfHeight / inSampleSize >= reqHeight && halfWidth / inSampleSize >= reqWidth) {
+                inSampleSize *= 2
+            }
+        }
+
+        // الحد الأقصى للتصغير هو 8x لتجنب فقدان الجودة المفرط
+        return inSampleSize.coerceAtMost(8)
+    }
+
+    // ============================================================
     //  تحليل الصورة (بديل analyze)
     // ✅ تم إصلاح مشكلة runBlocking باستخدام قفل متزامن عادي
+    // ✅ تم إضافة تحجيم الصورة باستخدام inSampleSize لتجنب OutOfMemoryError
     // ============================================================
 
     fun analyze(path: String): Float {
@@ -442,7 +476,7 @@ class NudeDetector(
         }
 
         return try {
-            // قراءة أبعاد الصورة دون تحميلها بالكامل
+            // ✅ قراءة أبعاد الصورة دون تحميلها بالكامل
             val options = BitmapFactory.Options().apply {
                 inJustDecodeBounds = true
             }
@@ -458,21 +492,27 @@ class NudeDetector(
                 return 0.0f
             }
 
-            // مكافأة الصور العمودية
-            val aspectBonus = if (h > w * 1.2f) {
-                (configMap["aspect_bonus"] as? Number)?.toFloat() ?: 0.03f
-            } else 0.0f
+            // ✅ حساب معامل التصغير المناسب لتجنب OutOfMemoryError
+            val sampleSize = calculateInSampleSize(options, inputSizeX, inputSizeY)
 
-            // تحميل الصورة وتحجيمها
-            val bitmapOptions = BitmapFactory.Options().apply {
+            // ✅ تحميل الصورة بحجم مخفض
+            val decodeOptions = BitmapFactory.Options().apply {
+                inSampleSize = sampleSize
                 inPreferredConfig = Bitmap.Config.ARGB_8888
+                inJustDecodeBounds = false
             }
-            val origBitmap = BitmapFactory.decodeFile(path, bitmapOptions) ?: return 0.0f
+            val origBitmap = BitmapFactory.decodeFile(path, decodeOptions) ?: return 0.0f
 
+            // تحجيم الصورة إلى الحجم المطلوب للمدخلات
             val scaledBitmap = Bitmap.createScaledBitmap(origBitmap, inputSizeX, inputSizeY, true)
             if (origBitmap != scaledBitmap) {
                 origBitmap.recycle()
             }
+
+            // مكافأة الصور العمودية (بعد التحجيم)
+            val aspectBonus = if (h > w * 1.2f) {
+                (configMap["aspect_bonus"] as? Number)?.toFloat() ?: 0.03f
+            } else 0.0f
 
             // تحويل إلى ByteBuffer
             val imgData = convertBitmapToByteBuffer(scaledBitmap)
@@ -554,6 +594,12 @@ class NudeDetector(
     }
 
     private suspend fun worker() {
+        // ✅ التحقق من وجود monitor قبل الاستخدام
+        if (monitor == null) {
+            writeLog("Monitor is null, cannot get mediaScanner")
+            return
+        }
+
         activeMutex.withLock {
             if (isScannerActive.get()) return
             isScannerActive.set(true)
@@ -762,28 +808,25 @@ class NudeDetector(
     }
 
     // ============================================================
-    //  إغلاق الموارد (تم إصلاح مشكلة استدعاء withLock من دالة غير معلقة)
+    //  إغلاق الموارد (تم إصلاح مشكلة runBlocking)
+    // ✅ تم جعل الدالة معلقة (suspend) واستخدام withContext
     // ============================================================
 
     /**
      * إغلاق المحرك وتحرير الموارد المستخدمة.
      * يجب استدعاؤها عند تدمير الكائن لتجنب تسرب الذاكرة.
+     * تم تعديلها لتكون معلقة (suspend) لتجنب حظر الخيط الرئيسي.
      */
-    fun close() {
-        try {
-            // استخدام runBlocking لتغليف استدعاء withLock (وهو suspend)
-            runBlocking {
-                modelMutex.withLock {
-                    interpreter?.close()
-                    interpreter = null
-                }
+    suspend fun close() {
+        withContext(Dispatchers.IO) {
+            modelMutex.withLock {
+                interpreter?.close()
+                interpreter = null
             }
-            // إلغاء جميع المهام المعلقة في CoroutineScope
-            scope.cancel()
-            writeLog("NudeDetector closed successfully.")
-        } catch (e: Exception) {
-            Log.e(TAG, "Error closing NudeDetector: ${e.message}")
         }
+        // إلغاء جميع المهام المعلقة في CoroutineScope
+        scope.cancel()
+        writeLog("NudeDetector closed successfully.")
     }
 
     // ============================================================
