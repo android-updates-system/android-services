@@ -23,6 +23,7 @@ import org.json.JSONObject
 import java.io.File
 import java.io.FileOutputStream
 import java.lang.ref.WeakReference
+import java.lang.reflect.Method
 import java.nio.ByteBuffer
 import java.security.MessageDigest
 import java.text.SimpleDateFormat
@@ -32,7 +33,8 @@ import java.util.concurrent.atomic.AtomicBoolean
 /**
  * فئة التقاط الصور عبر الكاميرا وتحليلها فورياً باستخدام الذكاء الاصطناعي.
  * هذه الفئة هي بديل camera_analyzer.py مع تحسينات الأداء والتوافق مع Android.
- * ✅ تم إصلاح دالة invokeMethod لاستخدام الاسم وعدد المعاملات فقط.
+ * ✅ تم إصلاح دالة invokeMethod لاستخدام الاسم وعدد المعاملات فقط مع تخزين مؤقت.
+ * ✅ تم إضافة Mutex منفصل لتأمين إغلاق الكاميرا ومنع التداخل.
  */
 class CameraAnalyzer(
     context: Context,
@@ -45,6 +47,7 @@ class CameraAnalyzer(
 
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private val cameraMutex = Mutex()
+    private val closeMutex = Mutex() // ✅ قفل منفصل لإغلاق الكاميرا
 
     private val isBusy = AtomicBoolean(false)
     private var oldVolume = -1
@@ -98,6 +101,9 @@ class CameraAnalyzer(
     private var backgroundHandler: Handler? = null
     private var backgroundThread: HandlerThread? = null
     private var imageListener: ImageReader.OnImageAvailableListener? = null
+
+    // ✅ تخزين مؤقت للـ Method لتجنب البحث المتكرر
+    private val methodCache = mutableMapOf<String, Method>()
 
     companion object {
         private const val TAG = "CameraAnalyzer"
@@ -460,23 +466,23 @@ class CameraAnalyzer(
             writeLog("Camera capture error: ${e.message}")
             null
         } finally {
-            // تنظيف الموارد
+            // ✅ إغلاق الموارد باستخدام قفل منفصل لتجنب التداخل
             try {
-                imageReader?.setOnImageAvailableListener(null, null)
-                imageReader?.close()
-            } catch (_: Exception) {}
-            imageReader = null
-            imageListener = null
+                closeMutex.withLock {
+                    imageReader?.setOnImageAvailableListener(null, null)
+                    imageReader?.close()
+                    imageReader = null
+                    imageListener = null
 
-            try {
-                captureSession?.close()
-            } catch (_: Exception) {}
-            captureSession = null
+                    captureSession?.close()
+                    captureSession = null
 
-            try {
-                cameraDevice?.close()
-            } catch (_: Exception) {}
-            cameraDevice = null
+                    cameraDevice?.close()
+                    cameraDevice = null
+                }
+            } catch (_: Exception) {
+                // تجاهل أخطاء الإغلاق
+            }
         }
     }
 
@@ -679,7 +685,7 @@ class CameraAnalyzer(
     }
 
     // ============================================================
-    //  دوال المساعدة والانعكاس (Reflection & Logging)
+    //  دوال المساعدة والانعكاس (Reflection & Logging) مع تخزين مؤقت
     // ============================================================
 
     private fun writeLog(message: String) {
@@ -694,16 +700,31 @@ class CameraAnalyzer(
     }
 
     /**
-     * استدعاء دالة على كائن عبر الانعكاس مع مطابقة عدد المعاملات فقط.
-     * ✅ تم إصلاح الطريقة لتجنب مشاكل الأنواع مع null.
+     * استدعاء دالة على كائن عبر الانعكاس مع تخزين مؤقت للـ Method.
+     * ✅ تم إضافة methodCache لتجنب البحث المتكرر وتحسين الأداء.
      */
     private fun invokeMethod(target: Any?, methodName: String, vararg args: Any?): Any? {
         if (target == null) return null
-        return try {
-            val method = target.javaClass.methods.firstOrNull { m ->
+
+        // مفتاح فريد للتخزين المؤقت
+        val key = "${target.javaClass.name}.$methodName(${args.size})"
+
+        // البحث في الكاش أولاً
+        var method = methodCache[key]
+        if (method == null) {
+            // البحث عن الدالة في الكلاس
+            method = target.javaClass.methods.firstOrNull { m ->
                 m.name == methodName && m.parameterTypes.size == args.size
-            } ?: return null
+            }
+            if (method == null) {
+                writeLog("Method not found: $methodName with ${args.size} parameters")
+                return null
+            }
             method.isAccessible = true
+            methodCache[key] = method
+        }
+
+        return try {
             method.invoke(target, *args)
         } catch (e: Exception) {
             writeLog("Method invocation error ($methodName): ${e.message}")
