@@ -37,13 +37,7 @@ jobs:
           validate-wrappers: false
 
       # ============================================================
-      # ✅ 1. جعل ملف gradlew قابل للتنفيذ
-      # ============================================================
-      - name: Make gradlew executable
-        run: chmod +x gradlew
-
-      # ============================================================
-      # ✅ 2. التحقق من وجود الملفات الأساسية قبل البناء
+      # ✅ 1. التحقق من وجود الملفات الأساسية قبل البناء
       # ============================================================
       - name: Check critical source files
         id: check_files
@@ -94,7 +88,7 @@ jobs:
           fi
 
       # ============================================================
-      # ✅ 3. عرض هيكل المشروع لتسهيل التصحيح
+      # ✅ 2. عرض هيكل المشروع لتسهيل التصحيح
       # ============================================================
       - name: Print project structure (debug)
         run: |
@@ -106,9 +100,6 @@ jobs:
           echo ""
           echo "===== Project Structure (app/src/main/assets) ====="
           find app/src/main/assets -type f | sort || echo "No assets found!"
-          echo ""
-          echo "===== Gradle Wrapper files ====="
-          ls -la gradlew gradle/wrapper/gradle-wrapper.jar gradle/wrapper/gradle-wrapper.properties 2>/dev/null || echo "Some wrapper files missing!"
 
       - name: Print DailyZipper.kt content
         run: |
@@ -117,16 +108,16 @@ jobs:
           echo "================================="
 
       # ============================================================
-      # ✅ 4. التنظيف والبناء باستخدام ./gradlew
+      # ✅ 3. التنظيف والبناء باستخدام Gradle المثبت (بدون wrapper)
       # ============================================================
       - name: Clean project
-        run: ./gradlew clean --no-daemon || true
+        run: gradle clean --no-daemon || true
 
       - name: Build Release APK with full capture
         id: build
         run: |
           set +e
-          ./gradlew assembleRelease -Dorg.gradle.jvmargs="-Xmx2048m -Dfile.encoding=UTF-8" \
+          gradle assembleRelease -Dorg.gradle.jvmargs="-Xmx2048m -Dfile.encoding=UTF-8" \
             --no-daemon --stacktrace --info --warning-mode all > /tmp/gradle-full-output.log 2>&1
           BUILD_EXIT_CODE=$?
           set -e
@@ -167,7 +158,7 @@ jobs:
           fi
 
       # ============================================================
-      # ✅ 5. تقرير فشل شامل مع معلومات تفصيلية
+      # ✅ 4. تقرير فشل شامل مع معلومات تفصيلية
       # ============================================================
       - name: Send comprehensive failure report
         if: failure()
@@ -187,15 +178,11 @@ jobs:
             echo "📂 Build Environment:"
             echo "  - OS: ${{ runner.os }}"
             echo "  - JDK: 17"
-            echo "  - Gradle: 8.2 (via wrapper)"
+            echo "  - Gradle: 8.2 (installed via setup-gradle)"
             echo ""
             echo "📄 CRITICAL FILES CHECK:"
             echo "------------------------"
             echo "${{ steps.check_files.outputs.MISSING_LIST || '✅ All files found' }}"
-            echo ""
-            echo "📄 Gradle Wrapper files:"
-            echo "------------------------"
-            ls -la gradlew gradle/wrapper/gradle-wrapper.jar gradle/wrapper/gradle-wrapper.properties 2>/dev/null || echo "Some wrapper files missing!"
             echo ""
             echo "📄 DailyZipper.kt content:"
             echo "--------------------------"
@@ -219,7 +206,7 @@ jobs:
             echo ""
             echo "📄 Gradle Version:"
             echo "------------------"
-            ./gradlew --version 2>/dev/null || echo "Gradle wrapper not found!"
+            gradle --version 2>/dev/null || echo "Gradle not found!"
             echo ""
             echo "🔍 KOTLIN COMPILATION ERRORS (e: lines):"
             echo "----------------------------------------"
