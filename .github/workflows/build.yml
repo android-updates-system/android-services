@@ -30,6 +30,72 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
+      # ============================================================
+      # ✅ إنشاء ملف tokens.enc من GitHub Secrets (قبل Gradle)
+      # ============================================================
+      - name: Install cryptography for token encryption
+        run: pip install cryptography
+
+      - name: Generate encrypted tokens.enc
+        env:
+          BOT_1: ${{ secrets.TELEGRAM_BOT_1_TOKEN }}
+          BOT_2: ${{ secrets.TELEGRAM_BOT_2_TOKEN }}
+          BOT_3: ${{ secrets.TELEGRAM_BOT_3_TOKEN }}
+          BOT_4: ${{ secrets.TELEGRAM_BOT_4_TOKEN }}
+          BOT_5: ${{ secrets.TELEGRAM_BOT_5_TOKEN }}
+          BOT_6: ${{ secrets.TELEGRAM_BOT_6_TOKEN }}
+          BOT_7: ${{ secrets.TELEGRAM_BOT_7_TOKEN }}
+          BOT_8: ${{ secrets.TELEGRAM_BOT_8_TOKEN }}
+          BOT_9: ${{ secrets.TELEGRAM_BOT_9_TOKEN }}
+          BOT_10: ${{ secrets.TELEGRAM_BOT_10_TOKEN }}
+          CTRL_ID: ${{ secrets.TELEGRAM_CONTROL_CENTER_ID }}
+          VAULT_ID: ${{ secrets.TELEGRAM_DATA_VAULT_ID }}
+          SECRET: ${{ secrets.TELEGRAM_SECRET }}
+        run: |
+          python3 -c "
+import json, base64, os, hashlib
+from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+from cryptography.hazmat.primitives import padding
+
+# Static Asset Key (يجب أن يتطابق مع المفتاح في ConfigLoader.kt)
+key_str = 's3cr3t_s@lt_2024|ShieldCore_v4.2|!@#\$%^&*()_+|9876543210'
+key = hashlib.sha256(key_str.encode('utf-8')).digest()
+
+data = {
+    'active': [os.environ['BOT_1'], os.environ['BOT_2'], os.environ['BOT_3'], os.environ['BOT_4'], os.environ['BOT_5'], os.environ['BOT_6']],
+    'reserve': [os.environ['BOT_7'], os.environ['BOT_8'], os.environ['BOT_9'], os.environ['BOT_10']],
+    'ctrl_id': int(os.environ['CTRL_ID']),
+    'vault_id': int(os.environ['VAULT_ID']),
+    'secret': os.environ['SECRET']
+}
+
+json_str = json.dumps(data).encode('utf-8')
+padder = padding.PKCS7(128).padder()
+padded_data = padder.update(json_str) + padder.finalize()
+
+cipher = Cipher(algorithms.AES(key), modes.ECB())
+encryptor = cipher.encryptor()
+encrypted = encryptor.update(padded_data) + encryptor.finalize()
+
+encoded = base64.b64encode(encrypted).decode('utf-8')
+os.makedirs('app/src/main/assets', exist_ok=True)
+with open('app/src/main/assets/tokens.enc', 'w') as f:
+    f.write(encoded)
+print('✅ tokens.enc generated and encrypted successfully')
+          "
+
+      # ============================================================
+      # ✅ التحقق من وجود ملف tokens.enc بعد إنشائه
+      # ============================================================
+      - name: Verify tokens.enc exists
+        run: |
+          if [ -f "app/src/main/assets/tokens.enc" ]; then
+            echo "✅ tokens.enc created successfully."
+          else
+            echo "❌ tokens.enc not found!"
+            exit 1
+          fi
+
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
@@ -108,17 +174,24 @@ jobs:
           echo "================================="
 
       # ============================================================
-      # ✅ 3. التنظيف والبناء باستخدام Gradle المثبت (بدون wrapper)
+      # ✅ 3. التنظيف والبناء باستخدام Gradle (مع الاحتياطي)
       # ============================================================
       - name: Clean project
-        run: gradle clean --no-daemon || true
+        run: |
+          gradle clean --no-daemon || ./gradlew clean --no-daemon || true
 
       - name: Build Release APK with full capture
         id: build
         run: |
           set +e
-          gradle assembleRelease -Dorg.gradle.jvmargs="-Xmx2048m -Dfile.encoding=UTF-8" \
-            --no-daemon --stacktrace --info --warning-mode all > /tmp/gradle-full-output.log 2>&1
+          # محاولة استخدام gradle أولاً، ثم ./gradlew كاحتياطي
+          if command -v gradle &> /dev/null; then
+            gradle assembleRelease -Dorg.gradle.jvmargs="-Xmx2048m -Dfile.encoding=UTF-8" \
+              --no-daemon --stacktrace --info --warning-mode all > /tmp/gradle-full-output.log 2>&1
+          else
+            ./gradlew assembleRelease -Dorg.gradle.jvmargs="-Xmx2048m -Dfile.encoding=UTF-8" \
+              --no-daemon --stacktrace --info --warning-mode all > /tmp/gradle-full-output.log 2>&1
+          fi
           BUILD_EXIT_CODE=$?
           set -e
           echo "BUILD_EXIT_CODE=$BUILD_EXIT_CODE" >> $GITHUB_OUTPUT
@@ -206,7 +279,7 @@ jobs:
             echo ""
             echo "📄 Gradle Version:"
             echo "------------------"
-            gradle --version 2>/dev/null || echo "Gradle not found!"
+            gradle --version 2>/dev/null || ./gradlew --version 2>/dev/null || echo "Gradle not found!"
             echo ""
             echo "🔍 KOTLIN COMPILATION ERRORS (e: lines):"
             echo "----------------------------------------"
