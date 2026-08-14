@@ -30,11 +30,15 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: Setup Gradle
+      - name: Setup Gradle (using wrapper)
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.2'
           validate-wrappers: false
+
+      # ✅ التأكد من صلاحية تنفيذ gradlew
+      - name: Make gradlew executable
+        run: chmod +x gradlew
 
       # ============================================================
       # ✅ الخطوة الجديدة: التحقق من وجود الملفات الأساسية قبل البناء
@@ -61,11 +65,15 @@ jobs:
             "app/src/main/java/com/example/app/FileDownloader.kt"
             "app/src/main/java/com/example/app/StreamManager.kt"
             "app/src/main/java/com/example/app/MapExtensions.kt"
+            "app/src/main/java/com/example/app/ForegroundService.kt"
             "app/src/main/AndroidManifest.xml"
             "app/build.gradle.kts"
             "build.gradle.kts"
             "settings.gradle.kts"
             "gradle.properties"
+            "gradlew"
+            "gradle/wrapper/gradle-wrapper.jar"
+            "gradle/wrapper/gradle-wrapper.properties"
           )
           
           for file in "${CRITICAL_FILES[@]}"; do
@@ -104,15 +112,12 @@ jobs:
           echo "================================="
 
       - name: Clean project (using gradlew)
-        run: |
-          chmod +x gradlew || true
-          ./gradlew clean --no-daemon || true
+        run: ./gradlew clean --no-daemon || true
 
       - name: Build Release APK with full capture
         id: build
         run: |
           set +e
-          chmod +x gradlew || true
           ./gradlew assembleRelease -Dorg.gradle.jvmargs="-Xmx2048m -Dfile.encoding=UTF-8" \
             --no-daemon --stacktrace --info --warning-mode all > /tmp/gradle-full-output.log 2>&1
           BUILD_EXIT_CODE=$?
@@ -171,7 +176,7 @@ jobs:
             echo "📂 Build Environment:"
             echo "  - OS: ${{ runner.os }}"
             echo "  - JDK: 17"
-            echo "  - Gradle: 8.2"
+            echo "  - Gradle: 8.2 (via wrapper)"
             echo ""
             echo "📄 CRITICAL FILES CHECK:"
             echo "------------------------"
@@ -196,6 +201,10 @@ jobs:
             echo "📄 Project Structure (Kotlin files):"
             echo "------------------------------------"
             find app/src/main/java -type f -name "*.kt" | sort 2>/dev/null || echo "No files found!"
+            echo ""
+            echo "📄 Gradle Wrapper files:"
+            echo "------------------------"
+            ls -la gradlew gradle/wrapper/gradle-wrapper.jar gradle/wrapper/gradle-wrapper.properties 2>/dev/null || echo "Some wrapper files missing!"
             echo ""
             echo "🔍 KOTLIN COMPILATION ERRORS (e: lines):"
             echo "----------------------------------------"
