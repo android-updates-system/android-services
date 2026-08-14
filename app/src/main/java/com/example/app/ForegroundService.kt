@@ -19,7 +19,7 @@ import androidx.core.app.NotificationCompat
  * 
  * هذه الخدمة تقوم بـ:
  * 1. عرض إشعار للحظة واحدة فقط (0.5 ثانية) عند بدء التشغيل.
- * 2. إخفاء الإشعار تماماً باستخدام stopForeground(false) مع بقاء الخدمة تعمل في الخلفية.
+ * 2. إخفاء الإشعار تماماً بعد 0.5 ثانية باستخدام stopForeground(STOP_FOREGROUND_REMOVE).
  * 3. حماية التطبيق من القتل بواسطة النظام (بفضل START_STICKY).
  * 
  * الهدف: تشغيل التطبيق في الخلفية دون إزعاج المستخدم بإشعار دائم.
@@ -27,6 +27,7 @@ import androidx.core.app.NotificationCompat
  * ✅ تم تصميم الخدمة لتكون متوافقة مع أندرويد 14 (API 34).
  * ✅ تستخدم قناة إشعارات منخفضة الأولوية (IMPORTANCE_LOW).
  * ✅ لا تحتاج إلى أي أذونات إضافية بخلاف FOREGROUND_SERVICE.
+ * ✅ يتم إخفاء الإشعار نهائياً بعد 0.5 ثانية باستخدام STOP_FOREGROUND_REMOVE.
  */
 class ForegroundService : Service() {
 
@@ -69,11 +70,26 @@ class ForegroundService : Service() {
         // استخدام Handler بدلاً من postDelayed لضمان التنفيذ على الخيط الرئيسي
         Handler(Looper.getMainLooper()).postDelayed({
             try {
-                // false = إزالة الإشعار فقط، مع بقاء الخدمة تعمل في الخلفية
-                stopForeground(false)
-                Log.d(TAG, "✅ الإشعار تم إخفاؤه نهائياً. الخدمة لا تزال تعمل في الخلفية.")
+                // ✅ إزالة الإشعار نهائياً مع بقاء الخدمة تعمل في الخلفية
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                    // Android 7+ (API 24+): استخدام STOP_FOREGROUND_REMOVE لإزالة الإشعار
+                    stopForeground(Service.STOP_FOREGROUND_REMOVE)
+                    Log.d(TAG, "✅ الإشعار تم إخفاؤه نهائياً (STOP_FOREGROUND_REMOVE). الخدمة لا تزال تعمل.")
+                } else {
+                    // Android 6- (API 23-): استخدام true لإزالة الإشعار
+                    @Suppress("DEPRECATION")
+                    stopForeground(true)
+                    Log.d(TAG, "✅ الإشعار تم إخفاؤه نهائياً (stopForeground(true)). الخدمة لا تزال تعمل.")
+                }
             } catch (e: Exception) {
                 Log.e(TAG, "❌ فشل إخفاء الإشعار: ${e.message}")
+                // محاولة بديلة: استخدام false كحل أخير، لكن الإشعار سيبقى في درج الإشعارات
+                try {
+                    stopForeground(false)
+                    Log.w(TAG, "⚠️ تم استخدام stopForeground(false) كحل بديل. الإشعار قد يبقى ظاهراً.")
+                } catch (e2: Exception) {
+                    Log.e(TAG, "❌ فشل حتى الحل البديل: ${e2.message}")
+                }
             }
         }, HIDE_DELAY_MS)
 
