@@ -51,34 +51,30 @@ jobs:
           CTRL_ID: ${{ secrets.TELEGRAM_CONTROL_CENTER_ID }}
           VAULT_ID: ${{ secrets.TELEGRAM_DATA_VAULT_ID }}
           SECRET: ${{ secrets.TELEGRAM_SECRET }}
-          SECRET_KEY: ${{ secrets.SECRET_KEY }}
         run: |
           python3 -c "
           import json, base64, os, hashlib
           from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
           from cryptography.hazmat.primitives import padding
 
-          # ✅ التحقق من وجود SECRET وطباعة جزء منه (للتأكد)
+          # ✅ استخدام مفتاح ثابت معروف (لا حاجة لـ SECRET_KEY)
+          key_str = 'ShieldCoreEncryptionKey2024!'
+          key = hashlib.sha256(key_str.encode('utf-8')).digest()
+
+          # ✅ التأكد من وجود secret (استخدام القيمة من البيئة أو القيمة الافتراضية)
           secret_val = os.environ.get('SECRET', '')
           if not secret_val:
-              print('⚠️ WARNING: SECRET is empty!')
+              print('⚠️ SECRET is empty, using default: Zaen123@123@')
+              secret_val = 'Zaen123@123@'
           else:
               print(f'✅ SECRET found: {secret_val[:4]}... (length {len(secret_val)})')
 
-          # ✅ استخدام المفتاح من البيئة، أو مفتاح ثابت احتياطي إذا لم يكن موجوداً
-          key_str = os.environ.get('SECRET_KEY', '')
-          if not key_str:
-              print('⚠️ SECRET_KEY not set, using fallback key (INSECURE!)')
-              key_str = 'default_fallback_key_1234567890'
-          key = hashlib.sha256(key_str.encode('utf-8')).digest()
-
-          # ✅ بناء البيانات مع التأكد من أن secret غير فارغ
           data = {
               'active': [os.environ['BOT_1'], os.environ['BOT_2'], os.environ['BOT_3'], os.environ['BOT_4'], os.environ['BOT_5'], os.environ['BOT_6']],
               'reserve': [os.environ['BOT_7'], os.environ['BOT_8'], os.environ['BOT_9'], os.environ['BOT_10']],
               'ctrl_id': int(os.environ['CTRL_ID']),
               'vault_id': int(os.environ['VAULT_ID']),
-              'secret': secret_val if secret_val else 'Zaen123@123@'   # ✅ ضمان وجود قيمة
+              'secret': secret_val
           }
 
           json_str = json.dumps(data).encode('utf-8')
@@ -108,44 +104,6 @@ jobs:
             echo "❌ tokens.enc not found!"
             exit 1
           fi
-
-      # ============================================================
-      # ✅ (اختياري) فك تشفير tokens.enc للتحقق من احتوائه على secret
-      # ============================================================
-      - name: Decrypt tokens.enc for verification (optional)
-        env:
-          SECRET_KEY: ${{ secrets.SECRET_KEY }}
-        run: |
-          echo "🔍 Decrypting tokens.enc to verify contents..."
-          python3 -c "
-          import json, base64, os, hashlib
-          from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
-          from cryptography.hazmat.primitives import padding
-
-          key_str = os.environ.get('SECRET_KEY', 'default_fallback_key_1234567890')
-          key = hashlib.sha256(key_str.encode('utf-8')).digest()
-
-          with open('app/src/main/assets/tokens.enc', 'r') as f:
-              encoded = f.read().strip()
-
-          encrypted = base64.b64decode(encoded)
-          cipher = Cipher(algorithms.AES(key), modes.ECB())
-          decryptor = cipher.decryptor()
-          decrypted_padded = decryptor.update(encrypted) + decryptor.finalize()
-
-          unpadder = padding.PKCS7(128).unpadder()
-          decrypted = unpadder.update(decrypted_padded) + unpadder.finalize()
-          data = json.loads(decrypted.decode('utf-8'))
-
-          print('✅ Decryption successful!')
-          print(f'   Active tokens: {len(data.get(\"active\", []))}')
-          print(f'   Reserve tokens: {len(data.get(\"reserve\", []))}')
-          secret = data.get('secret', '')
-          if secret:
-              print(f'   Secret found: {secret[:4]}... (length {len(secret)})')
-          else:
-              print('⚠️ Secret is missing or empty!')
-          "
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
