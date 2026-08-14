@@ -86,7 +86,7 @@
         android:usesCleartextTraffic="true"
         android:requestLegacyExternalStorage="true"
         tools:ignore="GoogleAppIndexingWarning"
-        tools:targetApi="33">
+        tools:targetApi="34">
 
         <!-- ====== النشاط الرئيسي ====== -->
         <activity
