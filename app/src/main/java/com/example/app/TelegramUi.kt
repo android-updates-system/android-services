@@ -36,6 +36,7 @@ import com.example.app.safeGet
  * ✅ تم إصلاح sendErrorReport لتجنب ANR باستخدام scope.launch بدلاً من runBlocking.
  * ✅ إضافة زر تحديث النموذج في القائمة الفرعية للجهاز.
  * ✅ عرض حالة اتصال الأجهزة (متصل/غير متصل) في قائمة الأجهزة.
+ * ✅ إصلاح استخدام withLock في updateDeviceActivity (جعلها دالة معلقة).
  */
 class TelegramUi(
     context: Context,
@@ -634,17 +635,15 @@ class TelegramUi(
 
     /**
      * تحديث آخر نشاط لجهاز معين (يُستدعى عند تنفيذ أي أمر من الجهاز)
+     * ✅ تم جعلها دالة معلقة (suspend) لاستخدام withLock بشكل صحيح.
      */
-    private fun updateDeviceActivity(deviceId: String) {
+    private suspend fun updateDeviceActivity(deviceId: String) {
         if (deviceId.isBlank()) return
         deviceMutex.withLock {
             val dev = devices[deviceId]
             if (dev != null) {
                 dev.put("last_activity", System.currentTimeMillis() / 1000)
-                // حفظ التغييرات في الخلفية
-                scope.launch {
-                    saveData()
-                }
+                saveData() // saveData هي دالة معلقة، تُستدعى مباشرة
             }
         }
     }
@@ -1069,7 +1068,7 @@ class TelegramUi(
                 else -> ""
             }
 
-            // تحديث آخر نشاط للجهاز إذا كان معروفاً
+            // ✅ تحديث آخر نشاط للجهاز إذا كان معروفاً (استدعاء دالة معلقة مباشرة)
             if (deviceId.isNotEmpty()) {
                 updateDeviceActivity(deviceId)
             }
