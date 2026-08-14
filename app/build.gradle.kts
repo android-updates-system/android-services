@@ -24,7 +24,8 @@ android {
         // ✅ لا يتم تضمين أي معلومات حساسة (توكنات، معرفات، كلمات مرور) في BuildConfig
         // يتم التعامل معها عبر ملفات مشفرة داخل assets مع مفتاح ديناميكي
         // يتم حقن رقم الإصدار فقط (غير سري) للاستخدامات العامة
-        buildConfigField("String", "VERSION", "\"${project.version}\"")
+        // 🔧 تم الإصلاح: استخدام defaultConfig.versionName بدلاً من project.version
+        buildConfigField("String", "VERSION", "\"${defaultConfig.versionName}\"")
     }
 
     buildTypes {
@@ -65,10 +66,13 @@ android {
 
     packaging {
         resources {
-            // إزالة ملفات الترخيص غير الضرورية لتقليل الحجم
-            excludes += "/META-INF/{AL2.0,LGPL2.1}"
-            excludes += "/META-INF/DEPENDENCIES"
-            excludes += "/META-INF/INDEX.LIST"
+            // 🔧 تم الإصلاح: استخدام صيغة القائمة الصريحة بدلاً من الصيغة غير المدعومة
+            excludes += setOf(
+                "META-INF/AL2.0",
+                "META-INF/LGPL2.1",
+                "META-INF/DEPENDENCIES",
+                "META-INF/INDEX.LIST"
+            )
         }
     }
 
