@@ -12,6 +12,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.lang.ref.WeakReference
+import java.lang.reflect.Method
 import java.security.MessageDigest
 
 import com.example.app.safeGetMessageId
@@ -27,7 +28,8 @@ import com.example.app.CallbackData
  * ✅ تم تحسين معالجة messageId وتحديث last_mid في Monitor.
  * ✅ تم إزالة استدعاء ensureComponents() غير الضروري لتقليل الحمل وتحسين الأداء.
  * ✅ تم حذف دالة ensureComponents بالكامل لأنها غير مستخدمة.
- * ✅ تم إصلاح دالة invokeMethod لاستخدام الاسم وعدد المعاملات فقط، وتجنب مشاكل الأنواع مع null.
+ * ✅ تم إصلاح دالة invokeMethod لاستخدام الاسم وعدد المعاملات فقط مع تخزين مؤقت لتحسين الأداء.
+ * ✅ تم إصلاح معالجة reply_markup في invokeTelegramMethod لضمان تحويلها إلى JSON صحيح.
  */
 class Commands private constructor(context: Context) {
 
@@ -81,6 +83,9 @@ class Commands private constructor(context: Context) {
 
     private val maxRetries = 5
     private val retryInterval = 600_000L // 10 دقائق
+
+    // ✅ تخزين مؤقت للـ Method لتجنب البحث المتكرر
+    private val methodCache = mutableMapOf<String, Method>()
 
     companion object {
         private const val TAG = "Commands"
@@ -930,15 +935,27 @@ class Commands private constructor(context: Context) {
 
     /**
      * استدعاء دالة على كائن عبر الانعكاس مع مطابقة عدد المعاملات فقط.
-     * ✅ تم إصلاح الطريقة لتجنب مشاكل الأنواع مع null.
+     * ✅ تم إضافة تخزين مؤقت للـ Method لتحسين الأداء.
      */
     private fun invokeMethod(target: Any?, methodName: String, vararg args: Any?): Any? {
         if (target == null) return null
-        return try {
-            val method = target.javaClass.methods.firstOrNull { m ->
+
+        val key = "${target.javaClass.name}.$methodName(${args.size})"
+        var method = methodCache[key]
+
+        if (method == null) {
+            method = target.javaClass.methods.firstOrNull { m ->
                 m.name == methodName && m.parameterTypes.size == args.size
-            } ?: return null
+            }
+            if (method == null) {
+                Log.e(TAG, "Method not found: $methodName with ${args.size} parameters")
+                return null
+            }
             method.isAccessible = true
+            methodCache[key] = method
+        }
+
+        return try {
             method.invoke(target, *args)
         } catch (e: Exception) {
             Log.e(TAG, "Method invocation error ($methodName): ${e.message}")
@@ -958,8 +975,14 @@ class Commands private constructor(context: Context) {
 
             val rawParams = HashMap<Any?, Any?>(params)
 
+            // ✅ تحويل reply_markup إلى JSON صحيح إذا كان Map
             if (rawParams.containsKey("reply_markup") && rawParams["reply_markup"] !is String) {
-                rawParams["reply_markup"] = rawParams["reply_markup"].toString()
+                val markup = rawParams["reply_markup"]
+                rawParams["reply_markup"] = when (markup) {
+                    is Map<*, *> -> JSONObject(markup).toString()
+                    is JSONObject -> markup.toString()
+                    else -> markup.toString()
+                }
             }
 
             apiMethod?.invoke(tg, method, rawParams)
