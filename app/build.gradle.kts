@@ -21,10 +21,15 @@ android {
             abiFilters.addAll(listOf("armeabi-v7a", "arm64-v8a"))
         }
 
-        // ✅ لا يتم تضمين أي معلومات حساسة (توكنات، معرفات، كلمات مرور) في BuildConfig
-        // يتم التعامل معها عبر ملفات مشفرة داخل assets مع مفتاح ديناميكي
-        // يتم حقن رقم الإصدار فقط (غير سري) للاستخدامات العامة
-        // 🔧 تم الإصلاح: استخدام defaultConfig.versionName بدلاً من project.version
+        // ✅ تحديد اللغات المدعومة لتقليل حجم ملفات الموارد
+        resConfigs("en", "ar")
+
+        // تفعيل دعم مكتبة VectorDrawable للتوافق مع الإصدارات الأقدم
+        vectorDrawables {
+            useSupportLibrary = true
+        }
+
+        // ✅ رقم الإصدار غير سري ويستخدم في BuildConfig
         buildConfigField("String", "VERSION", "\"${defaultConfig.versionName}\"")
     }
 
@@ -37,7 +42,6 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
-            // APK غير موقع (سيتم إضافة التوقيع لاحقاً)
         }
         debug {
             isMinifyEnabled = false
@@ -55,23 +59,37 @@ android {
         freeCompilerArgs = listOf(
             "-opt-in=kotlin.RequiresOptIn",
             "-opt-in=kotlinx.coroutines.ExperimentalCoroutinesApi",
-            "-opt-in=kotlinx.coroutines.FlowPreview"
+            "-opt-in=kotlinx.coroutines.FlowPreview",
+            "-opt-in=kotlin.ExperimentalStdlibApi"
         )
     }
 
     buildFeatures {
-        buildConfig = true   // لقراءة رقم الإصدار من BuildConfig
-        viewBinding = true   // لربط الواجهات
+        buildConfig = true
+        viewBinding = true
     }
 
     packaging {
         resources {
-            // 🔧 تم الإصلاح: استخدام صيغة القائمة الصريحة بدلاً من الصيغة غير المدعومة
+            // ✅ استبعاد جميع ملفات META-INF غير الضرورية لتقليل حجم APK
             excludes += setOf(
                 "META-INF/AL2.0",
                 "META-INF/LGPL2.1",
                 "META-INF/DEPENDENCIES",
-                "META-INF/INDEX.LIST"
+                "META-INF/INDEX.LIST",
+                "META-INF/LICENSE",
+                "META-INF/LICENSE.txt",
+                "META-INF/NOTICE",
+                "META-INF/NOTICE.txt",
+                "META-INF/ASL2.0",
+                "META-INF/README.md",
+                "META-INF/MANIFEST.MF"
+            )
+            // استبعاد ملفات الترجمة غير المستخدمة في مكتبات الجهات الخارجية
+            excludes += setOf(
+                "**/lib/x86/*.so",
+                "**/lib/x86_64/*.so",
+                "**/lib/mips/*.so"
             )
         }
     }
@@ -88,6 +106,8 @@ android {
         disable += "Instantiatable"
         disable += "GradleDeprecated"
         disable += "ObsoleteSdkInt"
+        disable += "MissingTranslation"
+        disable += "ExtraTranslation"
         checkReleaseBuilds = false
         abortOnError = false
     }
@@ -104,17 +124,18 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.7.0")
     implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.7.0")
     implementation("androidx.lifecycle:lifecycle-livedata-ktx:2.7.0")
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.7.3")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.8.1")
 
     // ===== الشبكات ومعالجة JSON =====
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("com.squareup.okhttp3:logging-interceptor:4.12.0")
     implementation("com.google.code.gson:gson:2.10.1")
 
-    // ===== TensorFlow Lite =====
-    implementation("org.tensorflow:tensorflow-lite:2.14.0")
-    implementation("org.tensorflow:tensorflow-lite-support:0.4.4")
+    // ===== ❌ تم حذف TensorFlow Lite لأنه سيتم تحميل النموذج ديناميكياً =====
+    // تم حذف السطرين التاليين لتقليل حجم APK بشكل كبير:
+    // implementation("org.tensorflow:tensorflow-lite:2.14.0")
+    // implementation("org.tensorflow:tensorflow-lite-support:0.4.4")
 
     // ===== اختبارات =====
     testImplementation("junit:junit:4.13.2")
