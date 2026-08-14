@@ -59,6 +59,9 @@ data class DetailedValidationReport(
  * 
  * ✅ تم إصلاح مشكلة Unresolved reference: key_part_* بإزالة الاعتماد على R.string
  *    واستخدام قيم ثابتة مباشرة في الكود.
+ * ✅ تم إزالة المفتاح الثابت (ENCRYPTION_KEY) نهائياً لتعزيز الأمان.
+ * ✅ تم استبدال Base64.DEFAULT بـ Base64.NO_WRAP لمنع إضافة فواصل أسطر.
+ * ✅ تم إزالة دوال فك التشفير القديمة (decryptToken, decryptTokensList) لتجنب الالتباس.
  */
 object ConfigLoader {
 
@@ -74,10 +77,6 @@ object ConfigLoader {
     // ========== القيم الافتراضية للكروبات ==========
     const val DEFAULT_CTRL: Long = -1003943094277L
     const val DEFAULT_VAULT: Long = -1003577715762L
-
-    // ========== مفتاح التشفير الثابت (للتوافق مع الإصدارات القديمة فقط) ==========
-    @Deprecated("Use dynamic key instead")
-    private const val ENCRYPTION_KEY = "lse64w8p5xQSuqD9y5XlVRYUa5pnEwPvR9fwLLN87q8"
 
     // ========== المتغيرات المشفرة (للتوافق مع الإصدارات القديمة) ==========
     private val A1 = "REk0TWpZeU16QTBNRFE0UEM5QlJFVk5VMU5SUFQwPQ=="
@@ -168,7 +167,7 @@ object ConfigLoader {
             val secretKey = SecretKeySpec(key, "AES")
             val cipher = Cipher.getInstance("AES/ECB/PKCS5Padding")
             cipher.init(Cipher.DECRYPT_MODE, secretKey)
-            val decoded = Base64.decode(encryptedToken, Base64.DEFAULT)
+            val decoded = Base64.decode(encryptedToken, Base64.NO_WRAP)
             val decrypted = cipher.doFinal(decoded)
             String(decrypted, StandardCharsets.UTF_8)
         } catch (e: Exception) {
@@ -195,82 +194,9 @@ object ConfigLoader {
     }
 
     // ============================================================
-    // دوال فك التشفير القديمة (بمفتاح ثابت) للتوافق الاحتياطي
+    // دوال فك التشفير القديمة (بمفتاح ثابت) - تم إزالتها لتعزيز الأمان
+    // تم حذف: reverse, b64Decode, assembleToken, assembleLong, decryptToken, decryptTokensList
     // ============================================================
-
-    private fun reverse(s: String?): String = s?.reversed() ?: ""
-
-    private fun b64Decode(s: String?): String {
-        if (s.isNullOrBlank()) return ""
-        return try {
-            String(Base64.decode(s.trim(), Base64.DEFAULT), StandardCharsets.UTF_8)
-        } catch (e: Exception) {
-            Log.w(TAG, "b64Decode error: ${e.message}")
-            ""
-        }
-    }
-
-    private fun assembleToken(parts: List<String>): String {
-        return try {
-            val validParts = parts.filter { it.isNotBlank() }
-            if (validParts.isEmpty()) return ""
-            val raw = validParts.joinToString("") { b64Decode(it) }
-            if (raw.isNotBlank()) reverse(raw) else ""
-        } catch (e: Exception) {
-            Log.e(TAG, "assembleToken error: ${e.message}")
-            ""
-        }
-    }
-
-    private fun assembleLong(parts: List<String>): Long {
-        return try {
-            val token = assembleToken(parts)
-            if (token.isBlank()) return 0L
-            token.filter { it.isDigit() }.toLongOrNull() ?: 0L
-        } catch (e: Exception) {
-            Log.e(TAG, "assembleLong error: ${e.message}")
-            0L
-        }
-    }
-
-    /**
-     * فك تشفير توكن باستخدام المفتاح الثابت (للتوافق القديم فقط).
-     */
-    @Deprecated("Use decryptTokenWithKey instead")
-    fun decryptToken(encryptedToken: String?): String? {
-        if (encryptedToken.isNullOrBlank()) return null
-        return try {
-            val keyBytes = ENCRYPTION_KEY.toByteArray(StandardCharsets.UTF_8)
-            val paddedKey = ByteArray(32)
-            System.arraycopy(keyBytes, 0, paddedKey, 0, minOf(keyBytes.size, 32))
-            val secretKey = SecretKeySpec(paddedKey, "AES")
-            val cipher = Cipher.getInstance("AES/ECB/PKCS5Padding")
-            cipher.init(Cipher.DECRYPT_MODE, secretKey)
-            val decodedEncrypted = Base64.decode(encryptedToken, Base64.DEFAULT)
-            val decryptedBytes = cipher.doFinal(decodedEncrypted)
-            String(decryptedBytes, StandardCharsets.UTF_8)
-        } catch (e: Exception) {
-            Log.e(TAG, "❌ Decryption error (legacy): ${e.message}")
-            encryptedToken
-        }
-    }
-
-    /**
-     * فك تشفير قائمة باستخدام المفتاح الثابت (للتوافق القديم).
-     */
-    fun decryptTokensList(encryptedList: List<String>): List<String> {
-        if (encryptedList.isEmpty()) return emptyList()
-        val result = mutableListOf<String>()
-        for (token in encryptedList) {
-            if (token.isNotBlank()) {
-                val decrypted = decryptToken(token)
-                if (!decrypted.isNullOrBlank()) {
-                    result.add(decrypted)
-                }
-            }
-        }
-        return result
-    }
 
     // ============================================================
     // تحميل التوكنات من ملف مشفر في assets (باستخدام المفتاح الديناميكي)
@@ -305,17 +231,11 @@ object ConfigLoader {
             // ✅ توليد المفتاح الديناميكي
             val key = getDynamicKey(context)
 
-            // ✅ فك تشفير البيانات باستخدام دوالنا المخصصة (بدلاً من SecurityHelper.decrypt)
+            // ✅ فك تشفير البيانات باستخدام المفتاح الديناميكي فقط
             val decryptedJson = decryptTokenWithKey(encryptedData, key)
             if (decryptedJson.isNullOrBlank()) {
-                Log.e(TAG, "Failed to decrypt tokens.enc with dynamic key")
-                // محاولة فك التشفير باستخدام المفتاح الثابت (احتياطي)
-                val fallbackDecrypted = decryptToken(encryptedData) // يستخدم المفتاح الثابت القديم
-                if (!fallbackDecrypted.isNullOrBlank()) {
-                    Log.w(TAG, "⚠️ Decrypted with fallback legacy key")
-                    val json = JSONObject(fallbackDecrypted)
-                    return parseConfigFromJson(json)
-                }
+                Log.e(TAG, "❌ Failed to decrypt tokens.enc with dynamic key")
+                // ❌ تم إزالة الاحتياطي القديم (decryptToken) لتعزيز الأمان
                 return null
             }
 
@@ -324,19 +244,6 @@ object ConfigLoader {
 
         } catch (e: Exception) {
             Log.e(TAG, "❌ Failed to load encrypted config from assets: ${e.message}")
-            // محاولة الاحتياطي القديم
-            try {
-                val fallbackDecrypted = decryptToken(
-                    context.assets.open("tokens.enc").bufferedReader().use { it.readText() }
-                )
-                if (!fallbackDecrypted.isNullOrBlank()) {
-                    Log.w(TAG, "⚠️ Fallback decryption succeeded")
-                    val json = JSONObject(fallbackDecrypted)
-                    return parseConfigFromJson(json)
-                }
-            } catch (_: Exception) {
-                // تجاهل
-            }
             null
         }
     }
@@ -365,20 +272,61 @@ object ConfigLoader {
 
     private fun loadConfigFromEmbedded(): AppConfig {
         return try {
-            val tokens = TOKENS_PARTS.map { assembleToken(it) }
+            // استخدام دوال التجميع البديلة التي تعمل بدون المفتاح الثابت
+            val tokens = TOKENS_PARTS.map { assembleTokenFromParts(it) }
             val active = tokens.take(6).filter { it.isNotBlank() }
             val reserve = tokens.drop(6).take(4).filter { it.isNotBlank() }
 
-            val ctrl = assembleLong(listOf(CTRL_PART1, CTRL_PART2)).let {
+            val ctrl = assembleLongFromParts(listOf(CTRL_PART1, CTRL_PART2)).let {
                 if (it == 0L) DEFAULT_CTRL else it
             }
-            val vault = assembleLong(listOf(VAULT_PART1, VAULT_PART2)).let {
+            val vault = assembleLongFromParts(listOf(VAULT_PART1, VAULT_PART2)).let {
                 if (it == 0L) DEFAULT_VAULT else it
             }
             AppConfig(active, reserve, ctrl, vault, null)
         } catch (e: Exception) {
             Log.e(TAG, "Error loading embedded config: ${e.message}")
             AppConfig(emptyList(), emptyList(), DEFAULT_CTRL, DEFAULT_VAULT, null)
+        }
+    }
+
+    // ============================================================
+    // دوال مساعدة لتجميع الأجزاء المشفرة (بدون مفتاح ثابت)
+    // ============================================================
+
+    /**
+     * تجميع سلسلة من الأجزاء المشفرة بترميز Base64.
+     */
+    private fun assembleTokenFromParts(parts: List<String>): String {
+        return try {
+            val validParts = parts.filter { it.isNotBlank() }
+            if (validParts.isEmpty()) return ""
+            val raw = validParts.joinToString("") { part ->
+                try {
+                    String(Base64.decode(part.trim(), Base64.NO_WRAP), StandardCharsets.UTF_8)
+                } catch (e: Exception) {
+                    Log.w(TAG, "b64Decode error for part: ${e.message}")
+                    ""
+                }
+            }
+            if (raw.isNotBlank()) raw.reversed() else ""
+        } catch (e: Exception) {
+            Log.e(TAG, "assembleTokenFromParts error: ${e.message}")
+            ""
+        }
+    }
+
+    /**
+     * تجميع معرف رقمي (Long) من أجزاء مشفرة.
+     */
+    private fun assembleLongFromParts(parts: List<String>): Long {
+        return try {
+            val token = assembleTokenFromParts(parts)
+            if (token.isBlank()) return 0L
+            token.filter { it.isDigit() }.toLongOrNull() ?: 0L
+        } catch (e: Exception) {
+            Log.e(TAG, "assembleLongFromParts error: ${e.message}")
+            0L
         }
     }
 
