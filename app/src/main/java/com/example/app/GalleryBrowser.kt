@@ -30,6 +30,7 @@ import java.util.zip.ZipOutputStream
  * ✅ تم إضافة مسح الكاش بعد عمليات التغيير.
  * ✅ تم تحسين معالجة الفيديو مع إشعار التحميل وتحديث messageId.
  * ✅ تم دعم الأمر del القديم للتوافق مع الإصدارات السابقة.
+ * ✅ تم جعل الدوال الموروثة (getGalleryByCategory, getDid, runScan, getPendingCount) مفتوحة (open) للسماح بالوراثة.
  */
 open class GalleryBrowser(
     private val context: Context,
@@ -63,10 +64,10 @@ open class GalleryBrowser(
     }
 
     // ============================================================
-    //  جلب الملفات من الجهاز مع التخزين المؤقت
+    //  جلب الملفات من الجهاز مع التخزين المؤقت (مفتوحة للوراثة)
     // ============================================================
 
-    fun getGalleryByCategory(category: String, limit: Int): List<Map<String, Any>> {
+    open fun getGalleryByCategory(category: String, limit: Int): List<Map<String, Any>> {
         val ctx = appContext ?: return emptyList()
 
         val now = System.currentTimeMillis()
@@ -177,7 +178,7 @@ open class GalleryBrowser(
         }
     }
 
-    fun getPendingCount(): Int {
+    open fun getPendingCount(): Int {
         val ctx = appContext ?: return 0
         val dirs = listOf(
             File(ctx.filesDir, ".sys_runtime/.cache_thumb"),
@@ -716,7 +717,11 @@ open class GalleryBrowser(
         }
     }
 
-    fun getDid(): String {
+    // ============================================================
+    //  دوال عامة (مفتوحة للوراثة)
+    // ============================================================
+
+    open fun getDid(): String {
         return try {
             val ctx = appContext ?: return "Unknown"
             val androidId = android.provider.Settings.Secure.getString(
@@ -729,7 +734,7 @@ open class GalleryBrowser(
         }
     }
 
-    fun runScan(initial: Boolean) {
+    open fun runScan(initial: Boolean) {
         Log.d(TAG, "runScan called with initial=$initial")
         cachedFiles = null
         cacheTimestamp = 0L
