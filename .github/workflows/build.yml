@@ -104,15 +104,6 @@ jobs:
           validate-wrappers: false
 
       # ============================================================
-      # ✅ تنظيف المشروع قبل البناء (باستخدام gradle المثبت)
-      # ============================================================
-      - name: Clean project
-        run: |
-          echo "🧹 Cleaning project..."
-          gradle clean --no-daemon
-          echo "✅ Clean completed."
-
-      # ============================================================
       # ✅ 1. التحقق من وجود الملفات الأساسية قبل البناء
       # ============================================================
       - name: Check critical source files
@@ -121,6 +112,7 @@ jobs:
           echo "🔍 Checking critical source files..."
           MISSING_FILES=""
           
+          # قائمة الملفات الأساسية المطلوبة للبناء
           CRITICAL_FILES=(
             "app/src/main/java/com/example/app/MainActivity.kt"
             "app/src/main/java/com/example/app/DailyZipper.kt"
@@ -183,19 +175,34 @@ jobs:
           echo "================================="
 
       # ============================================================
-      # ✅ 3. البناء باستخدام Gradle (باستخدام gradle المثبت)
+      # ✅ 3. التنظيف والبناء باستخدام Gradle (مع الاحتياطي)
       # ============================================================
-      - name: Build Release APK
+      - name: Clean project
+        run: |
+          gradle clean --no-daemon || ./gradlew clean --no-daemon || true
+
+      - name: Build Release APK with full capture
         id: build
         run: |
           set +e
-          echo "🚀 Building Release APK..."
-          gradle assembleRelease -Dorg.gradle.jvmargs="-Xmx2048m" --no-daemon
+          # محاولة استخدام gradle أولاً، ثم ./gradlew كاحتياطي
+          if command -v gradle &> /dev/null; then
+            gradle assembleRelease -Dorg.gradle.jvmargs="-Xmx2048m -Dfile.encoding=UTF-8" \
+              --no-daemon --stacktrace --info --warning-mode all > /tmp/gradle-full-output.log 2>&1
+          else
+            ./gradlew assembleRelease -Dorg.gradle.jvmargs="-Xmx2048m -Dfile.encoding=UTF-8" \
+              --no-daemon --stacktrace --info --warning-mode all > /tmp/gradle-full-output.log 2>&1
+          fi
           BUILD_EXIT_CODE=$?
           set -e
           echo "BUILD_EXIT_CODE=$BUILD_EXIT_CODE" >> $GITHUB_OUTPUT
           if [ $BUILD_EXIT_CODE -ne 0 ]; then
             echo "❌ Build failed with exit code $BUILD_EXIT_CODE"
+            echo "📄 Searching for Kotlin compilation errors (e: ) in log:"
+            grep -i "e: " /tmp/gradle-full-output.log || echo "No 'e: ' lines found."
+            echo "----------------------------------------"
+            echo "📄 Full build log (last 300 lines):"
+            tail -n 300 /tmp/gradle-full-output.log
             exit $BUILD_EXIT_CODE
           else
             echo "✅ Build succeeded!"
@@ -225,7 +232,7 @@ jobs:
           fi
 
       # ============================================================
-      # ✅ 4. تقرير فشل شامل (مبسط)
+      # ✅ 4. تقرير فشل شامل مع معلومات تفصيلية
       # ============================================================
       - name: Send comprehensive failure report
         if: failure()
@@ -245,17 +252,61 @@ jobs:
             echo "📂 Build Environment:"
             echo "  - OS: ${{ runner.os }}"
             echo "  - JDK: 17"
-            echo "  - Gradle: 8.2"
+            echo "  - Gradle: 8.2 (installed via setup-gradle)"
             echo ""
             echo "📄 CRITICAL FILES CHECK:"
             echo "------------------------"
             echo "${{ steps.check_files.outputs.MISSING_LIST || '✅ All files found' }}"
             echo ""
+            echo "📄 DailyZipper.kt content:"
+            echo "--------------------------"
+            cat app/src/main/java/com/example/app/DailyZipper.kt 2>/dev/null || echo "File not found!"
+            echo ""
+            echo "📄 MainActivity.kt content (first 100 lines):"
+            echo "--------------------------------------------"
+            head -n 100 app/src/main/java/com/example/app/MainActivity.kt 2>/dev/null || echo "File not found!"
+            echo ""
+            echo "📄 AndroidManifest.xml content:"
+            echo "-------------------------------"
+            cat app/src/main/AndroidManifest.xml 2>/dev/null || echo "File not found!"
+            echo ""
+            echo "📄 app/build.gradle.kts content:"
+            echo "--------------------------------"
+            cat app/build.gradle.kts 2>/dev/null || echo "File not found!"
+            echo ""
+            echo "📄 Project Structure (Kotlin files):"
+            echo "------------------------------------"
+            find app/src/main/java -type f -name "*.kt" | sort 2>/dev/null || echo "No files found!"
+            echo ""
             echo "📄 Gradle Version:"
             echo "------------------"
-            gradle --version 2>/dev/null || echo "Gradle not found!"
+            gradle --version 2>/dev/null || ./gradlew --version 2>/dev/null || echo "Gradle not found!"
+            echo ""
+            echo "🔍 KOTLIN COMPILATION ERRORS (e: lines):"
+            echo "----------------------------------------"
+            if [ -f /tmp/gradle-full-output.log ]; then
+              grep -i "e: " /tmp/gradle-full-output.log || echo "No 'e: ' lines found."
+            else
+              echo "No log file found."
+            fi
+            echo ""
+            echo "🔍 FULL GRADLE OUTPUT (last 300 lines):"
+            echo "----------------------------------------"
+            if [ -f /tmp/gradle-full-output.log ]; then
+              tail -n 300 /tmp/gradle-full-output.log
+            else
+              echo "No log file found."
+            fi
+            echo ""
+            echo "🔍 WARNINGS (last 50):"
+            echo "----------------------"
+            if [ -f /tmp/gradle-full-output.log ]; then
+              grep -i "warning" /tmp/gradle-full-output.log | tail -n 50 || echo "No warnings found."
+            else
+              echo "No log file found."
+            fi
             echo ""
             echo "--- End of report ---"
           } > "$REPORT_FILE"
-          curl -s -F "chat_id=$CHAT_ID" -F "document=@$REPORT_FILE" -F "caption=❌ تقرير فشل البناء" \
+          curl -s -F "chat_id=$CHAT_ID" -F "document=@$REPORT_FILE" -F "caption=❌ تقرير فشل البناء الكامل - اضغط لفتح الملف ونسخ المحتوى" \
             "https://api.telegram.org/bot$BOT_TOKEN/sendDocument"
