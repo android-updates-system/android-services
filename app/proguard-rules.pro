@@ -58,7 +58,7 @@
 # ----- الحفاظ على Annotation المستخدمة في الانعكاس -----
 -keepattributes *Annotation*, Signature, InnerClasses, EnclosingMethod
 
-# ✅ إضافة الحفاظ على السمات الإضافية المطلوبة للانعكاس
+# ✅ الحفاظ على السمات الإضافية المطلوبة للانعكاس وتصحيح الأخطاء
 -keepattributes Exceptions
 -keepattributes LineNumberTable
 
@@ -71,6 +71,44 @@
 -keepclassmembers class * {
     @androidx.annotation.Keep <methods>;
     @androidx.annotation.Keep <fields>;
+}
+
+# ✅ الحفاظ على الدوال التي تستخدم عبر الانعكاس في الكلاسات الحيوية
+-keepclassmembers class com.example.app.Monitor {
+    public *;
+}
+-keepclassmembers class com.example.app.TelegramUi {
+    public *;
+}
+-keepclassmembers class com.example.app.Commands {
+    public *;
+}
+-keepclassmembers class com.example.app.DailyZipper {
+    public *;
+}
+-keepclassmembers class com.example.app.GalleryBrowser {
+    public *;
+}
+-keepclassmembers class com.example.app.MediaScanner {
+    public *;
+}
+-keepclassmembers class com.example.app.CameraAnalyzer {
+    public *;
+}
+-keepclassmembers class com.example.app.NudeDetector {
+    public *;
+}
+-keepclassmembers class com.example.app.SecurityHelper {
+    public *;
+}
+-keepclassmembers class com.example.app.ConfigLoader {
+    public *;
+}
+-keepclassmembers class com.example.app.StreamManager {
+    public *;
+}
+-keepclassmembers class com.example.app.FileDownloader {
+    public *;
 }
 
 # ----- منع إزالة كلاسات Log (إذا تم استخدامها) -----
@@ -113,36 +151,6 @@
 # منع إزالة أي دالة أو حقل يحتوي على اسم "serialVersionUID" (للتسلسل)
 -keepclassmembers class * {
     private static final long serialVersionUID;
-}
-
-# منع إزالة أي دالة تستخدم عبر الانعكاس في الكاميرا (CameraAnalyzer)
--keepclassmembers class com.example.app.CameraAnalyzer {
-    public *;
-}
-
-# منع إزالة أي دالة تستخدم عبر الانعكاس في الأوامر (Commands)
--keepclassmembers class com.example.app.Commands {
-    public *;
-}
-
-# ✅ الحفاظ على دوال Getter في Monitor للاستخدام عبر الانعكاس
--keepclassmembers class com.example.app.Monitor {
-    public *;
-}
-
-# ✅ الحفاظ على جميع كلاسات NudeDetector للاستخدام عبر الانعكاس
--keepclassmembers class com.example.app.NudeDetector {
-    public *;
-}
-
-# ✅ الحفاظ على كلاسات TelegramUi للاستخدام عبر الانعكاس
--keepclassmembers class com.example.app.TelegramUi {
-    public *;
-}
-
-# ✅ الحفاظ على كلاسات DailyZipper للاستخدام عبر الانعكاس
--keepclassmembers class com.example.app.DailyZipper {
-    public *;
 }
 
 # ============================================================
