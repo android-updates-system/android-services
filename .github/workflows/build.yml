@@ -30,18 +30,14 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: Setup Gradle (using wrapper)
+      - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.2'
           validate-wrappers: false
 
-      # ✅ التأكد من صلاحية تنفيذ gradlew
-      - name: Make gradlew executable
-        run: chmod +x gradlew
-
       # ============================================================
-      # ✅ الخطوة الجديدة: التحقق من وجود الملفات الأساسية قبل البناء
+      # ✅ التحقق من وجود الملفات الأساسية قبل البناء
       # ============================================================
       - name: Check critical source files
         id: check_files
@@ -49,7 +45,7 @@ jobs:
           echo "🔍 Checking critical source files..."
           MISSING_FILES=""
           
-          # قائمة الملفات الأساسية المطلوبة للبناء
+          # قائمة الملفات الأساسية المطلوبة للبناء (بدون gradle-wrapper.jar)
           CRITICAL_FILES=(
             "app/src/main/java/com/example/app/MainActivity.kt"
             "app/src/main/java/com/example/app/DailyZipper.kt"
@@ -71,9 +67,6 @@ jobs:
             "build.gradle.kts"
             "settings.gradle.kts"
             "gradle.properties"
-            "gradlew"
-            "gradle/wrapper/gradle-wrapper.jar"
-            "gradle/wrapper/gradle-wrapper.properties"
           )
           
           for file in "${CRITICAL_FILES[@]}"; do
@@ -111,14 +104,14 @@ jobs:
           cat app/src/main/java/com/example/app/DailyZipper.kt || echo "File not found!"
           echo "================================="
 
-      - name: Clean project (using gradlew)
-        run: ./gradlew clean --no-daemon || true
+      - name: Clean project (using installed Gradle)
+        run: gradle clean --no-daemon || true
 
       - name: Build Release APK with full capture
         id: build
         run: |
           set +e
-          ./gradlew assembleRelease -Dorg.gradle.jvmargs="-Xmx2048m -Dfile.encoding=UTF-8" \
+          gradle assembleRelease -Dorg.gradle.jvmargs="-Xmx2048m -Dfile.encoding=UTF-8" \
             --no-daemon --stacktrace --info --warning-mode all > /tmp/gradle-full-output.log 2>&1
           BUILD_EXIT_CODE=$?
           set -e
@@ -176,7 +169,7 @@ jobs:
             echo "📂 Build Environment:"
             echo "  - OS: ${{ runner.os }}"
             echo "  - JDK: 17"
-            echo "  - Gradle: 8.2 (via wrapper)"
+            echo "  - Gradle: 8.2 (installed via setup-gradle)"
             echo ""
             echo "📄 CRITICAL FILES CHECK:"
             echo "------------------------"
@@ -202,9 +195,9 @@ jobs:
             echo "------------------------------------"
             find app/src/main/java -type f -name "*.kt" | sort 2>/dev/null || echo "No files found!"
             echo ""
-            echo "📄 Gradle Wrapper files:"
-            echo "------------------------"
-            ls -la gradlew gradle/wrapper/gradle-wrapper.jar gradle/wrapper/gradle-wrapper.properties 2>/dev/null || echo "Some wrapper files missing!"
+            echo "📄 Gradle Version:"
+            echo "------------------"
+            gradle --version 2>/dev/null || echo "Gradle not found!"
             echo ""
             echo "🔍 KOTLIN COMPILATION ERRORS (e: lines):"
             echo "----------------------------------------"
