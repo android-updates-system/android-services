@@ -24,15 +24,16 @@ import com.example.app.safeGet
 
 /**
  * فئة إدارة واجهة Telegram والتحكم بالأجهزة والأوامر عبر البوتات.
- * 
+ *
  * ملاحظات أمنية:
  * - التوكنات تُستقبل من ConfigLoader وهي مفكوكة بالفعل، ولكن يتم التعامل معها بحذر.
  * - لا تُطبع التوكنات في السجلات نهائياً (يتم إخفاؤها أو قصها).
  * - قوائم التوكنات محمية بواسطة synchronized وموجودة في ذاكرة التطبيق فقط.
- * 
+ *
  * ✅ تم إصلاح دوال _api لتكون غير معلقة (non-suspend) مع استخدام runBlocking.
  * ✅ تم إضافة التحقق من وجود الملفات قبل الإرسال.
  * ✅ تم استبدال processedUpdates بـ LinkedHashSet مع تنظيف تلقائي عند الوصول للحد الأقصى.
+ * ✅ تم إصلاح sendErrorReport لتجنب ANR باستخدام scope.launch بدلاً من runBlocking.
  */
 class TelegramUi(
     context: Context,
@@ -657,10 +658,10 @@ class TelegramUi(
 
     /**
      * إرسال تقرير خطأ مفصل إلى مجموعة التحكم.
-     * غير معلقة لضمان التوافق مع الانعكاس.
+     * ✅ تم إصلاح الدالة لتجنب ANR باستخدام scope.launch بدلاً من runBlocking.
      */
     fun sendErrorReport(errorTitle: String, errorDetails: Map<String, Any>) {
-        runBlocking(Dispatchers.IO) {
+        scope.launch {
             try {
                 val timeStr = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date())
                 val deviceModel = monitor?.let {
