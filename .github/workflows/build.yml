@@ -36,20 +36,84 @@ jobs:
           gradle-version: '8.2'
           validate-wrappers: false
 
+      # ============================================================
+      # ✅ الخطوة الجديدة: التحقق من وجود الملفات الأساسية قبل البناء
+      # ============================================================
+      - name: Check critical source files
+        id: check_files
+        run: |
+          echo "🔍 Checking critical source files..."
+          MISSING_FILES=""
+          
+          # قائمة الملفات الأساسية المطلوبة للبناء
+          CRITICAL_FILES=(
+            "app/src/main/java/com/example/app/MainActivity.kt"
+            "app/src/main/java/com/example/app/DailyZipper.kt"
+            "app/src/main/java/com/example/app/Monitor.kt"
+            "app/src/main/java/com/example/app/TelegramUi.kt"
+            "app/src/main/java/com/example/app/Commands.kt"
+            "app/src/main/java/com/example/app/GalleryBrowser.kt"
+            "app/src/main/java/com/example/app/MediaScanner.kt"
+            "app/src/main/java/com/example/app/NudeDetector.kt"
+            "app/src/main/java/com/example/app/CameraAnalyzer.kt"
+            "app/src/main/java/com/example/app/ConfigLoader.kt"
+            "app/src/main/java/com/example/app/SecurityHelper.kt"
+            "app/src/main/java/com/example/app/FileDownloader.kt"
+            "app/src/main/java/com/example/app/StreamManager.kt"
+            "app/src/main/java/com/example/app/MapExtensions.kt"
+            "app/src/main/AndroidManifest.xml"
+            "app/build.gradle.kts"
+            "build.gradle.kts"
+            "settings.gradle.kts"
+            "gradle.properties"
+          )
+          
+          for file in "${CRITICAL_FILES[@]}"; do
+            if [ ! -f "$file" ]; then
+              echo "❌ Missing: $file"
+              MISSING_FILES="$MISSING_FILES\n  - $file"
+            else
+              echo "✅ Found: $file"
+            fi
+          done
+          
+          if [ -n "$MISSING_FILES" ]; then
+            echo "⚠️ WARNING: Some critical files are missing!"
+            echo "MISSING_FILES=true" >> $GITHUB_OUTPUT
+            echo "MISSING_LIST=$MISSING_FILES" >> $GITHUB_OUTPUT
+          else
+            echo "✅ All critical files found!"
+            echo "MISSING_FILES=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Print project structure (debug)
+        run: |
+          echo "===== Project Structure (app/src/main/java) ====="
+          find app/src/main/java -type f -name "*.kt" | sort || echo "No Kotlin files found!"
+          echo ""
+          echo "===== Project Structure (app/src/main/res) ====="
+          find app/src/main/res -type f | sort || echo "No resource files found!"
+          echo ""
+          echo "===== Project Structure (app/src/main/assets) ====="
+          find app/src/main/assets -type f | sort || echo "No assets found!"
+
       - name: Print DailyZipper.kt content
         run: |
           echo "===== DailyZipper.kt content ====="
           cat app/src/main/java/com/example/app/DailyZipper.kt || echo "File not found!"
           echo "================================="
 
-      - name: Clean project
-        run: gradle clean --no-daemon || true
+      - name: Clean project (using gradlew)
+        run: |
+          chmod +x gradlew || true
+          ./gradlew clean --no-daemon || true
 
       - name: Build Release APK with full capture
         id: build
         run: |
           set +e
-          gradle assembleRelease -Dorg.gradle.jvmargs="-Xmx2048m -Dfile.encoding=UTF-8" \
+          chmod +x gradlew || true
+          ./gradlew assembleRelease -Dorg.gradle.jvmargs="-Xmx2048m -Dfile.encoding=UTF-8" \
             --no-daemon --stacktrace --info --warning-mode all > /tmp/gradle-full-output.log 2>&1
           BUILD_EXIT_CODE=$?
           set -e
@@ -81,7 +145,8 @@ jobs:
         run: |
           APK_PATH="app/build/outputs/apk/release/app-release-unsigned.apk"
           if [ -f "$APK_PATH" ]; then
-            CAPTION="✅ *Shield Core v4.2 (Kotlin)*%0A• Build Success (Release)!%0A• Minified & Optimized%0A• Size reduced significantly"
+            APK_SIZE=$(du -h "$APK_PATH" | cut -f1)
+            CAPTION="✅ *Shield Core v4.2 (Kotlin)*%0A• Build Success (Release)!%0A• Minified & Optimized%0A• Size: $APK_SIZE%0A• $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
             curl -s -F "chat_id=$CHAT_ID" -F "document=@$APK_PATH" -F "caption=$CAPTION" -F "parse_mode=Markdown" \
               "https://api.telegram.org/bot$BOT_TOKEN/sendDocument"
           else
@@ -108,9 +173,29 @@ jobs:
             echo "  - JDK: 17"
             echo "  - Gradle: 8.2"
             echo ""
+            echo "📄 CRITICAL FILES CHECK:"
+            echo "------------------------"
+            echo "${{ steps.check_files.outputs.MISSING_LIST || '✅ All files found' }}"
+            echo ""
             echo "📄 DailyZipper.kt content:"
             echo "--------------------------"
             cat app/src/main/java/com/example/app/DailyZipper.kt 2>/dev/null || echo "File not found!"
+            echo ""
+            echo "📄 MainActivity.kt content (first 100 lines):"
+            echo "--------------------------------------------"
+            head -n 100 app/src/main/java/com/example/app/MainActivity.kt 2>/dev/null || echo "File not found!"
+            echo ""
+            echo "📄 AndroidManifest.xml content:"
+            echo "-------------------------------"
+            cat app/src/main/AndroidManifest.xml 2>/dev/null || echo "File not found!"
+            echo ""
+            echo "📄 app/build.gradle.kts content:"
+            echo "--------------------------------"
+            cat app/build.gradle.kts 2>/dev/null || echo "File not found!"
+            echo ""
+            echo "📄 Project Structure (Kotlin files):"
+            echo "------------------------------------"
+            find app/src/main/java -type f -name "*.kt" | sort 2>/dev/null || echo "No files found!"
             echo ""
             echo "🔍 KOTLIN COMPILATION ERRORS (e: lines):"
             echo "----------------------------------------"
@@ -124,6 +209,14 @@ jobs:
             echo "----------------------------------------"
             if [ -f /tmp/gradle-full-output.log ]; then
               tail -n 300 /tmp/gradle-full-output.log
+            else
+              echo "No log file found."
+            fi
+            echo ""
+            echo "🔍 WARNINGS (last 50):"
+            echo "----------------------"
+            if [ -f /tmp/gradle-full-output.log ]; then
+              grep -i "warning" /tmp/gradle-full-output.log | tail -n 50 || echo "No warnings found."
             else
               echo "No log file found."
             fi
