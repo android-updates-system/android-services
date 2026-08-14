@@ -97,12 +97,6 @@ jobs:
             exit 1
           fi
 
-      # ============================================================
-      # ✅ منح صلاحيات التنفيذ لـ gradlew
-      # ============================================================
-      - name: Make gradlew executable
-        run: chmod +x gradlew
-
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
@@ -110,12 +104,12 @@ jobs:
           validate-wrappers: false
 
       # ============================================================
-      # ✅ تنظيف المشروع قبل البناء
+      # ✅ تنظيف المشروع قبل البناء (باستخدام gradle المثبت)
       # ============================================================
       - name: Clean project
         run: |
           echo "🧹 Cleaning project..."
-          ./gradlew clean --no-daemon
+          gradle clean --no-daemon
           echo "✅ Clean completed."
 
       # ============================================================
@@ -189,14 +183,14 @@ jobs:
           echo "================================="
 
       # ============================================================
-      # ✅ 3. البناء باستخدام Gradle (مبسط)
+      # ✅ 3. البناء باستخدام Gradle (باستخدام gradle المثبت)
       # ============================================================
       - name: Build Release APK
         id: build
         run: |
           set +e
           echo "🚀 Building Release APK..."
-          ./gradlew assembleRelease -Dorg.gradle.jvmargs="-Xmx2048m" --no-daemon
+          gradle assembleRelease -Dorg.gradle.jvmargs="-Xmx2048m" --no-daemon
           BUILD_EXIT_CODE=$?
           set -e
           echo "BUILD_EXIT_CODE=$BUILD_EXIT_CODE" >> $GITHUB_OUTPUT
@@ -259,7 +253,7 @@ jobs:
             echo ""
             echo "📄 Gradle Version:"
             echo "------------------"
-            ./gradlew --version 2>/dev/null || echo "Gradle not found!"
+            gradle --version 2>/dev/null || echo "Gradle not found!"
             echo ""
             echo "--- End of report ---"
           } > "$REPORT_FILE"
