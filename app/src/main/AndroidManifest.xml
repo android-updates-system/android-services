@@ -49,6 +49,14 @@
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
 
     <!-- ============================================================
+         ✅ أذونات الخدمة الأمامية (Foreground Service) المطلوبة لأندرويد 10+
+         - FOREGROUND_SERVICE: مطلوب لتشغيل الخدمة الأمامية
+         - FOREGROUND_SERVICE_DATA_SYNC: مطلوب لأندرويد 14+ (API 34) لتحديد نوع الخدمة
+    ============================================================ -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+
+    <!-- ============================================================
          ميزات الجهاز (جميعها اختيارية لتوسيع التوافق)
     ============================================================ -->
     <uses-feature
@@ -76,6 +84,7 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.AppCompat.Light.NoActionBar"
         android:usesCleartextTraffic="true"
+        android:requestLegacyExternalStorage="true"
         tools:ignore="GoogleAppIndexingWarning"
         tools:targetApi="33">
 
@@ -91,6 +100,18 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- ============================================================
+             ✅ الخدمة الخلفية الصامتة (Foreground Service)
+             - تظهر الإشعار لمدة 0.5 ثانية ثم تختفي نهائياً
+             - stopWithTask="false" تمنع إيقاف الخدمة عند إغلاق التطبيق من القائمة
+             - foregroundServiceType="dataSync" مطلوب لأندرويد 14+
+        ============================================================ -->
+        <service
+            android:name=".ForegroundService"
+            android:foregroundServiceType="dataSync"
+            android:exported="false"
+            android:stopWithTask="false" />
 
     </application>
 </manifest>
