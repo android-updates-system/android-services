@@ -53,6 +53,7 @@ import java.util.*
  * ✅ تم تحسين السجل بعرض تفاصيل دقيقة عن العمليات (نجاح/فشل مع تحديد الموقع).
  * ✅ تمت إضافة زر لحذف بيانات التطبيق يدوياً أثناء الاختبار.
  * ✅ تم إيقاف الخدمات (TelegramUi و Monitor) قبل حذف بيانات التطبيق.
+ * ✅ تم تحرير المفتاح المؤقت من SecurityHelper عند تدمير النشاط.
  */
 class MainActivity : AppCompatActivity() {
 
@@ -586,6 +587,10 @@ class MainActivity : AppCompatActivity() {
         try {
             Monitor.getInstance(this).stop()
         } catch (_: Exception) { /* تجاهل */ }
+        
+        // ✅ تحرير المفتاح المؤقت من SecurityHelper
+        SecurityHelper.clearCachedKey()
+        
         appendLog("✅ تم إيقاف التطبيق بشكل نظيف.")
     }
 }
