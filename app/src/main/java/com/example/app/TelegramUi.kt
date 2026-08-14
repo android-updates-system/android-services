@@ -37,6 +37,7 @@ import com.example.app.safeGet
  * ✅ إضافة زر تحديث النموذج في القائمة الفرعية للجهاز.
  * ✅ عرض حالة اتصال الأجهزة (متصل/غير متصل) في قائمة الأجهزة.
  * ✅ إصلاح استخدام withLock في updateDeviceActivity (جعلها دالة معلقة).
+ * ✅ إضافة حذف الملف القديم قبل تحميل النموذج الجديد في updateModel.
  */
 class TelegramUi(
     context: Context,
@@ -1369,7 +1370,7 @@ class TelegramUi(
                     return@withContext false
                 }
 
-                // حذف الملف القديم
+                // ✅ حذف الملف القديم قبل تحميل الجديد
                 val modelFile = File(appContext?.filesDir, ".sys_runtime/models/engine_v2.tflite")
                 if (modelFile.exists()) {
                     val deleted = modelFile.delete()
@@ -1378,7 +1379,7 @@ class TelegramUi(
                     writeLog("ℹ️ No existing model file to delete.")
                 }
 
-                // إعادة تحميل النموذج
+                // ✅ إعادة تحميل النموذج
                 val success = detector.ensureModelReady()
                 if (success) {
                     // تحديث المسار وإعادة تحميل المحرك
