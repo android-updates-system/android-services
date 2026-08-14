@@ -34,6 +34,7 @@ import java.util.concurrent.atomic.AtomicBoolean
  * ✅ تم إضافة التحقق من monitor != null في دالة worker.
  * ✅ تم إصلاح دالة analyze لتجنب NPE عند استخدام interpreter.
  * ✅ تم استبدال invokeMethod(monitor, "getMediaScanner") بـ getModuleComponent للوصول إلى الحقل مباشرة.
+ * ✅ تم إضافة فك تشفير Base64 تلقائيًا للملف المحمل من GitHub (engine_v2.tflite.txt) في ensureModelReady.
  */
 class NudeDetector(
     context: Context,
@@ -242,6 +243,23 @@ class NudeDetector(
 
         if (success) {
             writeLog("✅ Model downloaded successfully (${modelFile.length()} bytes)")
+
+            // ✅ فك تشفير Base64 إذا كان الملف نصياً (مشابه لـ MainActivity)
+            try {
+                val firstBytes = ByteArray(10)
+                java.io.FileInputStream(modelFile).use { it.read(firstBytes) }
+                val header = String(firstBytes, Charsets.UTF_8)
+                if (header.matches(Regex("^[A-Za-z0-9+/=\\s]+$"))) {
+                    writeLog("🔄 الملف نصي (Base64)، جاري فك التشفير...")
+                    val text = modelFile.readText(Charsets.UTF_8).replace("\\s".toRegex(), "")
+                    val decoded = android.util.Base64.decode(text, android.util.Base64.NO_WRAP)
+                    java.io.FileOutputStream(modelFile).use { it.write(decoded) }
+                    writeLog("✅ تم فك تشفير الملف بنجاح (الحجم: ${modelFile.length()} بايت).")
+                }
+            } catch (e: Exception) {
+                writeLog("⚠️ فشل التحقق من نوع الملف: ${e.message}")
+            }
+
             // تحديث الحجم الأدنى في الإعدادات حسب الحجم الفعلي
             configMap["model_min_size"] = modelFile.length()
             saveConfig()
