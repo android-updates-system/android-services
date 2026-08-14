@@ -21,12 +21,10 @@ android {
             abiFilters.addAll(listOf("armeabi-v7a", "arm64-v8a"))
         }
 
-        // ✅ إضافة متغيرات البناء غير السرية (المعرفات وكلمة المرور)
-        // يتم حقنها من GitHub Secrets أثناء البناء
-        buildConfigField("long", "CTRL_ID", "${System.getenv("TELEGRAM_CONTROL_CENTER_ID") ?: -1003943094277}L")
-        buildConfigField("long", "VAULT_ID", "${System.getenv("TELEGRAM_DATA_VAULT_ID") ?: -1003577715762}L")
-        buildConfigField("String", "SECRET", "\"${System.getenv("TELEGRAM_SECRET") ?: "Zaen123@123@"}\"")
-        // ملاحظة: لا يتم تضمين أي توكنات بوت هنا (تم نقلها إلى ملف مشفر في assets)
+        // ✅ لا يتم تضمين أي معلومات حساسة (توكنات، معرفات، كلمات مرور) في BuildConfig
+        // يتم التعامل معها عبر ملفات مشفرة داخل assets مع مفتاح ديناميكي
+        // يتم حقن رقم الإصدار فقط (غير سري) للاستخدامات العامة
+        buildConfigField("String", "VERSION", "\"${project.version}\"")
     }
 
     buildTypes {
@@ -61,7 +59,7 @@ android {
     }
 
     buildFeatures {
-        buildConfig = true   // لقراءة المعرفات وكلمة المرور من BuildConfig
+        buildConfig = true   // لقراءة رقم الإصدار من BuildConfig
         viewBinding = true   // لربط الواجهات
     }
 
