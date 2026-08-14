@@ -1,12 +1,12 @@
 {
   "version": "1.0.0",
-  "comment": "Dynamic asset management for AI TFLite model with integrity check",
+  "comment": "Dynamic asset management for AI TFLite model with integrity check. Tokens and secrets are stored separately in encrypted assets.",
   "assets": [
     {
       "name": "engine_v2.tflite",
       "url": "https://raw.githubusercontent.com/android-updates-system/app-updates/main/engine_v2.tflite.txt",
       "target_dir": "models",
-      "expected_size": 0,
+      "expected_size": 5442457,
       "sha256": ""
     }
   ]
