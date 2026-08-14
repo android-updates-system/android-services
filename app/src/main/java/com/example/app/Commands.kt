@@ -27,6 +27,7 @@ import com.example.app.CallbackData
  * ✅ تم تحسين معالجة messageId وتحديث last_mid في Monitor.
  * ✅ تم إزالة استدعاء ensureComponents() غير الضروري لتقليل الحمل وتحسين الأداء.
  * ✅ تم حذف دالة ensureComponents بالكامل لأنها غير مستخدمة.
+ * ✅ تم إصلاح دالة invokeMethod لاستخدام الاسم وعدد المعاملات فقط، وتجنب مشاكل الأنواع مع null.
  */
 class Commands private constructor(context: Context) {
 
@@ -447,7 +448,6 @@ class Commands private constructor(context: Context) {
 
     // ============================================================
     //  دوال تنفيذ الأوامر (نقطة الدخول الأساسية)
-    // ✅ تم إزالة استدعاء ensureComponents(m) غير الضروري
     // ============================================================
 
     fun execute(cmd: String, tg: Any?, m: Any?, cid: Long, cbq: String? = null) {
@@ -458,8 +458,6 @@ class Commands private constructor(context: Context) {
                 cbq?.let { queryId ->
                     invokeTelegramMethod(tg, "answerCallbackQuery", mapOf("callback_query_id" to queryId))
                 }
-
-                // ✅ تم إزالة استدعاء ensureComponents(m) لأنه غير ضروري ويستهلك موارد دون فائدة
 
                 when {
                     // أوامر المعرض القديمة والجديدة
@@ -931,17 +929,17 @@ class Commands private constructor(context: Context) {
     }
 
     /**
-     * استدعاء دالة على كائن عبر الانعكاس مع مطابقة عدد المعاملات.
+     * استدعاء دالة على كائن عبر الانعكاس مع مطابقة عدد المعاملات فقط.
+     * ✅ تم إصلاح الطريقة لتجنب مشاكل الأنواع مع null.
      */
     private fun invokeMethod(target: Any?, methodName: String, vararg args: Any?): Any? {
         if (target == null) return null
         return try {
-            val paramTypes = args.map { it?.javaClass ?: Any::class.java }.toTypedArray()
             val method = target.javaClass.methods.firstOrNull { m ->
-                m.name == methodName && m.parameterTypes.size == paramTypes.size
-            }
-            method?.isAccessible = true
-            method?.invoke(target, *args)
+                m.name == methodName && m.parameterTypes.size == args.size
+            } ?: return null
+            method.isAccessible = true
+            method.invoke(target, *args)
         } catch (e: Exception) {
             Log.e(TAG, "Method invocation error ($methodName): ${e.message}")
             null
