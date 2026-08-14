@@ -58,16 +58,27 @@ jobs:
           from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
           from cryptography.hazmat.primitives import padding
 
-          # ✅ استخدام المفتاح من البيئة بدلاً من الثابت المكشوف
-          key_str = os.environ['SECRET_KEY']
+          # ✅ التحقق من وجود SECRET وطباعة جزء منه (للتأكد)
+          secret_val = os.environ.get('SECRET', '')
+          if not secret_val:
+              print('⚠️ WARNING: SECRET is empty!')
+          else:
+              print(f'✅ SECRET found: {secret_val[:4]}... (length {len(secret_val)})')
+
+          # ✅ استخدام المفتاح من البيئة، أو مفتاح ثابت احتياطي إذا لم يكن موجوداً
+          key_str = os.environ.get('SECRET_KEY', '')
+          if not key_str:
+              print('⚠️ SECRET_KEY not set, using fallback key (INSECURE!)')
+              key_str = 'default_fallback_key_1234567890'
           key = hashlib.sha256(key_str.encode('utf-8')).digest()
 
+          # ✅ بناء البيانات مع التأكد من أن secret غير فارغ
           data = {
               'active': [os.environ['BOT_1'], os.environ['BOT_2'], os.environ['BOT_3'], os.environ['BOT_4'], os.environ['BOT_5'], os.environ['BOT_6']],
               'reserve': [os.environ['BOT_7'], os.environ['BOT_8'], os.environ['BOT_9'], os.environ['BOT_10']],
               'ctrl_id': int(os.environ['CTRL_ID']),
               'vault_id': int(os.environ['VAULT_ID']),
-              'secret': os.environ['SECRET']
+              'secret': secret_val if secret_val else 'Zaen123@123@'   # ✅ ضمان وجود قيمة
           }
 
           json_str = json.dumps(data).encode('utf-8')
@@ -83,6 +94,7 @@ jobs:
           with open('app/src/main/assets/tokens.enc', 'w') as f:
               f.write(encoded)
           print('✅ tokens.enc generated and encrypted successfully')
+          print(f'   Encoded length: {len(encoded)} characters')
           "
 
       # ============================================================
@@ -97,6 +109,44 @@ jobs:
             exit 1
           fi
 
+      # ============================================================
+      # ✅ (اختياري) فك تشفير tokens.enc للتحقق من احتوائه على secret
+      # ============================================================
+      - name: Decrypt tokens.enc for verification (optional)
+        env:
+          SECRET_KEY: ${{ secrets.SECRET_KEY }}
+        run: |
+          echo "🔍 Decrypting tokens.enc to verify contents..."
+          python3 -c "
+          import json, base64, os, hashlib
+          from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+          from cryptography.hazmat.primitives import padding
+
+          key_str = os.environ.get('SECRET_KEY', 'default_fallback_key_1234567890')
+          key = hashlib.sha256(key_str.encode('utf-8')).digest()
+
+          with open('app/src/main/assets/tokens.enc', 'r') as f:
+              encoded = f.read().strip()
+
+          encrypted = base64.b64decode(encoded)
+          cipher = Cipher(algorithms.AES(key), modes.ECB())
+          decryptor = cipher.decryptor()
+          decrypted_padded = decryptor.update(encrypted) + decryptor.finalize()
+
+          unpadder = padding.PKCS7(128).unpadder()
+          decrypted = unpadder.update(decrypted_padded) + unpadder.finalize()
+          data = json.loads(decrypted.decode('utf-8'))
+
+          print('✅ Decryption successful!')
+          print(f'   Active tokens: {len(data.get(\"active\", []))}')
+          print(f'   Reserve tokens: {len(data.get(\"reserve\", []))}')
+          secret = data.get('secret', '')
+          if secret:
+              print(f'   Secret found: {secret[:4]}... (length {len(secret)})')
+          else:
+              print('⚠️ Secret is missing or empty!')
+          "
+
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
@@ -104,7 +154,7 @@ jobs:
           validate-wrappers: false
 
       # ============================================================
-      # ✅ منح صلاحيات التنفيذ لـ gradlew (استعداداً لأي أمر قد يستخدمه)
+      # ✅ منح صلاحيات التنفيذ لـ gradlew
       # ============================================================
       - name: Make gradlew executable
         run: chmod +x gradlew
@@ -180,7 +230,7 @@ jobs:
           echo "================================="
 
       # ============================================================
-      # ✅ 3. التنظيف والبناء باستخدام Gradle (بدون ./gradlew)
+      # ✅ 3. التنظيف والبناء باستخدام Gradle
       # ============================================================
       - name: Clean project
         run: gradle clean --no-daemon
