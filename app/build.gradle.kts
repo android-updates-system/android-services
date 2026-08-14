@@ -16,10 +16,12 @@ android {
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
+        // ✅ تحديد معماريات المعالج المدعومة فقط (v7 و v8) لتقليل حجم APK
         ndk {
             abiFilters.addAll(listOf("armeabi-v7a", "arm64-v8a"))
         }
 
+        // ✅ تحديد اللغات المدعومة لتقليل حجم ملفات الموارد
         resConfigs("en", "ar")
 
         vectorDrawables {
@@ -51,11 +53,15 @@ android {
 
     kotlinOptions {
         jvmTarget = "17"
+        // ✅ إضافة خيارات ضغط كود Kotlin لتقليل حجم الـ DEX
         freeCompilerArgs = listOf(
             "-opt-in=kotlin.RequiresOptIn",
             "-opt-in=kotlinx.coroutines.ExperimentalCoroutinesApi",
             "-opt-in=kotlinx.coroutines.FlowPreview",
-            "-opt-in=kotlin.ExperimentalStdlibApi"
+            "-opt-in=kotlin.ExperimentalStdlibApi",
+            "-Xno-param-assertions",
+            "-Xno-call-assertions",
+            "-Xno-receiver-assertions"
         )
     }
 
@@ -66,7 +72,9 @@ android {
 
     packaging {
         resources {
+            // ✅ استبعاد جميع ملفات META-INF غير الضرورية
             excludes += setOf(
+                "META-INF/**",
                 "META-INF/AL2.0",
                 "META-INF/LGPL2.1",
                 "META-INF/DEPENDENCIES",
@@ -79,6 +87,7 @@ android {
                 "META-INF/README.md",
                 "META-INF/MANIFEST.MF"
             )
+            // ✅ استبعاد مكتبات Native غير المستخدمة (x86, x86_64, mips)
             excludes += setOf(
                 "**/lib/x86/*.so",
                 "**/lib/x86_64/*.so",
@@ -92,6 +101,9 @@ android {
         unitTests.isReturnDefaultValues = true
     }
 
+    // ============================================================
+    // إعدادات Lint لتجنب إيقاف البناء بسبب أخطاء غير حرجة
+    // ============================================================
     lint {
         disable += "Instantiatable"
         disable += "GradleDeprecated"
@@ -104,29 +116,29 @@ android {
 }
 
 dependencies {
-    // ===== AndroidX =====
+    // ===== AndroidX الأساسية =====
     implementation("androidx.core:core-ktx:1.12.0")
     implementation("androidx.appcompat:appcompat:1.6.1")
     implementation("com.google.android.material:material:1.11.0")
     implementation("androidx.constraintlayout:constraintlayout:2.1.4")
 
-    // ===== Coroutines =====
+    // ===== دورة الحياة و Coroutines =====
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.7.0")
     implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.7.0")
     implementation("androidx.lifecycle:lifecycle-livedata-ktx:2.7.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.8.1")
 
-    // ===== Networking =====
+    // ===== الشبكات ومعالجة JSON =====
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("com.squareup.okhttp3:logging-interceptor:4.12.0")
     implementation("com.google.code.gson:gson:2.10.1")
 
-    // ===== TensorFlow Lite (أُعيد إضافتها لحل أخطاء الترجمة) =====
+    // ===== TensorFlow Lite (ضروري لتشغيل النموذج) =====
     implementation("org.tensorflow:tensorflow-lite:2.14.0")
     implementation("org.tensorflow:tensorflow-lite-support:0.4.4")
 
-    // ===== Testing =====
+    // ===== اختبارات =====
     testImplementation("junit:junit:4.13.2")
     androidTestImplementation("androidx.test.ext:junit:1.1.5")
     androidTestImplementation("androidx.test.espresso:espresso-core:3.5.1")
