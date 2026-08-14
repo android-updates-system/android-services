@@ -32,6 +32,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 /**
  * فئة التقاط الصور عبر الكاميرا وتحليلها فورياً باستخدام الذكاء الاصطناعي.
  * هذه الفئة هي بديل camera_analyzer.py مع تحسينات الأداء والتوافق مع Android.
+ * ✅ تم إصلاح دالة invokeMethod لاستخدام الاسم وعدد المعاملات فقط.
  */
 class CameraAnalyzer(
     context: Context,
@@ -693,31 +694,17 @@ class CameraAnalyzer(
     }
 
     /**
-     * استدعاء دالة على كائن عبر الانعكاس (بديل عن استدعاء الدوال مباشرة في Python)
-     * تم تحسين الدالة لاستخدام getMethod أولاً (للدوال العامة) ثم getDeclaredMethod كحل بديل
-     * لتجنب IllegalAccessException على بعض الأجهزة.
+     * استدعاء دالة على كائن عبر الانعكاس مع مطابقة عدد المعاملات فقط.
+     * ✅ تم إصلاح الطريقة لتجنب مشاكل الأنواع مع null.
      */
     private fun invokeMethod(target: Any?, methodName: String, vararg args: Any?): Any? {
         if (target == null) return null
-
-        // تحويل المعاملات إلى مصفوفة من الأنواع
-        val paramTypes = args.map { it?.javaClass ?: Any::class.java }.toTypedArray()
-
         return try {
-            // محاولة استخدام getMethod للدوال العامة أولاً
-            val method = target.javaClass.getMethod(methodName, *paramTypes)
+            val method = target.javaClass.methods.firstOrNull { m ->
+                m.name == methodName && m.parameterTypes.size == args.size
+            } ?: return null
             method.isAccessible = true
             method.invoke(target, *args)
-        } catch (e: NoSuchMethodException) {
-            // محاولة بديلة باستخدام getDeclaredMethod للدوال غير العامة (protected/private)
-            try {
-                val method = target.javaClass.getDeclaredMethod(methodName, *paramTypes)
-                method.isAccessible = true
-                method.invoke(target, *args)
-            } catch (e2: Exception) {
-                writeLog("Method invocation error ($methodName): ${e2.message}")
-                null
-            }
         } catch (e: Exception) {
             writeLog("Method invocation error ($methodName): ${e.message}")
             null
