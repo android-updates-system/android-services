@@ -35,6 +35,7 @@ import java.util.concurrent.atomic.AtomicBoolean
  * ✅ تم إصلاح دالة analyze لتجنب NPE عند استخدام interpreter.
  * ✅ تم استبدال invokeMethod(monitor, "getMediaScanner") بـ getModuleComponent للوصول إلى الحقل مباشرة.
  * ✅ تم إضافة فك تشفير Base64 تلقائيًا للملف المحمل من GitHub (engine_v2.tflite.txt) في ensureModelReady.
+ * ✅ تم جعل الدالتين ensureModelReady و loadEngineForever قابلة للاستدعاء من خارج الفئة (internal) لتحديث النموذج عبر Telegram.
  */
 class NudeDetector(
     context: Context,
@@ -62,7 +63,7 @@ class NudeDetector(
 
     private var inputSizeX = 224
     private var inputSizeY = 224
-    private var modelPath: String? = null
+    var modelPath: String? = null   // جعلته var وقابل للوصول من الخارج
 
     // ========== المسارات والملفات ==========
     private val runtimeDir: File by lazy {
@@ -163,7 +164,7 @@ class NudeDetector(
     }
 
     // ============================================================
-    //  التأكد من جاهزية النموذج (مع التحميل الديناميكي)
+    //  التأكد من جاهزية النموذج (مع التحميل الديناميكي) - أصبحت internal للاستدعاء من TelegramUi
     // ============================================================
 
     /**
@@ -171,7 +172,7 @@ class NudeDetector(
      * يحاول أولاً النسخ من assets، ثم التحميل من الإنترنت عبر FileDownloader.
      * يعيد true إذا تم تحضير النموذج بنجاح، false في حالة الفشل.
      */
-    private suspend fun ensureModelReady(): Boolean {
+    internal suspend fun ensureModelReady(): Boolean {
         val modelFile = File(modelsDir, "engine_v2.tflite")
         val minSize = (configMap["model_min_size"] as? Number)?.toLong() ?: 5_000_000L
 
@@ -332,10 +333,10 @@ class NudeDetector(
     }
 
     // ============================================================
-    //  تحميل المحرك (بديل _load_engine_forever)
+    //  تحميل المحرك (بديل _load_engine_forever) - أصبحت internal للاستدعاء من TelegramUi
     // ============================================================
 
-    private suspend fun loadEngineForever() {
+    internal suspend fun loadEngineForever() {
         if (isLoadingEngine.get() || modelPath.isNullOrEmpty()) return
 
         // محاولة البحث عن النموذج إذا لم يتم تعيين المسار
