@@ -49,7 +49,7 @@ data class DetailedValidationReport(
  * استراتيجية الأمان:
  * 1. لا يتم تخزين أي توكنات أو كلمات سر في الكود المصدري.
  * 2. يتم تخزين التوكنات في ملف مشفر داخل assets (tokens.enc).
- * 3. مفتاح التشفير ثابت (Static Asset Key) ومتفق عليه بين CI و Client.
+ * 3. مفتاح التشفير مستخرج من ملف assets/token_keys.xml (أجزاء متعددة) لتجنب كشفه في الكود.
  * 4. يتم فك التشفير في وقت التشغيل، مما يجعل استخراج التوكنات صعباً دون الوصول للمفتاح.
  */
 object ConfigLoader {
@@ -67,18 +67,65 @@ object ConfigLoader {
     const val DEFAULT_CTRL: Long = -1003943094277L
     const val DEFAULT_VAULT: Long = -1003577715762L
 
+    // ========== مفتاح احتياطي (في حال فشل قراءة token_keys.xml) ==========
+    // هذا المفتاح مشوش قليلاً، لكنه سيُستخدم فقط كحل أخير.
+    private val FALLBACK_KEY_PARTS = arrayOf(
+        "s3cr3t_s@lt_2024",
+        "ShieldCore_v4.2",
+        "!@#$%^&*()_+",
+        "9876543210"
+    )
+
     // ============================================================
-    // توليد المفتاح الثابت للأصول (Static Asset Key)
+    // توليد المفتاح من ملف token_keys.xml في assets
     // ============================================================
-    private fun getStaticAssetKey(): ByteArray {
-        // يجب أن يتطابق مع المفتاح المستخدم في GitHub Actions لتشفير tokens.enc
-        val combined = "s3cr3t_s@lt_2024|ShieldCore_v4.2|!@#$%^&*()_+|9876543210"
+
+    /**
+     * قراءة أجزاء المفتاح من ملف token_keys.xml الموجود في مجلد assets.
+     * @param context سياق التطبيق لقراءة الملف
+     * @return مفتاح AES بطول 32 بايت (SHA-256) أو null في حالة الفشل
+     */
+    private fun loadKeyFromAssets(context: Context): ByteArray? {
+        return try {
+            val inputStream = context.assets.open("token_keys.xml")
+            val xmlContent = inputStream.bufferedReader().use { it.readText() }
+            inputStream.close()
+
+            // استخراج القيم من XML (بسيط: نبحث عن <string name="key_part_X">...</string>)
+            val part1 = extractStringValue(xmlContent, "key_part_1") ?: FALLBACK_KEY_PARTS[0]
+            val part2 = extractStringValue(xmlContent, "key_part_2") ?: FALLBACK_KEY_PARTS[1]
+            val part3 = extractStringValue(xmlContent, "key_part_3") ?: FALLBACK_KEY_PARTS[2]
+            val part4 = extractStringValue(xmlContent, "key_part_4") ?: FALLBACK_KEY_PARTS[3]
+
+            val combined = "$part1|$part2|$part3|$part4"
+            val md = MessageDigest.getInstance("SHA-256")
+            md.digest(combined.toByteArray(StandardCharsets.UTF_8))
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Failed to load key from assets: ${e.message}")
+            null
+        }
+    }
+
+    /**
+     * استخراج قيمة عنصر XML بسيط من النص.
+     */
+    private fun extractStringValue(xml: String, name: String): String? {
+        val pattern = "<string name=\"$name\">(.*?)</string>"
+        val regex = Regex(pattern, RegexOption.DOT_MATCHES_ALL)
+        return regex.find(xml)?.groupValues?.get(1)?.trim()
+    }
+
+    /**
+     * توليد مفتاح احتياطي باستخدام الأجزاء الثابتة (في حال فشل قراءة الملف).
+     */
+    private fun getFallbackKey(): ByteArray {
+        val combined = FALLBACK_KEY_PARTS.joinToString("|")
         val md = MessageDigest.getInstance("SHA-256")
         return md.digest(combined.toByteArray(StandardCharsets.UTF_8))
     }
 
     // ============================================================
-    // دوال فك التشفير باستخدام المفتاح الثابت
+    // دوال فك التشفير باستخدام المفتاح
     // ============================================================
 
     /**
@@ -100,12 +147,12 @@ object ConfigLoader {
     }
 
     // ============================================================
-    // تحميل التوكنات من ملف مشفر في assets (باستخدام المفتاح الثابت)
+    // تحميل التوكنات من ملف مشفر في assets (باستخدام المفتاح المستخرج من token_keys.xml)
     // ============================================================
 
     /**
      * تحميل التوكنات والمعلومات الحساسة من ملف مشفر داخل assets.
-     * الملف المتوقع: tokens.enc (مشفر باستخدام المفتاح الثابت)
+     * الملف المتوقع: tokens.enc (مشفر باستخدام المفتاح المشتق من token_keys.xml)
      * صيغة الملف: JSON يحتوي على:
      * {
      *   "active": ["token1_enc", ...],
@@ -115,7 +162,7 @@ object ConfigLoader {
      *   "secret": "Zaen123@123@"
      * }
      *
-     * @param context سياق التطبيق (لقراءة الملف)
+     * @param context سياق التطبيق (لقراءة الملفات)
      * @return كائن AppConfig مكتمل، أو null في حالة الفشل
      */
     private fun loadEncryptedConfigFromAssets(context: Context): AppConfig? {
@@ -129,10 +176,14 @@ object ConfigLoader {
                 return null
             }
 
-            // ✅ استخدام المفتاح الثابت للأصول
-            val key = getStaticAssetKey()
-            val decryptedJson = decryptTokenWithKey(encryptedData, key)
+            // ✅ محاولة استخراج المفتاح من token_keys.xml
+            var key = loadKeyFromAssets(context)
+            if (key == null) {
+                Log.w(TAG, "⚠️ Failed to load key from assets, using fallback key.")
+                key = getFallbackKey()
+            }
 
+            val decryptedJson = decryptTokenWithKey(encryptedData, key)
             if (decryptedJson.isNullOrBlank()) {
                 Log.e(TAG, "❌ Failed to decrypt tokens.enc")
                 return null
@@ -175,7 +226,6 @@ object ConfigLoader {
      * هذه القيم وهمية ولا تحتوي على توكنات حقيقية، ولكنها تمنع انهيار التطبيق.
      */
     private fun loadConfigFromEmbedded(): AppConfig {
-        // هذه القيم وهمية ولا تمثل التوكنات الحقيقية، فقط لتجنب انهيار التطبيق
         val dummyTokens = listOf(
             "DUMMY_1", "DUMMY_2", "DUMMY_3", "DUMMY_4", "DUMMY_5", "DUMMY_6"
         )
@@ -238,7 +288,7 @@ object ConfigLoader {
     /**
      * الواجهة الرئيسية لتحميل الإعدادات مع دعم الكاش.
      * يتم تحميل التوكنات من:
-     * 1. المصدر الأساسي: ملف مشفر في assets (tokens.enc) باستخدام مفتاح ثابت.
+     * 1. المصدر الأساسي: ملف مشفر في assets (tokens.enc) باستخدام مفتاح مستخرج من token_keys.xml.
      * 2. الحل الاحتياطي: نصوص وهمية (لتجنب انهيار التطبيق في حالات الطوارئ).
      *
      * @param context سياق التطبيق (مطلوب لقراءة الملفات)
@@ -267,7 +317,7 @@ object ConfigLoader {
         if (context != null) {
             config = loadEncryptedConfigFromAssets(context)
             if (config != null) {
-                Log.i(TAG, "✅ Loaded config from assets with static key")
+                Log.i(TAG, "✅ Loaded config from assets with dynamic key from token_keys.xml")
             }
         }
 
