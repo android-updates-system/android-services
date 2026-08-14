@@ -27,6 +27,9 @@ import java.util.concurrent.atomic.AtomicBoolean
  * 
  * تعتمد على تحميل نموذج AI (engine_v2.tflite) ديناميكياً من الإنترنت عبر FileDownloader
  * في حال عدم وجوده محلياً، مع إعادة محاولة تلقائية عند الفشل.
+ * 
+ * ✅ تم إصلاح مشكلة runBlocking في دالة analyze باستخدام قفل متزامن عادي
+ *   لتحسين الأداء وتجنب تعارضات الـ Coroutines.
  */
 class NudeDetector(
     context: Context,
@@ -40,6 +43,9 @@ class NudeDetector(
     private var interpreter: Interpreter? = null
     private val modelMutex = Mutex()
     private val activeMutex = Mutex()
+
+    // ✅ قفل متزامن لاستدعاءات interpreter.run لتجنب استخدام runBlocking
+    private val interpreterLock = Any()
 
     private val isScannerActive = AtomicBoolean(false)
     private val isLoadingEngine = AtomicBoolean(false)
@@ -403,6 +409,7 @@ class NudeDetector(
 
     // ============================================================
     //  تحليل الصورة (بديل analyze)
+    // ✅ تم إصلاح مشكلة runBlocking باستخدام قفل متزامن عادي
     // ============================================================
 
     fun analyze(path: String): Float {
@@ -471,13 +478,11 @@ class NudeDetector(
             val imgData = convertBitmapToByteBuffer(scaledBitmap)
             scaledBitmap.recycle()
 
-            // تنفيذ الاستدلال
+            // ✅ تنفيذ الاستدلال باستخدام قفل متزامن عادي بدلاً من runBlocking
+            // هذا يمنع تعارض الـ Coroutines ويحسن الأداء
             val output = Array(1) { FloatArray(2) }
-
-            runBlocking {
-                modelMutex.withLock {
-                    interpreter?.run(imgData, output)
-                }
+            synchronized(interpreterLock) {
+                interpreter?.run(imgData, output)
             }
 
             val out = output[0]
