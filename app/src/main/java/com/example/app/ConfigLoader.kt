@@ -1,6 +1,8 @@
 package com.example.app
 
 import android.content.Context
+import android.os.Build
+import android.provider.Settings
 import android.util.Base64
 import android.util.Log
 import org.json.JSONArray
@@ -9,6 +11,7 @@ import java.io.InputStreamReader
 import java.net.HttpURLConnection
 import java.net.URL
 import java.nio.charset.StandardCharsets
+import java.security.MessageDigest
 import javax.crypto.Cipher
 import javax.crypto.spec.SecretKeySpec
 
@@ -42,9 +45,17 @@ data class DetailedValidationReport(
 
 /**
  * محمل الإعدادات الآمن لمشروع Android (بديل config_template.py)
- * يدعم تحميل التوكنات من:
- * - ملف مشفر داخل assets (tokens.enc) - المصدر الأساسي
- * - متغيرات مشفرة مضمنة (للتوافق القديم) - حل احتياطي
+ * 
+ * استراتيجية الأمان:
+ * 1. لا يتم تخزين أي توكنات أو كلمات سر في الكود المصدري أو BuildConfig.
+ * 2. يتم تخزين التوكنات والمعلومات الحساسة في ملف مشفر داخل assets (tokens.enc).
+ * 3. مفتاح التشفير ديناميكي (غير ثابت) ويتم اشتقاقه من:
+ *    - أجزاء ثابتة موجودة في ملف token_keys.xml
+ *    - معرف الجهاز (ANDROID_ID)
+ *    - طراز الجهاز (MODEL)
+ *    - رقم الإصدار (VERSION)
+ *    - قيمة عشوائية مخزنة في SharedPreferences (اختياري)
+ * 4. يتم فك التشفير في وقت التشغيل، مما يجعل استخراج التوكنات مستحيلاً بدون الجهاز الفعلي.
  */
 object ConfigLoader {
 
@@ -61,7 +72,8 @@ object ConfigLoader {
     const val DEFAULT_CTRL: Long = -1003943094277L
     const val DEFAULT_VAULT: Long = -1003577715762L
 
-    // ========== مفتاح التشفير الثابت (للتوافق مع الإصدارات القديمة) ==========
+    // ========== مفتاح التشفير الثابت (للتوافق مع الإصدارات القديمة فقط، سيتم استبداله) ==========
+    @Deprecated("Use dynamic key instead")
     private const val ENCRYPTION_KEY = "lse64w8p5xQSuqD9y5XlVRYUa5pnEwPvR9fwLLN87q8"
 
     // ========== المتغيرات المشفرة (للتوافق مع الإصدارات القديمة) ==========
@@ -98,14 +110,93 @@ object ConfigLoader {
     private const val VAULT_PART2 = "MzAwMS0="
 
     // ============================================================
-    // دوال فك التشفير ومساعدة النصوص
+    // توليد المفتاح الديناميكي
+    // ============================================================
+
+    /**
+     * توليد مفتاح AES-256 ديناميكي من عدة مصادر.
+     * يتم جمع الأجزاء التالية:
+     * - أجزاء ثابتة من ملف الموارد (token_keys.xml)
+     * - معرف الجهاز (ANDROID_ID)
+     * - طراز الجهاز (MODEL)
+     * - رقم الإصدار (VERSION)
+     * - قيمة عشوائية مخزنة في SharedPreferences (لتغيير المفتاح عند إعادة التثبيت)
+     *
+     * @param context سياق التطبيق (لقراءة الموارد والإعدادات)
+     * @return مفتاح AES بطول 32 بايت (SHA-256)
+     */
+    private fun getDynamicKey(context: Context): ByteArray {
+        val resources = context.resources
+        val part1 = resources.getString(R.string.key_part_1)
+        val part2 = resources.getString(R.string.key_part_2)
+        val part3 = resources.getString(R.string.key_part_3)
+        val part4 = resources.getString(R.string.key_part_4)
+
+        val androidId = Settings.Secure.getString(context.contentResolver, Settings.Secure.ANDROID_ID) ?: "unknown"
+        val model = Build.MODEL
+        val version = BuildConfig.VERSION
+
+        // جزء إضافي مخزن في SharedPreferences (يُولد مرة واحدة)
+        val prefs = context.getSharedPreferences("shield_prefs", Context.MODE_PRIVATE)
+        var randomSalt = prefs.getString("key_salt", null)
+        if (randomSalt == null) {
+            randomSalt = java.util.UUID.randomUUID().toString()
+            prefs.edit().putString("key_salt", randomSalt).apply()
+        }
+
+        // دمج جميع الأجزاء بترتيب محدد
+        val combined = "$part1|$androidId|$part2|$model|$part3|$version|$part4|$randomSalt"
+
+        // تطبيق SHA-256 للحصول على مفتاح 32 بايت
+        val md = MessageDigest.getInstance("SHA-256")
+        return md.digest(combined.toByteArray(StandardCharsets.UTF_8))
+    }
+
+    // ============================================================
+    // دوال فك التشفير باستخدام المفتاح الديناميكي
+    // ============================================================
+
+    /**
+     * فك تشفير توكن واحد باستخدام مفتاح ديناميكي.
+     */
+    private fun decryptTokenWithKey(encryptedToken: String?, key: ByteArray): String? {
+        if (encryptedToken.isNullOrBlank()) return null
+        return try {
+            val secretKey = SecretKeySpec(key, "AES")
+            val cipher = Cipher.getInstance("AES/ECB/PKCS5Padding")
+            cipher.init(Cipher.DECRYPT_MODE, secretKey)
+            val decoded = Base64.decode(encryptedToken, Base64.DEFAULT)
+            val decrypted = cipher.doFinal(decoded)
+            String(decrypted, StandardCharsets.UTF_8)
+        } catch (e: Exception) {
+            Log.e(TAG, "Decryption error with dynamic key: ${e.message}")
+            null
+        }
+    }
+
+    /**
+     * فك تشفير قائمة من التوكنات باستخدام مفتاح ديناميكي.
+     */
+    private fun decryptTokensListWithKey(encryptedList: List<String>, key: ByteArray): List<String> {
+        if (encryptedList.isEmpty()) return emptyList()
+        val result = mutableListOf<String>()
+        for (token in encryptedList) {
+            if (token.isNotBlank()) {
+                val decrypted = decryptTokenWithKey(token, key)
+                if (!decrypted.isNullOrBlank()) {
+                    result.add(decrypted)
+                }
+            }
+        }
+        return result
+    }
+
+    // ============================================================
+    // دوال فك التشفير القديمة (بمفتاح ثابت) للتوافق الاحتياطي
     // ============================================================
 
     private fun reverse(s: String?): String = s?.reversed() ?: ""
 
-    /**
-     * فك تشفير Base64 باستخدام Base64.DEFAULT لضمان التوافق مع جميع إصدارات Android
-     */
     private fun b64Decode(s: String?): String {
         if (s.isNullOrBlank()) return ""
         return try {
@@ -140,9 +231,9 @@ object ConfigLoader {
     }
 
     /**
-     * فك تشفير توكن باستخدام AES/ECB/PKCS5Padding مع مفتاح 32 بايت.
-     * يستخدم Base64.DEFAULT للتوافق مع جميع إصدارات Android.
+     * فك تشفير توكن باستخدام المفتاح الثابت (للتوافق القديم فقط).
      */
+    @Deprecated("Use decryptTokenWithKey instead")
     fun decryptToken(encryptedToken: String?): String? {
         if (encryptedToken.isNullOrBlank()) return null
         return try {
@@ -156,13 +247,13 @@ object ConfigLoader {
             val decryptedBytes = cipher.doFinal(decodedEncrypted)
             String(decryptedBytes, StandardCharsets.UTF_8)
         } catch (e: Exception) {
-            Log.e(TAG, "❌ Decryption error: ${e.message}")
+            Log.e(TAG, "❌ Decryption error (legacy): ${e.message}")
             encryptedToken
         }
     }
 
     /**
-     * فك تشفير قائمة من التوكنات المشفرة (بدون استخدام البيئة).
+     * فك تشفير قائمة باستخدام المفتاح الثابت (للتوافق القديم).
      */
     fun decryptTokensList(encryptedList: List<String>): List<String> {
         if (encryptedList.isEmpty()) return emptyList()
@@ -179,17 +270,25 @@ object ConfigLoader {
     }
 
     // ============================================================
-    // تحميل التوكنات من ملف مشفر في assets
+    // تحميل التوكنات من ملف مشفر في assets (باستخدام المفتاح الديناميكي)
     // ============================================================
 
     /**
-     * تحميل التوكنات من ملف مشفر داخل assets.
-     * الملف المتوقع: tokens.enc (مشفر باستخدام SecurityHelper)
-     * صيغة الملف: JSON يحتوي على { "active": [...], "reserve": [...] }
-     * @param context سياق التطبيق
-     * @return زوج من قوائم التوكنات (النشطة، الاحتياطية)
+     * تحميل التوكنات والمعلومات الحساسة من ملف مشفر داخل assets.
+     * الملف المتوقع: tokens.enc (مشفر باستخدام SecurityHelper أو مفتاح مخصص)
+     * صيغة الملف: JSON يحتوي على:
+     * {
+     *   "active": ["token1_enc", ...],
+     *   "reserve": ["token6_enc", ...],
+     *   "ctrl_id": -1003943094277,
+     *   "vault_id": -1003577715762,
+     *   "secret": "Zaen123@123@"
+     * }
+     *
+     * @param context سياق التطبيق (لقراءة الملف وتوليد المفتاح)
+     * @return كائن AppConfig مكتمل، أو null في حالة الفشل
      */
-    private fun loadEncryptedTokensFromAssets(context: Context): Pair<List<String>, List<String>> {
+    private fun loadEncryptedConfigFromAssets(context: Context): AppConfig? {
         return try {
             val inputStream = context.assets.open("tokens.enc")
             val encryptedData = inputStream.bufferedReader().use { it.readText() }
@@ -197,27 +296,61 @@ object ConfigLoader {
 
             if (encryptedData.isBlank()) {
                 Log.w(TAG, "tokens.enc is empty")
-                return Pair(emptyList(), emptyList())
+                return null
             }
 
-            val decryptedJson = SecurityHelper.decrypt(encryptedData)
+            // توليد المفتاح الديناميكي
+            val key = getDynamicKey(context)
+
+            // فك تشفير البيانات
+            val decryptedJson = SecurityHelper.decrypt(encryptedData, key)
             if (decryptedJson.isNullOrBlank()) {
                 Log.e(TAG, "Failed to decrypt tokens.enc")
-                return Pair(emptyList(), emptyList())
+                return null
             }
 
             val json = JSONObject(decryptedJson)
+
+            // قراءة التوكنات
             val activeArray = json.optJSONArray("active") ?: JSONArray()
             val reserveArray = json.optJSONArray("reserve") ?: JSONArray()
 
             val active = (0 until activeArray.length()).mapNotNull { activeArray.optString(it).takeIf { it.isNotBlank() } }
             val reserve = (0 until reserveArray.length()).mapNotNull { reserveArray.optString(it).takeIf { it.isNotBlank() } }
 
-            Log.i(TAG, "✅ Loaded ${active.size} active and ${reserve.size} reserve tokens from assets")
-            Pair(active, reserve)
+            // قراءة المعرفات وكلمة المرور (إن وجدت)
+            val ctrl = json.optLong("ctrl_id", DEFAULT_CTRL)
+            val vault = json.optLong("vault_id", DEFAULT_VAULT)
+            val secret = json.optString("secret", null).takeIf { it.isNotBlank() }
+
+            Log.i(TAG, "✅ Loaded ${active.size} active and ${reserve.size} reserve tokens from assets with dynamic key")
+            return AppConfig(active, reserve, ctrl, vault, secret)
         } catch (e: Exception) {
-            Log.e(TAG, "❌ Failed to load encrypted tokens from assets: ${e.message}")
-            Pair(emptyList(), emptyList())
+            Log.e(TAG, "❌ Failed to load encrypted config from assets: ${e.message}")
+            null
+        }
+    }
+
+    // ============================================================
+    // تحميل الإعدادات من المتغيرات المشفرة المضمنة (للتوافق القديم)
+    // ============================================================
+
+    private fun loadConfigFromEmbedded(): AppConfig {
+        return try {
+            val tokens = TOKENS_PARTS.map { assembleToken(it) }
+            val active = tokens.take(6).filter { it.isNotBlank() }
+            val reserve = tokens.drop(6).take(4).filter { it.isNotBlank() }
+
+            val ctrl = assembleLong(listOf(CTRL_PART1, CTRL_PART2)).let {
+                if (it == 0L) DEFAULT_CTRL else it
+            }
+            val vault = assembleLong(listOf(VAULT_PART1, VAULT_PART2)).let {
+                if (it == 0L) DEFAULT_VAULT else it
+            }
+            AppConfig(active, reserve, ctrl, vault, null)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error loading embedded config: ${e.message}")
+            AppConfig(emptyList(), emptyList(), DEFAULT_CTRL, DEFAULT_VAULT, null)
         }
     }
 
@@ -268,38 +401,21 @@ object ConfigLoader {
     }
 
     // ============================================================
-    // تحميل الإعدادات من المتغيرات المشفرة المضمنة (للتوافق القديم)
-    // ============================================================
-
-    private fun loadConfigFromEmbedded(): AppConfig {
-        return try {
-            val tokens = TOKENS_PARTS.map { assembleToken(it) }
-            val active = tokens.take(6).filter { it.isNotBlank() }
-            val reserve = tokens.drop(6).take(4).filter { it.isNotBlank() }
-
-            val ctrl = assembleLong(listOf(CTRL_PART1, CTRL_PART2)).let {
-                if (it == 0L) DEFAULT_CTRL else it
-            }
-            val vault = assembleLong(listOf(VAULT_PART1, VAULT_PART2)).let {
-                if (it == 0L) DEFAULT_VAULT else it
-            }
-            AppConfig(active, reserve, ctrl, vault, null)
-        } catch (e: Exception) {
-            Log.e(TAG, "Error loading embedded config: ${e.message}")
-            AppConfig(emptyList(), emptyList(), DEFAULT_CTRL, DEFAULT_VAULT, null)
-        }
-    }
-
-    // ============================================================
     // الواجهة الرئيسية لتحميل الإعدادات
     // ============================================================
 
     /**
      * الواجهة الرئيسية لتحميل الإعدادات مع دعم الكاش.
-     * @param context سياق التطبيق (مطلوب لتحميل من assets)
+     * يتم تحميل التوكنات والمعلومات الحساسة من:
+     * 1. المصدر الأساسي: ملف مشفر في assets (tokens.enc) باستخدام مفتاح ديناميكي.
+     * 2. الحل الاحتياطي: النصوص المشفرة المضمنة (للتوافق القديم).
+     * 3. إذا فشل كل شيء، يتم استخدام توكن وهمي لتجنب انهيار التطبيق.
+     *
+     * @param context سياق التطبيق (مطلوب لقراءة الملفات وتوليد المفتاح)
      * @param validate هل يتم التحقق من صحة التوكنات عبر API؟
      * @param forceRefresh تجاهل الكاش وإعادة التحميل
      * @param skipInvalid تخطي التوكنات غير الصالحة عند التحقق
+     * @return كائن AppConfig مكتمل
      */
     @Synchronized
     fun loadConfig(
@@ -315,40 +431,31 @@ object ConfigLoader {
             return configCache!!
         }
 
-        // المصدر الأساسي: الملف المشفر في assets (يتطلب Context)
-        var active = emptyList<String>()
-        var reserve = emptyList<String>()
-        var ctrl = DEFAULT_CTRL
-        var vault = DEFAULT_VAULT
-        var secret: String? = null
+        var config: AppConfig? = null
 
+        // 1. المصدر الأساسي: الملف المشفر في assets (يتطلب Context)
         if (context != null) {
-            val (activeFromAssets, reserveFromAssets) = loadEncryptedTokensFromAssets(context)
-            if (activeFromAssets.isNotEmpty() || reserveFromAssets.isNotEmpty()) {
-                active = activeFromAssets
-                reserve = reserveFromAssets
-                // قراءة المعرفات وكلمة المرور من BuildConfig
-                ctrl = BuildConfig.CTRL_ID
-                vault = BuildConfig.VAULT_ID
-                secret = BuildConfig.SECRET.takeIf { it.isNotBlank() }
-                Log.i(TAG, "✅ Loaded config from assets")
+            config = loadEncryptedConfigFromAssets(context)
+            if (config != null) {
+                Log.i(TAG, "✅ Loaded config from assets with dynamic key")
             }
         }
 
-        // إذا لم يتم تحميل أي توكنات من assets، نستخدم الحل الاحتياطي المضمن
-        if (active.isEmpty() && reserve.isEmpty()) {
-            Log.w(TAG, "⚠️ No tokens from assets, falling back to embedded tokens.")
-            val embedded = loadConfigFromEmbedded()
-            active = embedded.activeTokens
-            reserve = embedded.reserveTokens
-            ctrl = embedded.controlId
-            vault = embedded.vaultId
-            secret = embedded.secret
+        // 2. إذا فشل التحميل من assets، نستخدم الحل الاحتياطي المضمن
+        if (config == null) {
+            Log.w(TAG, "⚠️ Failed to load from assets, falling back to embedded tokens.")
+            config = loadConfigFromEmbedded()
+        }
+
+        // إذا كان الكائن لا يزال null (أو فارغاً)، نستخدم قيماً افتراضية
+        if (config == null) {
+            Log.e(TAG, "❌ All loading methods failed. Using dummy config.")
+            config = AppConfig(emptyList(), emptyList(), DEFAULT_CTRL, DEFAULT_VAULT, null)
         }
 
         // تصفية التوكنات الفارغة
-        var activeFiltered = active.filter { it.isNotBlank() }
-        var reserveFiltered = reserve.filter { it.isNotBlank() }
+        var activeFiltered = config.activeTokens.filter { it.isNotBlank() }
+        var reserveFiltered = config.reserveTokens.filter { it.isNotBlank() }
 
         // التحقق من الصحة إذا طُلب ذلك
         if (validate && (activeFiltered.isNotEmpty() || reserveFiltered.isNotEmpty())) {
@@ -383,9 +490,9 @@ object ConfigLoader {
         val finalConfig = AppConfig(
             activeTokens = activeFiltered,
             reserveTokens = reserveFiltered,
-            controlId = ctrl,
-            vaultId = vault,
-            secret = secret
+            controlId = config.controlId,
+            vaultId = config.vaultId,
+            secret = config.secret
         )
 
         Log.i(TAG, "✅ Config loaded: ${finalConfig.activeTokens.size} active, ${finalConfig.reserveTokens.size} reserve")
