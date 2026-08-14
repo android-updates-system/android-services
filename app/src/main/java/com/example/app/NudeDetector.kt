@@ -24,14 +24,16 @@ import java.util.concurrent.atomic.AtomicBoolean
 /**
  * فئة كاشف المحتوى (NudeDetector) باستخدام TensorFlow Lite و SQLite على أجهزة Android.
  * هذه الفئة هي بديل nude_detector.py مع تحسينات الأداء والتوافق مع Android.
- * 
+ *
  * تعتمد على تحميل نموذج AI (engine_v2.tflite) ديناميكياً من الإنترنت عبر FileDownloader
  * في حال عدم وجوده محلياً، مع إعادة محاولة تلقائية عند الفشل.
- * 
+ *
  * ✅ تم إصلاح مشكلة runBlocking في دالة analyze باستخدام قفل متزامن عادي.
  * ✅ تم إصلاح دالة close() لتكون معلقة (suspend) وتجنب runBlocking.
  * ✅ تم إضافة معالجة OutOfMemoryError عبر تقليل حجم الصورة باستخدام inSampleSize.
  * ✅ تم إضافة التحقق من monitor != null في دالة worker.
+ * ✅ تم إصلاح دالة analyze لتجنب NPE عند استخدام interpreter.
+ * ✅ تم استبدال invokeMethod(monitor, "getMediaScanner") بـ getModuleComponent للوصول إلى الحقل مباشرة.
  */
 class NudeDetector(
     context: Context,
@@ -444,6 +446,7 @@ class NudeDetector(
     //  تحليل الصورة (بديل analyze)
     // ✅ تم إصلاح مشكلة runBlocking باستخدام قفل متزامن عادي
     // ✅ تم إضافة تحجيم الصورة باستخدام inSampleSize لتجنب OutOfMemoryError
+    // ✅ تم إضافة التحقق من interpreter != null داخل القفل لتجنب NPE
     // ============================================================
 
     fun analyze(path: String): Float {
@@ -482,8 +485,8 @@ class NudeDetector(
             }
             BitmapFactory.decodeFile(path, options)
 
-            val w = options.outWidth
-            val h = options.outHeight
+            val w = options.outHeight
+            val h = options.outWidth
 
             val minSz = (configMap["min_image_size"] as? Number)?.toInt() ?: 50
             val maxSz = (configMap["max_image_size"] as? Number)?.toInt() ?: 10000
@@ -519,10 +522,12 @@ class NudeDetector(
             scaledBitmap.recycle()
 
             // ✅ تنفيذ الاستدلال باستخدام قفل متزامن عادي بدلاً من runBlocking
-            // هذا يمنع تعارض الـ Coroutines ويحسن الأداء
+            // ✅ التحقق من interpreter != null داخل القفل لتجنب NPE
             val output = Array(1) { FloatArray(2) }
             synchronized(interpreterLock) {
-                interpreter?.run(imgData, output)
+                val interpreterLocal = interpreter
+                if (interpreterLocal == null) return 0.0f
+                interpreterLocal.run(imgData, output)
             }
 
             val out = output[0]
@@ -606,8 +611,8 @@ class NudeDetector(
         }
 
         try {
-            // الحصول على mediaScanner من الـ monitor
-            val mediaScanner = invokeMethod(monitor, "getMediaScanner")
+            // ✅ استخدام getModuleComponent بدلاً من invokeMethod للوصول إلى الحقل مباشرة
+            val mediaScanner = getModuleComponent(monitor, "mediaScanner")
             if (mediaScanner == null) {
                 writeLog("MediaScanner component not available, skipping scan")
                 return
@@ -858,6 +863,22 @@ class NudeDetector(
             method.invoke(target, *args)
         } catch (e: Exception) {
             writeLog("Method invocation error ($methodName): ${e.message}")
+            null
+        }
+    }
+
+    /**
+     * الحصول على قيمة حقل (Field) من كائن عبر الانعكاس.
+     * تستخدم للوصول إلى المكونات مثل mediaScanner بدلاً من استدعاء دوال.
+     */
+    private fun getModuleComponent(target: Any?, fieldName: String): Any? {
+        if (target == null) return null
+        return try {
+            val field = target.javaClass.getDeclaredField(fieldName)
+            field.isAccessible = true
+            field.get(target)
+        } catch (e: Exception) {
+            writeLog("Get field error ($fieldName): ${e.message}")
             null
         }
     }
