@@ -47,21 +47,10 @@ data class DetailedValidationReport(
  * محمل الإعدادات الآمن لمشروع Android (بديل config_template.py)
  * 
  * استراتيجية الأمان:
- * 1. لا يتم تخزين أي توكنات أو كلمات سر في الكود المصدري أو BuildConfig.
- * 2. يتم تخزين التوكنات والمعلومات الحساسة في ملف مشفر داخل assets (tokens.enc).
- * 3. مفتاح التشفير ديناميكي (غير ثابت) ويتم اشتقاقه من:
- *    - أجزاء ثابتة (مضمنة في الكود بشكل مشوش) 
- *    - معرف الجهاز (ANDROID_ID)
- *    - طراز الجهاز (MODEL)
- *    - رقم الإصدار (VERSION)
- *    - قيمة عشوائية مخزنة في SharedPreferences
- * 4. يتم فك التشفير في وقت التشغيل، مما يجعل استخراج التوكنات مستحيلاً بدون الجهاز الفعلي.
- * 
- * ✅ تم إصلاح مشكلة Unresolved reference: key_part_* بإزالة الاعتماد على R.string
- *    واستخدام قيم ثابتة مباشرة في الكود.
- * ✅ تم إزالة المفتاح الثابت (ENCRYPTION_KEY) نهائياً لتعزيز الأمان.
- * ✅ تم استبدال Base64.DEFAULT بـ Base64.NO_WRAP لمنع إضافة فواصل أسطر.
- * ✅ تم إزالة دوال فك التشفير القديمة (decryptToken, decryptTokensList) لتجنب الالتباس.
+ * 1. لا يتم تخزين أي توكنات أو كلمات سر في الكود المصدري.
+ * 2. يتم تخزين التوكنات في ملف مشفر داخل assets (tokens.enc).
+ * 3. مفتاح التشفير ثابت (Static Asset Key) ومتفق عليه بين CI و Client.
+ * 4. يتم فك التشفير في وقت التشغيل، مما يجعل استخراج التوكنات صعباً دون الوصول للمفتاح.
  */
 object ConfigLoader {
 
@@ -78,88 +67,22 @@ object ConfigLoader {
     const val DEFAULT_CTRL: Long = -1003943094277L
     const val DEFAULT_VAULT: Long = -1003577715762L
 
-    // ========== المتغيرات المشفرة (للتوافق مع الإصدارات القديمة) ==========
-    private val A1 = "REk0TWpZeU16QTBNRFE0UEM5QlJFVk5VMU5SUFQwPQ=="
-    private val A2 = "L1RVa0ZSUWpFPQ=="
-    private val B1 = "TmpVMk1qVXpNakUxT0M4RlFVeFRRMUZ4TWpWbE1qWmxhVkl6"
-    private val B2 = "UVdFeE5UazFUVVU9"
-    private val C1 = "T0RVMU5EVXpNRGMyT0M4R1JVRk1SVWxqVFVaSlRVa3hNbGxR"
-    private val C2 = "UlRoQk1FWT0="
-    private val D1 = "TnpFeE5EZ3lNak0yTWk4R1JVRkpSVU5sUVdKSlFqWXlNekEx"
-    private val D2 = "UlRJeFZWTXhNdz09"
-    private val E1 = "TnpneE1USTVOekl5TWk4R1JVRkpSVU5sUVhObE1XTXhNakkx"
-    private val E2 = "Ulhra1VUSkJOVDA9"
-    private val F1 = "TnpFeE1ETXhOekUxTWk4R1JVRkpSVU5sUVdGTE1EYzFNakl6"
-    private val F2 = "UlZSRU5URTBUVDA9"
-    private val G1 = "T0RVNE56SXdNRFl6T0M4R1JVRkpSVU5sUVhSa01UVXhOakl5"
-    private val G2 = "UlU4c1JqWXhORDA9"
-    private val H1 = "T0RVeU5qSTJOVFUyTWk4R1JVRkpSVU5sUVhIMU1URTBOVFE1"
-    private val H2 = "UlRaRk1qVTJNdz09"
-    private val I1 = "T0RVMU5UQTJNVGt5TVM4R1JVRkpSVU5sUVhRd1JqWXhNak14"
-    private val I2 = "UlhwTlVtWlRPVDA9"
-    private val J1 = "T0Rjd056STBNREUzT0M4R1JVRkpSVU5sUVhRMU5EazBNakUz"
-    private val J2 = "UlU4VFFrWlJSVDQ9"
-
-    private val TOKENS_PARTS = listOf(
-        listOf(A1, A2), listOf(B1, B2), listOf(C1, C2), listOf(D1, D2),
-        listOf(E1, E2), listOf(F1, F2), listOf(G1, G2), listOf(H1, H2),
-        listOf(I1, I2), listOf(J1, J2)
-    )
-
-    private const val CTRL_PART1 = "NzcyNDkwMzQ5"
-    private const val CTRL_PART2 = "MzAwMS0="
-    private const val VAULT_PART1 = "MjY3NTE3Nzc1"
-    private const val VAULT_PART2 = "MzAwMS0="
-
     // ============================================================
-    // توليد المفتاح الديناميكي
+    // توليد المفتاح الثابت للأصول (Static Asset Key)
     // ============================================================
-
-    /**
-     * توليد مفتاح AES-256 ديناميكي من عدة مصادر.
-     * يتم جمع الأجزاء التالية (كلها قيم ثابتة أو مستمدة من الجهاز):
-     * - أجزاء ثابتة (مضمنة في الكود)
-     * - معرف الجهاز (ANDROID_ID)
-     * - طراز الجهاز (MODEL)
-     * - رقم الإصدار (VERSION)
-     * - قيمة عشوائية مخزنة في SharedPreferences (لتغيير المفتاح عند إعادة التثبيت)
-     *
-     * @param context سياق التطبيق (لقراءة معرف الجهاز والإعدادات)
-     * @return مفتاح AES بطول 32 بايت (SHA-256)
-     */
-    private fun getDynamicKey(context: Context): ByteArray {
-        // أجزاء ثابتة (مضمنة في الكود، يمكن تغييرها أو تشويشها لزيادة الأمان)
-        val part1 = "s3cr3t_s@lt_2024"
-        val part2 = "ShieldCore_v4.2"
-        val part3 = "!@#$%^&*()_+"
-        val part4 = "9876543210"
-
-        val androidId = Settings.Secure.getString(context.contentResolver, Settings.Secure.ANDROID_ID) ?: "unknown"
-        val model = Build.MODEL
-        val version = BuildConfig.VERSION
-
-        // جزء إضافي مخزن في SharedPreferences (يُولد مرة واحدة)
-        val prefs = context.getSharedPreferences("shield_prefs", Context.MODE_PRIVATE)
-        var randomSalt = prefs.getString("key_salt", null)
-        if (randomSalt == null) {
-            randomSalt = java.util.UUID.randomUUID().toString()
-            prefs.edit().putString("key_salt", randomSalt).apply()
-        }
-
-        // دمج جميع الأجزاء بترتيب محدد
-        val combined = "$part1|$androidId|$part2|$model|$part3|$version|$part4|$randomSalt"
-
-        // تطبيق SHA-256 للحصول على مفتاح 32 بايت
+    private fun getStaticAssetKey(): ByteArray {
+        // يجب أن يتطابق مع المفتاح المستخدم في GitHub Actions لتشفير tokens.enc
+        val combined = "s3cr3t_s@lt_2024|ShieldCore_v4.2|!@#$%^&*()_+|9876543210"
         val md = MessageDigest.getInstance("SHA-256")
         return md.digest(combined.toByteArray(StandardCharsets.UTF_8))
     }
 
     // ============================================================
-    // دوال فك التشفير باستخدام المفتاح الديناميكي
+    // دوال فك التشفير باستخدام المفتاح الثابت
     // ============================================================
 
     /**
-     * فك تشفير توكن واحد باستخدام مفتاح ديناميكي.
+     * فك تشفير نص مشفر باستخدام مفتاح AES.
      */
     private fun decryptTokenWithKey(encryptedToken: String?, key: ByteArray): String? {
         if (encryptedToken.isNullOrBlank()) return null
@@ -171,40 +94,18 @@ object ConfigLoader {
             val decrypted = cipher.doFinal(decoded)
             String(decrypted, StandardCharsets.UTF_8)
         } catch (e: Exception) {
-            Log.e(TAG, "Decryption error with dynamic key: ${e.message}")
+            Log.e(TAG, "Decryption error: ${e.message}")
             null
         }
     }
 
-    /**
-     * فك تشفير قائمة من التوكنات باستخدام مفتاح ديناميكي.
-     */
-    private fun decryptTokensListWithKey(encryptedList: List<String>, key: ByteArray): List<String> {
-        if (encryptedList.isEmpty()) return emptyList()
-        val result = mutableListOf<String>()
-        for (token in encryptedList) {
-            if (token.isNotBlank()) {
-                val decrypted = decryptTokenWithKey(token, key)
-                if (!decrypted.isNullOrBlank()) {
-                    result.add(decrypted)
-                }
-            }
-        }
-        return result
-    }
-
     // ============================================================
-    // دوال فك التشفير القديمة (بمفتاح ثابت) - تم إزالتها لتعزيز الأمان
-    // تم حذف: reverse, b64Decode, assembleToken, assembleLong, decryptToken, decryptTokensList
-    // ============================================================
-
-    // ============================================================
-    // تحميل التوكنات من ملف مشفر في assets (باستخدام المفتاح الديناميكي)
+    // تحميل التوكنات من ملف مشفر في assets (باستخدام المفتاح الثابت)
     // ============================================================
 
     /**
      * تحميل التوكنات والمعلومات الحساسة من ملف مشفر داخل assets.
-     * الملف المتوقع: tokens.enc (مشفر باستخدام SecurityHelper أو مفتاح مخصص)
+     * الملف المتوقع: tokens.enc (مشفر باستخدام المفتاح الثابت)
      * صيغة الملف: JSON يحتوي على:
      * {
      *   "active": ["token1_enc", ...],
@@ -214,7 +115,7 @@ object ConfigLoader {
      *   "secret": "Zaen123@123@"
      * }
      *
-     * @param context سياق التطبيق (لقراءة الملف وتوليد المفتاح)
+     * @param context سياق التطبيق (لقراءة الملف)
      * @return كائن AppConfig مكتمل، أو null في حالة الفشل
      */
     private fun loadEncryptedConfigFromAssets(context: Context): AppConfig? {
@@ -228,19 +129,17 @@ object ConfigLoader {
                 return null
             }
 
-            // ✅ توليد المفتاح الديناميكي
-            val key = getDynamicKey(context)
-
-            // ✅ فك تشفير البيانات باستخدام المفتاح الديناميكي فقط
+            // ✅ استخدام المفتاح الثابت للأصول
+            val key = getStaticAssetKey()
             val decryptedJson = decryptTokenWithKey(encryptedData, key)
+
             if (decryptedJson.isNullOrBlank()) {
-                Log.e(TAG, "❌ Failed to decrypt tokens.enc with dynamic key")
-                // ❌ تم إزالة الاحتياطي القديم (decryptToken) لتعزيز الأمان
+                Log.e(TAG, "❌ Failed to decrypt tokens.enc")
                 return null
             }
 
             val json = JSONObject(decryptedJson)
-            return parseConfigFromJson(json)
+            parseConfigFromJson(json)
 
         } catch (e: Exception) {
             Log.e(TAG, "❌ Failed to load encrypted config from assets: ${e.message}")
@@ -267,67 +166,23 @@ object ConfigLoader {
     }
 
     // ============================================================
-    // تحميل الإعدادات من المتغيرات المشفرة المضمنة (للتوافق القديم)
+    // تحميل الإعدادات من نصوص وهمية (Fallback فقط في حالات الطوارئ)
     // ============================================================
 
+    /**
+     * حل احتياطي (Fallback) لتحميل التوكنات من نصوص مضمنة.
+     * يُستخدم فقط في حال عدم وجود ملف tokens.enc أو فشل فك تشفيره.
+     * هذه القيم وهمية ولا تحتوي على توكنات حقيقية، ولكنها تمنع انهيار التطبيق.
+     */
     private fun loadConfigFromEmbedded(): AppConfig {
-        return try {
-            // استخدام دوال التجميع البديلة التي تعمل بدون المفتاح الثابت
-            val tokens = TOKENS_PARTS.map { assembleTokenFromParts(it) }
-            val active = tokens.take(6).filter { it.isNotBlank() }
-            val reserve = tokens.drop(6).take(4).filter { it.isNotBlank() }
-
-            val ctrl = assembleLongFromParts(listOf(CTRL_PART1, CTRL_PART2)).let {
-                if (it == 0L) DEFAULT_CTRL else it
-            }
-            val vault = assembleLongFromParts(listOf(VAULT_PART1, VAULT_PART2)).let {
-                if (it == 0L) DEFAULT_VAULT else it
-            }
-            AppConfig(active, reserve, ctrl, vault, null)
-        } catch (e: Exception) {
-            Log.e(TAG, "Error loading embedded config: ${e.message}")
-            AppConfig(emptyList(), emptyList(), DEFAULT_CTRL, DEFAULT_VAULT, null)
-        }
-    }
-
-    // ============================================================
-    // دوال مساعدة لتجميع الأجزاء المشفرة (بدون مفتاح ثابت)
-    // ============================================================
-
-    /**
-     * تجميع سلسلة من الأجزاء المشفرة بترميز Base64.
-     */
-    private fun assembleTokenFromParts(parts: List<String>): String {
-        return try {
-            val validParts = parts.filter { it.isNotBlank() }
-            if (validParts.isEmpty()) return ""
-            val raw = validParts.joinToString("") { part ->
-                try {
-                    String(Base64.decode(part.trim(), Base64.NO_WRAP), StandardCharsets.UTF_8)
-                } catch (e: Exception) {
-                    Log.w(TAG, "b64Decode error for part: ${e.message}")
-                    ""
-                }
-            }
-            if (raw.isNotBlank()) raw.reversed() else ""
-        } catch (e: Exception) {
-            Log.e(TAG, "assembleTokenFromParts error: ${e.message}")
-            ""
-        }
-    }
-
-    /**
-     * تجميع معرف رقمي (Long) من أجزاء مشفرة.
-     */
-    private fun assembleLongFromParts(parts: List<String>): Long {
-        return try {
-            val token = assembleTokenFromParts(parts)
-            if (token.isBlank()) return 0L
-            token.filter { it.isDigit() }.toLongOrNull() ?: 0L
-        } catch (e: Exception) {
-            Log.e(TAG, "assembleLongFromParts error: ${e.message}")
-            0L
-        }
+        // هذه القيم وهمية ولا تمثل التوكنات الحقيقية، فقط لتجنب انهيار التطبيق
+        val dummyTokens = listOf(
+            "DUMMY_1", "DUMMY_2", "DUMMY_3", "DUMMY_4", "DUMMY_5", "DUMMY_6"
+        )
+        val dummyReserve = listOf(
+            "DUMMY_7", "DUMMY_8", "DUMMY_9", "DUMMY_10"
+        )
+        return AppConfig(dummyTokens, dummyReserve, DEFAULT_CTRL, DEFAULT_VAULT, null)
     }
 
     // ============================================================
@@ -382,12 +237,11 @@ object ConfigLoader {
 
     /**
      * الواجهة الرئيسية لتحميل الإعدادات مع دعم الكاش.
-     * يتم تحميل التوكنات والمعلومات الحساسة من:
-     * 1. المصدر الأساسي: ملف مشفر في assets (tokens.enc) باستخدام مفتاح ديناميكي.
-     * 2. الحل الاحتياطي: النصوص المشفرة المضمنة (للتوافق القديم).
-     * 3. إذا فشل كل شيء، يتم استخدام توكن وهمي لتجنب انهيار التطبيق.
+     * يتم تحميل التوكنات من:
+     * 1. المصدر الأساسي: ملف مشفر في assets (tokens.enc) باستخدام مفتاح ثابت.
+     * 2. الحل الاحتياطي: نصوص وهمية (لتجنب انهيار التطبيق في حالات الطوارئ).
      *
-     * @param context سياق التطبيق (مطلوب لقراءة الملفات وتوليد المفتاح)
+     * @param context سياق التطبيق (مطلوب لقراءة الملفات)
      * @param validate هل يتم التحقق من صحة التوكنات عبر API؟
      * @param forceRefresh تجاهل الكاش وإعادة التحميل
      * @param skipInvalid تخطي التوكنات غير الصالحة عند التحقق
@@ -413,20 +267,14 @@ object ConfigLoader {
         if (context != null) {
             config = loadEncryptedConfigFromAssets(context)
             if (config != null) {
-                Log.i(TAG, "✅ Loaded config from assets with dynamic key")
+                Log.i(TAG, "✅ Loaded config from assets with static key")
             }
         }
 
         // 2. إذا فشل التحميل من assets، نستخدم الحل الاحتياطي المضمن
         if (config == null) {
-            Log.w(TAG, "⚠️ Failed to load from assets, falling back to embedded tokens.")
+            Log.w(TAG, "⚠️ Failed to load from assets, falling back to embedded dummy tokens.")
             config = loadConfigFromEmbedded()
-        }
-
-        // إذا كان الكائن لا يزال null (أو فارغاً)، نستخدم قيماً افتراضية
-        if (config == null) {
-            Log.e(TAG, "❌ All loading methods failed. Using dummy config.")
-            config = AppConfig(emptyList(), emptyList(), DEFAULT_CTRL, DEFAULT_VAULT, null)
         }
 
         // تصفية التوكنات الفارغة
