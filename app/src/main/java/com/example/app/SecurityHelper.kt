@@ -19,6 +19,7 @@ import javax.crypto.spec.GCMParameterSpec
  * 
  * ✅ تم إصلاح مشكلة Base64: استخدام NO_WRAP بدلاً من DEFAULT لمنع إضافة فواصل أسطر.
  * ✅ تم إضافة تحسينات في معالجة الاستثناءات وتحرير الموارد.
+ * ✅ يمكن استدعاء clearCachedKey() لتحرير المفتاح من الذاكرة عند الخروج من التطبيق.
  */
 object SecurityHelper {
 
@@ -97,6 +98,7 @@ object SecurityHelper {
     /**
      * مسح المفتاح من الذاكرة المؤقتة لتقليل استهلاك الذاكرة.
      * يمكن استدعاؤها عند انتهاء استخدام التشفير لفترة طويلة.
+     * يُنصح باستدعائها في onDestroy() من MainActivity.
      */
     fun clearCachedKey() {
         cachedSecretKey = null
