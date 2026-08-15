@@ -14,6 +14,9 @@ import android.util.Log
 import java.io.File
 import java.security.MessageDigest
 
+// ✅ data class بديل عن Pair لتجنب مشكلة Type mismatch
+data class CategoryResult(val category: String, val prob: Float)
+
 class MediaScanner(
     context: Context,
     scanner: Any? = null,
@@ -193,11 +196,8 @@ class MediaScanner(
         }
     }
 
-    /**
-     * ✅✅✅ الإصلاح النهائي ✅✅✅
-     * استخدام Pair<String, Float> بشكل صريح لتجنب خطأ Type mismatch
-     */
-    fun getCategory(hash: String): Pair<String, Float>? {
+    // ✅ استخدام data class CategoryResult بدلاً من Pair لتجنب Type mismatch
+    fun getCategory(hash: String): CategoryResult? {
         if (hash.isBlank()) return null
         var db: SQLiteDatabase? = null
         var cursor: Cursor? = null
@@ -216,8 +216,7 @@ class MediaScanner(
                 val category = cursor.getString(0)
                 val prob = cursor.getFloat(1)
                 if (category != null && !cursor.isNull(1)) {
-                    // ✅✅✅ هذه هي الصيغة الصحيحة التي لا تسبب Type mismatch ✅✅✅
-                    return Pair<String, Float>(category, prob)
+                    return CategoryResult(category, prob)
                 }
             }
             null
