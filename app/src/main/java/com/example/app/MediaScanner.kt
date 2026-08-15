@@ -14,7 +14,7 @@ import android.util.Log
 import java.io.File
 import java.security.MessageDigest
 
-// ✅ VERSION 2 FINAL - No Pair used anywhere
+// ✅ FINAL VERSION - NO Pair USED ANYWHERE
 data class CategoryResult(val category: String, val prob: Float)
 
 class MediaScanner(
@@ -196,10 +196,7 @@ class MediaScanner(
         }
     }
 
-    /**
-     * ✅ هذه الدالة تعيد CategoryResult فقط، ولا يوجد أي استخدام لـ Pair.
-     * تم إزالة جميع المراجع إلى Pair نهائياً.
-     */
+    // ✅ هذه هي الدالة التي كانت تسبب المشكلة – الآن تعيد CategoryResult فقط
     fun getCategory(hash: String): CategoryResult? {
         if (hash.isBlank()) return null
         var db: SQLiteDatabase? = null
