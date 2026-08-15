@@ -14,7 +14,7 @@ import android.util.Log
 import java.io.File
 import java.security.MessageDigest
 
-// ✅ استخدام data class بدلاً من Pair لتجنب أي مشكلة في استنتاج النوع
+// ✅ VERSION 2 FINAL - No Pair used anywhere
 data class CategoryResult(val category: String, val prob: Float)
 
 class MediaScanner(
@@ -197,8 +197,8 @@ class MediaScanner(
     }
 
     /**
-     * ✅ الحل النهائي القطعي: إزالة Pair تماماً واستخدام CategoryResult.
-     * لا يوجد أي استخدام لـ Pair في هذه الدالة.
+     * ✅ هذه الدالة تعيد CategoryResult فقط، ولا يوجد أي استخدام لـ Pair.
+     * تم إزالة جميع المراجع إلى Pair نهائياً.
      */
     fun getCategory(hash: String): CategoryResult? {
         if (hash.isBlank()) return null
