@@ -263,66 +263,68 @@ class TelegramUi(
     }
 
     /**
-     * ✅✅✅ الإصلاح النهائي ✅✅✅
-     * استخدام أسماء متغيرات فريدة (currentToken و prevToken)
-     * والتأكيد على أنها var
+     * ✅ إصلاح قطعي: استخدام while loop مع break بدلاً من for مع var
+     * لتجنب أي مشكلة في إعادة تعيين val
      */
     private suspend fun apiCall(method: String, payload: JSONObject? = null, retry: Int = 3): JSONObject? {
         apiCallsCount++
-        var prevToken: String? = null
-        for (attempt in 0 until retry) {
-            var currentToken = getNextToken() ?: return null
-            if (attempt > 0 && currentToken == prevToken) {
-                currentToken = getNextToken() ?: return null
+        var attempts = 0
+        var lastToken: String? = null
+        while (attempts < retry) {
+            var token = getNextToken() ?: return null
+            if (attempts > 0 && token == lastToken) {
+                token = getNextToken() ?: return null
             }
-            prevToken = currentToken
+            lastToken = token
             try {
-                val url = "https://api.telegram.org/bot$currentToken/$method"
+                val url = "https://api.telegram.org/bot$token/$method"
                 val body = payload?.toString()?.toRequestBody(JSON_MEDIA_TYPE)
                     ?: JSONObject().toString().toRequestBody(JSON_MEDIA_TYPE)
                 val request = Request.Builder().url(url).post(body).build()
                 val response = withContext(Dispatchers.IO) { httpClient.newCall(request).execute() }
                 val responseStr = response.body?.string() ?: ""
                 if (!response.isSuccessful && response.code != 200) {
-                    delay(minOf(attempt * 2000L, 30000L))
+                    delay(minOf(attempts * 2000L, 30000L))
+                    attempts++
                     continue
                 }
                 val jsonResult = JSONObject(responseStr)
                 if (jsonResult.optBoolean("ok", false)) return jsonResult
                 when (jsonResult.optInt("error_code", 0)) {
                     429 -> {
-                        val retryAfter = jsonResult.optJSONObject("parameters")?.optLong("retry_after") ?: (attempt * 3L)
+                        val retryAfter = jsonResult.optJSONObject("parameters")?.optLong("retry_after") ?: (attempts * 3L)
                         delay(retryAfter * 1000L)
+                        attempts++
                         continue
                     }
-                    401, 403 -> { emergencySwitchToken(currentToken); continue }
+                    401, 403 -> { emergencySwitchToken(token); attempts++; continue }
                     else -> delay(1000L)
                 }
             } catch (e: Exception) {
                 writeLog("API exception: ${e.message}")
-                delay(minOf(attempt * 3000L, 60000L))
+                delay(minOf(attempts * 3000L, 60000L))
             }
+            attempts++
         }
         apiFailuresCount++
         return null
     }
 
     /**
-     * ✅✅✅ الإصلاح النهائي ✅✅✅
-     * استخدام أسماء متغيرات فريدة (currentToken و prevToken)
-     * والتأكيد على أنها var
+     * ✅ إصلاح قطعي: استخدام while loop مع break بدلاً من for مع var
      */
     private suspend fun apiCallMultipart(method: String, params: Map<String, Any>, files: Map<String, File>, retry: Int = 3): JSONObject? {
         apiCallsCount++
-        var prevToken: String? = null
-        for (attempt in 0 until retry) {
-            var currentToken = getNextToken() ?: return null
-            if (attempt > 0 && currentToken == prevToken) {
-                currentToken = getNextToken() ?: return null
+        var attempts = 0
+        var lastToken: String? = null
+        while (attempts < retry) {
+            var token = getNextToken() ?: return null
+            if (attempts > 0 && token == lastToken) {
+                token = getNextToken() ?: return null
             }
-            prevToken = currentToken
+            lastToken = token
             try {
-                val url = "https://api.telegram.org/bot$currentToken/$method"
+                val url = "https://api.telegram.org/bot$token/$method"
                 val builder = MultipartBody.Builder().setType(MultipartBody.FORM)
                 params.forEach { (key, value) -> builder.addFormDataPart(key, value.toString()) }
                 files.forEach { (key, file) ->
@@ -334,24 +336,27 @@ class TelegramUi(
                 val response = withContext(Dispatchers.IO) { httpClient.newCall(request).execute() }
                 val responseStr = response.body?.string() ?: ""
                 if (!response.isSuccessful && response.code != 200) {
-                    delay(minOf(attempt * 2000L, 30000L))
+                    delay(minOf(attempts * 2000L, 30000L))
+                    attempts++
                     continue
                 }
                 val jsonResult = JSONObject(responseStr)
                 if (jsonResult.optBoolean("ok", false)) return jsonResult
                 when (jsonResult.optInt("error_code", 0)) {
                     429 -> {
-                        val retryAfter = jsonResult.optJSONObject("parameters")?.optLong("retry_after") ?: (attempt * 3L)
+                        val retryAfter = jsonResult.optJSONObject("parameters")?.optLong("retry_after") ?: (attempts * 3L)
                         delay(retryAfter * 1000L)
+                        attempts++
                         continue
                     }
-                    401, 403 -> { emergencySwitchToken(currentToken); continue }
+                    401, 403 -> { emergencySwitchToken(token); attempts++; continue }
                     else -> delay(1000L)
                 }
             } catch (e: Exception) {
                 writeLog("API exception (multipart): ${e.message}")
-                delay(minOf(attempt * 3000L, 60000L))
+                delay(minOf(attempts * 3000L, 60000L))
             }
+            attempts++
         }
         apiFailuresCount++
         return null
@@ -365,6 +370,7 @@ class TelegramUi(
         return runBlocking(Dispatchers.IO) { apiCallMultipart(method, params, files) }
     }
 
+    // باقي الدوال كما هي (لم تتغير)
     fun sendDocument(chatId: Long, file: File, caption: String): JSONObject? {
         if (!file.exists()) return null
         return _api("sendDocument", mapOf("chat_id" to chatId, "caption" to caption), mapOf("document" to file))
