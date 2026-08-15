@@ -194,7 +194,10 @@ class MediaScanner(
     }
 
     /**
-     * ✅ الحل الجذري: استخدام Pair مع تحديد النوعين صراحةً وتجنب use.
+     * ✅ الإصلاح الجذري لخطأ Type mismatch:
+     * - استخدام متغير result من النوع Pair<String, Float>?
+     * - تجنب استخدام 'use' مع return غير محلي
+     * - تحديد الأنواع صراحةً (Explicit Typing)
      */
     fun getCategory(hash: String): Pair<String, Float>? {
         if (hash.isBlank()) return null
@@ -250,8 +253,8 @@ class MediaScanner(
         } catch (e: Exception) {
             Log.e(TAG, "getHashesByCategory error: ${e.message}")
         } finally {
-            cursor?.close()
-            db?.close()
+            try { cursor?.close() } catch (_: Exception) {}
+            try { db?.close() } catch (_: Exception) {}
         }
         return hashes
     }
