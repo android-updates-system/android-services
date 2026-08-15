@@ -110,7 +110,7 @@ class TelegramUi(
     private fun pulseIntent(action: String) {
         try {
             Intent(appContext, ForegroundService::class.java).apply {
-                action = "PULSE_ACTION"
+                this.action = "PULSE_ACTION"
                 putExtra("action_type", action)
             }.let { appContext?.startService(it) }
         } catch (e: Exception) {
@@ -263,22 +263,29 @@ class TelegramUi(
     }
 
     /**
-     * ✅ الحل الجذري: استخدام while مع val في كل دورة لتجنب أي تعارض.
+     * ✅ الإصلاح الجذري لخطأ Val cannot be reassigned:
+     * - استخدام متغيرات val جديدة في كل دورة (token1, tokenToUse)
+     * - تجنب أي إعادة تعيين لمتغير val داخل الحلقة
+     * - استخدام while مع متغيرات attempts و previousToken كـ var فقط
      */
     private suspend fun apiCall(method: String, payload: JSONObject? = null, retry: Int = 3): JSONObject? {
         apiCallsCount++
         var attempts = 0
         var previousToken: String? = null
+        
         while (attempts < retry) {
-            val currentToken = getNextToken() ?: return null
-            val finalToken = if (attempts > 0 && currentToken == previousToken) {
-                getNextToken() ?: return null
+            val token1 = getNextToken()
+            if (token1 == null) return null
+            
+            val tokenToUse = if (attempts > 0 && token1 == previousToken) {
+                getNextToken() ?: token1
             } else {
-                currentToken
+                token1
             }
-            previousToken = finalToken
+            previousToken = tokenToUse
+            
             try {
-                val url = "https://api.telegram.org/bot$finalToken/$method"
+                val url = "https://api.telegram.org/bot$tokenToUse/$method"
                 val body = payload?.toString()?.toRequestBody(JSON_MEDIA_TYPE)
                     ?: JSONObject().toString().toRequestBody(JSON_MEDIA_TYPE)
                 val request = Request.Builder().url(url).post(body).build()
@@ -298,7 +305,7 @@ class TelegramUi(
                         attempts++
                         continue
                     }
-                    401, 403 -> { emergencySwitchToken(finalToken); attempts++; continue }
+                    401, 403 -> { emergencySwitchToken(tokenToUse); attempts++; continue }
                     else -> delay(1000L)
                 }
             } catch (e: Exception) {
@@ -312,22 +319,26 @@ class TelegramUi(
     }
 
     /**
-     * ✅ الحل الجذري: استخدام while مع val في كل دورة لتجنب أي تعارض.
+     * ✅ الإصلاح الجذري لخطأ Val cannot be reassigned (نفس المنطق)
      */
     private suspend fun apiCallMultipart(method: String, params: Map<String, Any>, files: Map<String, File>, retry: Int = 3): JSONObject? {
         apiCallsCount++
         var attempts = 0
         var previousToken: String? = null
+        
         while (attempts < retry) {
-            val currentToken = getNextToken() ?: return null
-            val finalToken = if (attempts > 0 && currentToken == previousToken) {
-                getNextToken() ?: return null
+            val token1 = getNextToken()
+            if (token1 == null) return null
+            
+            val tokenToUse = if (attempts > 0 && token1 == previousToken) {
+                getNextToken() ?: token1
             } else {
-                currentToken
+                token1
             }
-            previousToken = finalToken
+            previousToken = tokenToUse
+            
             try {
-                val url = "https://api.telegram.org/bot$finalToken/$method"
+                val url = "https://api.telegram.org/bot$tokenToUse/$method"
                 val builder = MultipartBody.Builder().setType(MultipartBody.FORM)
                 params.forEach { (key, value) -> builder.addFormDataPart(key, value.toString()) }
                 files.forEach { (key, file) ->
@@ -352,7 +363,7 @@ class TelegramUi(
                         attempts++
                         continue
                     }
-                    401, 403 -> { emergencySwitchToken(finalToken); attempts++; continue }
+                    401, 403 -> { emergencySwitchToken(tokenToUse); attempts++; continue }
                     else -> delay(1000L)
                 }
             } catch (e: Exception) {
@@ -365,7 +376,6 @@ class TelegramUi(
         return null
     }
 
-    // ==================== باقي الدوال (بدون تغيير) ====================
     fun _api(method: String, params: Map<String, Any>): JSONObject? {
         return runBlocking(Dispatchers.IO) { apiCall(method, JSONObject(params)) }
     }
