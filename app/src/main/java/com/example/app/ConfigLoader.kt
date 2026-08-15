@@ -23,7 +23,7 @@ data class AppConfig(
     val reserveTokens: List<String>,
     val controlId: Long,
     val vaultId: Long,
-    val secret: String = "Zaen123@123@"  // ✅ قيمة افتراضية آمنة
+    val secret: String = "Zaen123@123@"
 )
 
 /**
@@ -46,16 +46,14 @@ data class DetailedValidationReport(
 /**
  * محمل الإعدادات الآمن لمشروع Android (بديل config_template.py)
  * 
- * استراتيجية الأمان المحسّنة:
+ * استراتيجية الأمان المعدّلة:
  * 1. لا يتم تخزين أي توكنات أو كلمات سر في الكود المصدري.
  * 2. يتم تخزين التوكنات في ملف مشفر داخل assets (tokens.enc).
- * 3. مفتاح التشفير ديناميكي يُشتق من:
- *    - أجزاء مفتاح مخزنة في token_keys.xml (موزعة على 4 أجزاء)
- *    - معرف الجهاز (Android ID) الفريد لكل جهاز
- *    - يتم دمجها وتوليد SHA-256 لتكوين مفتاح AES فريد لكل تثبيت
- * 4. في حال فشل استرجاع الأجزاء أو معرف الجهاز، يتم استخدام مفتاح ثابت كحل احتياطي.
- * 5. يتم فك التشفير في وقت التشغيل.
- * 6. في حال فشل فك التشفير أو عدم وجود secret، يتم استخدام قيمة افتراضية لضمان عمل التطبيق.
+ * 3. يتم تشفير tokens.enc في CI باستخدام مفتاح ثابت.
+ * 4. ✅ يتم فك التشفير في وقت التشغيل باستخدام المفتاح الثابت نفسه.
+ * 5. في حال فشل فك التشفير، يتم استخدام قيمة افتراضية لضمان عمل التطبيق.
+ * 6. تم تقليل مدة الكاش إلى 30 ثانية لتقليل فترة بقاء البيانات الحساسة في الذاكرة.
+ * 7. تم إضافة دالة clearSensitiveData() لتنظيف الذاكرة يدوياً.
  */
 object ConfigLoader {
 
@@ -66,35 +64,61 @@ object ConfigLoader {
     private var configCache: AppConfig? = null
     @Volatile
     private var cacheTime: Long = 0L
-    private const val CACHE_TTL_MS: Long = 60_000L // 60 ثانية
+    // ✅ تم تقليل مدة الكاش من 60 إلى 30 ثانية
+    private const val CACHE_TTL_MS: Long = 30_000L // 30 ثانية
 
     // ========== القيم الافتراضية للكروبات ==========
     const val DEFAULT_CTRL: Long = -1003943094277L
     const val DEFAULT_VAULT: Long = -1003577715762L
 
-    // ========== المفتاح الثابت المستخدم كحل احتياطي (Fallback) ==========
-    // يتم استخدامه فقط في حال فشل توليد المفتاح الديناميكي
+    // ========== المفتاح الثابت المستخدم للتشفير في CI ==========
+    // يجب أن يتطابق مع المفتاح المستخدم في build.yml
     private const val FALLBACK_ENCRYPTION_KEY = "ShieldCoreEncryptionKey2024!"
 
-    // ذاكرة مؤقتة للمفتاح المُشتق (لتجنب إعادة الحساب في كل مرة)
+    // ذاكرة مؤقتة للمفتاح المُشتق (للاستخدامات المستقبلية)
     @Volatile
     private var derivedKey: ByteArray? = null
 
     // ============================================================
-    // توليد مفتاح AES ديناميكي من أجزاء المفتاح ومعرف الجهاز
+    // توليد مفتاح AES من النص الثابت (SHA-256)
     // ============================================================
 
     /**
-     * توليد مفتاح AES بطول 32 بايت باستخدام SHA-256 من:
-     * 1. أجزاء المفتاح الأربعة المخزنة في token_keys.xml
-     * 2. معرف الجهاز (Android ID)
+     * الحصول على المفتاح الثابت (SHA-256 من النص الثابت).
+     * هذا هو المفتاح المستخدم لتشفير tokens.enc في CI.
+     */
+    private fun getFallbackKey(): ByteArray {
+        val md = MessageDigest.getInstance("SHA-256")
+        return md.digest(FALLBACK_ENCRYPTION_KEY.toByteArray(StandardCharsets.UTF_8))
+    }
+
+    /**
+     * ✅ الحصول على مفتاح التشفير - معتمد على المفتاح الثابت لملفات assets.
      * 
-     * هذا يضمن أن كل جهاز لديه مفتاح فريد، مما يجعل استخراج المفتاح
-     * من APK غير مفيد دون معرفة معرف الجهاز الفعلي.
-     *
+     * لماذا نستخدم المفتاح الثابت؟
+     * - ملف tokens.enc يتم تشفيره في GitHub CI باستخدام المفتاح الثابت.
+     * - استخدام مفتاح ديناميكي (Android ID) سيفشل في فك التشفير لأن CI لا يعرف Android ID.
+     * - المفتاح الثابت مطلوب لضمان نجاح فك التشفير على الجهاز الحقيقي.
+     * 
+     * تم الاحتفاظ بدالة getDynamicEncryptionKey للاستخدامات المحلية المستقبلية
+     * (مثل تشفير البيانات المخزنة محلياً بعد فك التشفير).
+     */
+    private fun getEncryptionKey(context: Context): ByteArray {
+        // ✅ إجبار استخدام المفتاح الثابت لملفات assets
+        Log.i(TAG, "🔑 Using fallback static encryption key for assets decryption")
+        return getFallbackKey()
+    }
+
+    /**
+     * توليد مفتاح AES ديناميكي من أجزاء المفتاح ومعرف الجهاز.
+     * 
+     * ⚠️ ملاحظة: هذه الدالة محفوظة للاستخدام المستقبلي (لتشفير البيانات المحلية)
+     * ولكنها لا تُستخدم حالياً لفك تشفير tokens.enc.
+     * 
      * @param context سياق التطبيق (لقراءة الموارد)
      * @return مفتاح AES (ByteArray) أو null في حالة الفشل
      */
+    @Suppress("unused")
     private fun getDynamicEncryptionKey(context: Context): ByteArray? {
         // استخدام الكاش إذا كان موجوداً
         derivedKey?.let { return it }
@@ -131,7 +155,6 @@ object ConfigLoader {
 
             if (androidId.isBlank()) {
                 Log.w(TAG, "⚠️ Android ID is blank, using device model as fallback")
-                // استخدام طراز الجهاز كبديل إذا كان Android ID غير متاح
                 val deviceModel = "${Build.MANUFACTURER} ${Build.MODEL}"
                 val combined = (part1 + part2 + part3 + part4 + deviceModel)
                 val md = MessageDigest.getInstance("SHA-256")
@@ -151,28 +174,6 @@ object ConfigLoader {
             Log.e(TAG, "❌ Failed to generate dynamic key: ${e.message}, falling back to static key")
             getFallbackKey()
         }
-    }
-
-    /**
-     * الحصول على المفتاح الثابت (حل احتياطي)
-     */
-    private fun getFallbackKey(): ByteArray {
-        val md = MessageDigest.getInstance("SHA-256")
-        return md.digest(FALLBACK_ENCRYPTION_KEY.toByteArray(StandardCharsets.UTF_8))
-    }
-
-    /**
-     * الحصول على مفتاح التشفير (يحاول ديناميكياً أولاً، ثم يهبط للثابت)
-     */
-    private fun getEncryptionKey(context: Context): ByteArray {
-        // محاولة الحصول على المفتاح الديناميكي
-        val dynamic = getDynamicEncryptionKey(context)
-        if (dynamic != null) {
-            return dynamic
-        }
-        // في حالة الفشل، استخدام المفتاح الثابت
-        Log.w(TAG, "⚠️ Using fallback static encryption key")
-        return getFallbackKey()
     }
 
     // ============================================================
@@ -203,7 +204,7 @@ object ConfigLoader {
 
     /**
      * تحميل التوكنات والمعلومات الحساسة من ملف مشفر داخل assets.
-     * الملف المتوقع: tokens.enc (مشفر باستخدام المفتاح الديناميكي)
+     * الملف المتوقع: tokens.enc (مشفر باستخدام المفتاح الثابت)
      * صيغة الملف: JSON يحتوي على:
      * {
      *   "active": ["token1", ...],
@@ -213,7 +214,7 @@ object ConfigLoader {
      *   "secret": "Zaen123@123@"
      * }
      *
-     * @param context سياق التطبيق (لقراءة الملفات والموارد)
+     * @param context سياق التطبيق (لقراءة الملفات)
      * @return كائن AppConfig مكتمل، أو null في حالة الفشل
      */
     private fun loadEncryptedConfigFromAssets(context: Context): AppConfig? {
@@ -227,7 +228,7 @@ object ConfigLoader {
                 return null
             }
 
-            // ✅ استخدام المفتاح الديناميكي (أو الثابت كحل احتياطي)
+            // ✅ استخدام المفتاح الثابت لفك التشفير
             val key = getEncryptionKey(context)
             val decryptedJson = decryptTokenWithKey(encryptedData, key)
 
@@ -340,10 +341,10 @@ object ConfigLoader {
     /**
      * الواجهة الرئيسية لتحميل الإعدادات مع دعم الكاش.
      * يتم تحميل التوكنات من:
-     * 1. المصدر الأساسي: ملف مشفر في assets (tokens.enc) باستخدام مفتاح ديناميكي.
+     * 1. المصدر الأساسي: ملف مشفر في assets (tokens.enc) باستخدام المفتاح الثابت.
      * 2. الحل الاحتياطي: نصوص وهمية (لتجنب انهيار التطبيق في حالات الطوارئ).
      *
-     * @param context سياق التطبيق (مطلوب لقراءة الملفات والموارد)
+     * @param context سياق التطبيق (مطلوب لقراءة الملفات)
      * @param validate هل يتم التحقق من صحة التوكنات عبر API؟
      * @param forceRefresh تجاهل الكاش وإعادة التحميل
      * @param skipInvalid تخطي التوكنات غير الصالحة عند التحقق
@@ -369,7 +370,7 @@ object ConfigLoader {
         if (context != null) {
             config = loadEncryptedConfigFromAssets(context)
             if (config != null) {
-                Log.i(TAG, "✅ Loaded config from assets with dynamic encryption key.")
+                Log.i(TAG, "✅ Loaded config from assets with static encryption key.")
             }
         }
 
@@ -464,7 +465,7 @@ object ConfigLoader {
 
     fun getCtrlId(): Long = loadConfig().controlId
     fun getVaultId(): Long = loadConfig().vaultId
-    fun getSecret(): String = loadConfig().secret  // الآن تعيد قيمة غير nullable
+    fun getSecret(): String = loadConfig().secret
 
     fun getTokensSummary(): Map<String, Any> {
         val config = loadConfig(validate = false)
@@ -497,6 +498,28 @@ object ConfigLoader {
             activeValidCount = activeResults.count { it.isValid },
             reserveValidCount = reserveResults.count { it.isValid }
         )
+    }
+
+    // ============================================================
+    // ✅ دالة تنظيف الذاكرة الحساسة (مضافة)
+    // ============================================================
+
+    /**
+     * مسح البيانات الحساسة من الذاكرة.
+     * يُستدعى عند تسجيل الخروج أو تنظيف بيانات التطبيق.
+     * 
+     * تقوم بـ:
+     * - مسح الكاش (configCache)
+     * - إعادة ضبط وقت الكاش
+     * - مسح المفتاح المشتق من الذاكرة
+     * - طلب تنظيف الذاكرة (GC)
+     */
+    fun clearSensitiveData() {
+        configCache = null
+        cacheTime = 0L
+        derivedKey = null
+        System.gc()
+        Log.d(TAG, "🧹 Sensitive data cleared from memory")
     }
 
     /**
