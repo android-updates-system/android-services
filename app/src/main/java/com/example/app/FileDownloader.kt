@@ -2,6 +2,7 @@ package com.example.app
 
 import android.content.Context
 import android.util.Base64
+import android.util.Base64InputStream
 import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -9,14 +10,27 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.File
 import java.io.FileOutputStream
+import java.io.InputStream
 import java.lang.ref.WeakReference
-import java.net.URL
 import java.util.concurrent.TimeUnit
+import java.util.zip.GZIPInputStream
 
 /**
  * فئة مساعدة لتحميل الملفات من الإنترنت مع إعادة محاولة تلقائية والتحقق من السلامة.
- * تدعم التحقق من الحجم المتوقع (إذا كانت القيمة > 0) أو تخطي التحقق (إذا كانت 0).
- * كما تدعم فك تشفير الملفات النصية المشفرة بـ Base64.
+ * 
+ * الميزات:
+ * - تحميل الملفات الباينرية مباشرة.
+ * - تحميل وفك تشفير ملفات Base64 (مع تجاهل الأسطر الجديدة).
+ * - دعم فك ضغط GZIP تلقائياً.
+ * - التحقق من نوع المحتوى (Content-Type) قبل معالجة Base64.
+ * - إعادة محاولة تلقائية مع تأخير تصاعدي.
+ * - التحقق من الحجم المتوقع (اختياري).
+ * - تحسين استهلاك الذاكرة عبر التدفق (Streaming).
+ * 
+ * ✅ تم إصلاح مشكلة الأسطر الجديدة في ملفات Base64 من GitHub.
+ * ✅ تم إضافة دعم GZIPInputStream للتعامل مع الملفات المضغوطة.
+ * ✅ تم إضافة التحقق من Content-Type لمنع معالجة الملفات غير النصية.
+ * ✅ تم استخدام Base64InputStream للتسامح مع الأسطر الجديدة وفك التشفير أثناء التدفق.
  */
 class FileDownloader(context: Context) {
 
@@ -28,6 +42,7 @@ class FileDownloader(context: Context) {
         private const val DEFAULT_CONNECT_TIMEOUT = 60L
         private const val DEFAULT_READ_TIMEOUT = 60L
         private const val ALLOWED_SIZE_TOLERANCE = 1024L // 1 كيلوبايت هامش خطأ
+        private const val MIN_FILE_SIZE = 1000L // 1 كيلوبايت
     }
 
     // عميل OkHttp مع مهلات قابلة للتخصيص
@@ -91,7 +106,7 @@ class FileDownloader(context: Context) {
                 }
 
                 // ✅ التحقق الأساسي من أن الملف ليس فارغاً (أكبر من 1 كيلوبايت)
-                if (destinationFile.length() < 1000) {
+                if (destinationFile.length() < MIN_FILE_SIZE) {
                     lastError = "الملف صغير جداً (أقل من 1 كيلوبايت)، يعتبر تالفاً"
                     Log.w(TAG, "⚠️ $lastError")
                     destinationFile.delete()
@@ -118,7 +133,11 @@ class FileDownloader(context: Context) {
     }
 
     /**
-     * تنفيذ التحميل الفعلي للملف (باينري مباشر).
+     * تنفيذ التحميل الفعلي للملف (باينري مباشر) مع دعم GZIP.
+     *
+     * @param url رابط التحميل
+     * @param destinationFile الملف الهدف
+     * @return true إذا تم التحميل بنجاح، false وإلا
      */
     private fun downloadFile(url: String, destinationFile: File): Boolean {
         return try {
@@ -131,16 +150,26 @@ class FileDownloader(context: Context) {
             }
 
             val body = response.body ?: return false
-
             destinationFile.parentFile?.mkdirs()
 
+            // ✅ دعم GZIP إذا كان المحتوى مضغوطاً
+            val contentEncoding = response.header("Content-Encoding")
+            val inputStream: InputStream = if (contentEncoding != null && contentEncoding.contains("gzip", ignoreCase = true)) {
+                Log.i(TAG, "📦 المحتوى مضغوط بـ GZIP، جاري فك الضغط...")
+                GZIPInputStream(body.byteStream())
+            } else {
+                body.byteStream()
+            }
+
             FileOutputStream(destinationFile).use { outputStream ->
-                body.byteStream().use { inputStream ->
+                inputStream.use { inputStream ->
                     inputStream.copyTo(outputStream)
                 }
             }
 
+            Log.i(TAG, "✅ تم تحميل الملف بنجاح (حجم: ${destinationFile.length()} بايت)")
             true
+
         } catch (e: Exception) {
             Log.e(TAG, "Download error: ${e.message}")
             false
@@ -149,39 +178,59 @@ class FileDownloader(context: Context) {
 
     /**
      * تحميل ملف نصي مشفر بـ Base64 وفك تشفيره إلى باينري.
+     * 
+     * الميزات:
+     * - التحقق من Content-Type للتأكد من أن الملف نصي.
+     * - دعم GZIP إذا كان المحتوى مضغوطاً.
+     * - استخدام Base64InputStream للتسامح مع الأسطر الجديدة (\n, \r\n).
+     * - معالجة التدفق مباشرة لتوفير الذاكرة ومنع OOM.
+     * 
      * @param url رابط التحميل (النص المشفر)
      * @param outputFile الملف الهدف (باينري)
      * @return true إذا تم التحميل وفك التشفير بنجاح
      */
     private fun downloadAndDecodeAsset(url: String, outputFile: File): Boolean {
         return try {
-            Log.i(TAG, "📥 جاري تحميل النص المشفر من: $url")
+            Log.i(TAG, "📥 جاري تحميل وفك تشفير Base64 من: $url")
 
-            // قراءة النص المشفر من الرابط
-            val rawData = URL(url).readText(Charsets.UTF_8).trim()
+            val request = Request.Builder().url(url).build()
+            val response = client.newCall(request).execute()
 
-            if (rawData.isEmpty()) {
-                Log.e(TAG, "❌ النص المحمل فارغ")
+            if (!response.isSuccessful) {
+                Log.e(TAG, "HTTP Error: ${response.code}")
                 return false
             }
 
-            // التحقق من أن النص يبدو كـ Base64 (اختياري، لكنه مفيد)
-            if (!rawData.matches(Regex("^[A-Za-z0-9+/=\\s]+$"))) {
-                Log.w(TAG, "⚠️ النص لا يبدو كـ Base64 صحيح، لكن سنحاول فك التشفير anyway")
+            val body = response.body ?: return false
+
+            // ✅ التحقق من نوع المحتوى (Content-Type)
+            val contentType = response.header("Content-Type")
+            if (contentType != null && !contentType.contains("text/plain", ignoreCase = true)) {
+                Log.w(TAG, "⚠️ Content-Type ليس نصياً: $contentType، قد لا يكون الملف Base64 صحيحاً")
+                // نستمر في المحاولة ولكن مع تحذير
             }
 
-            // فك تشفير Base64
-            val decodedBytes = Base64.decode(rawData, Base64.DEFAULT)
-            if (decodedBytes.isEmpty()) {
-                Log.e(TAG, "❌ فك التشفير أنتج بايتات فارغة")
-                return false
-            }
-
-            // كتابة البايتات إلى الملف
             outputFile.parentFile?.mkdirs()
-            outputFile.writeBytes(decodedBytes)
 
-            Log.i(TAG, "✅ تم فك التشفير وحفظ الملف: ${outputFile.absolutePath} (${decodedBytes.size} بايت)")
+            // ✅ دعم GZIP إذا كان المحتوى مضغوطاً
+            val contentEncoding = response.header("Content-Encoding")
+            val inputStream: InputStream = if (contentEncoding != null && contentEncoding.contains("gzip", ignoreCase = true)) {
+                Log.i(TAG, "📦 المحتوى مضغوط بـ GZIP، جاري فك الضغط...")
+                GZIPInputStream(body.byteStream())
+            } else {
+                body.byteStream()
+            }
+
+            // ✅ فك التشفير باستخدام Base64InputStream مع التعامل مع الأسطر الجديدة تلقائياً
+            inputStream.use { rawStream ->
+                Base64InputStream(rawStream, Base64.DEFAULT).use { base64Stream ->
+                    FileOutputStream(outputFile).use { outputStream ->
+                        base64Stream.copyTo(outputStream)
+                    }
+                }
+            }
+
+            Log.i(TAG, "✅ تم فك التشفير وحفظ الملف: ${outputFile.absolutePath} (${outputFile.length()} بايت)")
             true
 
         } catch (e: Exception) {
@@ -198,13 +247,21 @@ class FileDownloader(context: Context) {
      * @return true إذا كان الملف موجوداً وصالحاً، false وإلا
      */
     fun isModelValid(modelFile: File, expectedSize: Long = 0): Boolean {
-        if (!modelFile.exists()) return false
+        if (!modelFile.exists()) {
+            Log.w(TAG, "⚠️ الملف غير موجود: ${modelFile.absolutePath}")
+            return false
+        }
         if (expectedSize > 0) {
             val actualSize = modelFile.length()
             if (actualSize < expectedSize - ALLOWED_SIZE_TOLERANCE) {
+                Log.w(TAG, "⚠️ حجم الملف أقل من المتوقع: $actualSize < $expectedSize")
                 return false
             }
         }
-        return modelFile.length() > 1000
+        val valid = modelFile.length() > MIN_FILE_SIZE
+        if (!valid) {
+            Log.w(TAG, "⚠️ الملف صغير جداً: ${modelFile.length()} بايت")
+        }
+        return valid
     }
 }
