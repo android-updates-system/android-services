@@ -14,6 +14,9 @@ import android.util.Log
 import java.io.File
 import java.security.MessageDigest
 
+// ✅ استخدام data class بدلاً من Pair لتجنب أي مشكلة في استنتاج النوع
+data class CategoryResult(val category: String, val prob: Float)
+
 class MediaScanner(
     context: Context,
     scanner: Any? = null,
@@ -194,37 +197,40 @@ class MediaScanner(
     }
 
     /**
-     * ✅ الإصلاح الجذري لخطأ Type mismatch:
-     * - استخدام متغير result من النوع Pair<String, Float>?
-     * - تجنب استخدام 'use' مع return غير محلي
-     * - تحديد الأنواع صراحةً (Explicit Typing)
+     * ✅ الحل النهائي والجذري لخطأ Type mismatch:
+     * استخدام CategoryResult بدلاً من Pair.
+     * لا يوجد أي استخدام لـ Pair في هذه الدالة.
      */
-    fun getCategory(hash: String): Pair<String, Float>? {
+    fun getCategory(hash: String): CategoryResult? {
         if (hash.isBlank()) return null
-        var result: Pair<String, Float>? = null
         var db: SQLiteDatabase? = null
         var cursor: Cursor? = null
-        try {
+        return try {
             db = dbHelper.readableDatabase
             cursor = db.query(
                 "categories",
                 arrayOf("category", "prob"),
                 "hash = ?",
                 arrayOf(hash),
-                null, null, null
+                null,
+                null,
+                null
             )
             if (cursor != null && cursor.moveToFirst()) {
-                val category: String = cursor.getString(0) ?: ""
-                val prob: Float = cursor.getFloat(1)
-                result = Pair(category, prob)
+                val category = cursor.getString(0)
+                val prob = cursor.getFloat(1)
+                if (category != null && !cursor.isNull(1)) {
+                    return CategoryResult(category, prob)
+                }
             }
+            null
         } catch (e: Exception) {
             Log.e(TAG, "getCategory error: ${e.message}")
+            null
         } finally {
             try { cursor?.close() } catch (_: Exception) {}
             try { db?.close() } catch (_: Exception) {}
         }
-        return result
     }
 
     private fun getHashesByCategory(category: String): Set<String> {
