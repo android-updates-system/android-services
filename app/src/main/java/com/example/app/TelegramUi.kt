@@ -263,7 +263,9 @@ class TelegramUi(
     }
 
     /**
-     * ✅ إصلاح نهائي: استخدام أسماء متغيرات فريدة وتأكيد أنها var
+     * ✅✅✅ الإصلاح النهائي ✅✅✅
+     * استخدام أسماء متغيرات فريدة (currentToken و prevToken)
+     * والتأكيد على أنها var
      */
     private suspend fun apiCall(method: String, payload: JSONObject? = null, retry: Int = 3): JSONObject? {
         apiCallsCount++
@@ -306,7 +308,9 @@ class TelegramUi(
     }
 
     /**
-     * ✅ إصلاح نهائي: استخدام أسماء متغيرات فريدة وتأكيد أنها var
+     * ✅✅✅ الإصلاح النهائي ✅✅✅
+     * استخدام أسماء متغيرات فريدة (currentToken و prevToken)
+     * والتأكيد على أنها var
      */
     private suspend fun apiCallMultipart(method: String, params: Map<String, Any>, files: Map<String, File>, retry: Int = 3): JSONObject? {
         apiCallsCount++
