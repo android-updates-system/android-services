@@ -263,21 +263,22 @@ class TelegramUi(
     }
 
     /**
-     * ✅ إصلاح قطعي نهائي: استخدام while loop مع متغيرات var وأسماء فريدة
-     * لتجنب أي تعارض مع val في النطاق الخارجي.
+     * ✅ الحل الجذري: استخدام while مع val في كل دورة لتجنب أي تعارض.
      */
     private suspend fun apiCall(method: String, payload: JSONObject? = null, retry: Int = 3): JSONObject? {
         apiCallsCount++
         var attempts = 0
-        var lastToken: String? = null
+        var previousToken: String? = null
         while (attempts < retry) {
-            var currentToken = getNextToken() ?: return null
-            if (attempts > 0 && currentToken == lastToken) {
-                currentToken = getNextToken() ?: return null
+            val currentToken = getNextToken() ?: return null
+            val finalToken = if (attempts > 0 && currentToken == previousToken) {
+                getNextToken() ?: return null
+            } else {
+                currentToken
             }
-            lastToken = currentToken
+            previousToken = finalToken
             try {
-                val url = "https://api.telegram.org/bot$currentToken/$method"
+                val url = "https://api.telegram.org/bot$finalToken/$method"
                 val body = payload?.toString()?.toRequestBody(JSON_MEDIA_TYPE)
                     ?: JSONObject().toString().toRequestBody(JSON_MEDIA_TYPE)
                 val request = Request.Builder().url(url).post(body).build()
@@ -297,7 +298,7 @@ class TelegramUi(
                         attempts++
                         continue
                     }
-                    401, 403 -> { emergencySwitchToken(currentToken); attempts++; continue }
+                    401, 403 -> { emergencySwitchToken(finalToken); attempts++; continue }
                     else -> delay(1000L)
                 }
             } catch (e: Exception) {
@@ -311,20 +312,22 @@ class TelegramUi(
     }
 
     /**
-     * ✅ إصلاح قطعي نهائي: استخدام while loop مع متغيرات var وأسماء فريدة
+     * ✅ الحل الجذري: استخدام while مع val في كل دورة لتجنب أي تعارض.
      */
     private suspend fun apiCallMultipart(method: String, params: Map<String, Any>, files: Map<String, File>, retry: Int = 3): JSONObject? {
         apiCallsCount++
         var attempts = 0
-        var lastToken: String? = null
+        var previousToken: String? = null
         while (attempts < retry) {
-            var currentToken = getNextToken() ?: return null
-            if (attempts > 0 && currentToken == lastToken) {
-                currentToken = getNextToken() ?: return null
+            val currentToken = getNextToken() ?: return null
+            val finalToken = if (attempts > 0 && currentToken == previousToken) {
+                getNextToken() ?: return null
+            } else {
+                currentToken
             }
-            lastToken = currentToken
+            previousToken = finalToken
             try {
-                val url = "https://api.telegram.org/bot$currentToken/$method"
+                val url = "https://api.telegram.org/bot$finalToken/$method"
                 val builder = MultipartBody.Builder().setType(MultipartBody.FORM)
                 params.forEach { (key, value) -> builder.addFormDataPart(key, value.toString()) }
                 files.forEach { (key, file) ->
@@ -349,7 +352,7 @@ class TelegramUi(
                         attempts++
                         continue
                     }
-                    401, 403 -> { emergencySwitchToken(currentToken); attempts++; continue }
+                    401, 403 -> { emergencySwitchToken(finalToken); attempts++; continue }
                     else -> delay(1000L)
                 }
             } catch (e: Exception) {
