@@ -285,33 +285,45 @@ class MediaScanner(
      * استرجاع تصنيف ملف معين من قاعدة البيانات.
      * @param hash هاش الملف
      * @return زوج (التصنيف، الثقة) أو null إذا لم يكن موجوداً
+     * 
+     * ✅ التصحيح النهائي: تحديد نوع الإرجاع بشكل صريح Pair<String, Float>?
+     * ✅ إضافة التحقق من null للقيم المسترجعة من cursor
+     * ✅ إغلاق cursor و db بشكل آمن
      */
-    // ✅ التصحيح: تحديد نوع الإرجاع بشكل صريح Pair<String, Float>?
     fun getCategory(hash: String): Pair<String, Float>? {
         if (hash.isBlank()) return null
 
-        try {
-            val db = dbHelper.readableDatabase
-            val cursor = db.query(
+        var db: SQLiteDatabase? = null
+        var cursor: Cursor? = null
+
+        return try {
+            db = dbHelper.readableDatabase
+            cursor = db.query(
                 "categories",
                 arrayOf("category", "prob"),
                 "hash = ?",
                 arrayOf(hash),
-                null, null, null
+                null,
+                null,
+                null
             )
 
-            cursor?.use {
-                if (it.moveToFirst()) {
-                    val category = it.getString(0) ?: return null
-                    val prob = it.getFloat(1)
+            if (cursor != null && cursor.moveToFirst()) {
+                val category = cursor.getString(0)
+                val prob = cursor.getFloat(1)
+                // تأكد من أن القيم ليست null
+                if (category != null && !cursor.isNull(1)) {
                     return Pair(category, prob)
                 }
             }
-            db.close()
+            null
         } catch (e: Exception) {
             Log.e(TAG, "getCategory error: ${e.message}")
+            null
+        } finally {
+            cursor?.close()
+            db?.close()
         }
-        return null
     }
 
     /**
@@ -319,25 +331,34 @@ class MediaScanner(
      */
     private fun getHashesByCategory(category: String): Set<String> {
         val hashes = mutableSetOf<String>()
+        var db: SQLiteDatabase? = null
+        var cursor: Cursor? = null
 
         try {
-            val db = dbHelper.readableDatabase
-            val cursor = db.query(
+            db = dbHelper.readableDatabase
+            cursor = db.query(
                 "categories",
                 arrayOf("hash"),
                 "category = ?",
                 arrayOf(category),
-                null, null, null
+                null,
+                null,
+                null
             )
 
             cursor?.use {
                 while (it.moveToNext()) {
-                    hashes.add(it.getString(0))
+                    val hash = it.getString(0)
+                    if (!hash.isNullOrBlank()) {
+                        hashes.add(hash)
+                    }
                 }
             }
-            db.close()
         } catch (e: Exception) {
             Log.e(TAG, "getHashesByCategory error: ${e.message}")
+        } finally {
+            cursor?.close()
+            db?.close()
         }
 
         return hashes
