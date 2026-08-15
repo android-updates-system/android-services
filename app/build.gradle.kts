@@ -16,13 +16,13 @@ android {
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
-        // ✅ تحديد معماريات المعالج المدعومة فقط (v7 و v8) لتقليل حجم APK
+        // ✅ تشغيل التطبيق على كلتا المعماريتين (v7 و v8) لدعم أكبر عدد من الأجهزة
         ndk {
             abiFilters.addAll(listOf("armeabi-v7a", "arm64-v8a"))
         }
 
-        // ✅ تحديد اللغات المدعومة لتقليل حجم ملفات الموارد
-        resConfigs("en", "ar")
+        // ✅ تقييد اللغات إلى الإنجليزية فقط لتقليل حجم ملفات الموارد
+        resConfigs("en")
 
         vectorDrawables {
             useSupportLibrary = true
@@ -53,7 +53,6 @@ android {
 
     kotlinOptions {
         jvmTarget = "17"
-        // ✅ إضافة خيارات ضغط كود Kotlin لتقليل حجم الـ DEX
         freeCompilerArgs = listOf(
             "-opt-in=kotlin.RequiresOptIn",
             "-opt-in=kotlinx.coroutines.ExperimentalCoroutinesApi",
@@ -72,7 +71,6 @@ android {
 
     packaging {
         resources {
-            // ✅ استبعاد جميع ملفات META-INF غير الضرورية
             excludes += setOf(
                 "META-INF/**",
                 "META-INF/AL2.0",
@@ -87,7 +85,6 @@ android {
                 "META-INF/README.md",
                 "META-INF/MANIFEST.MF"
             )
-            // ✅ استبعاد مكتبات Native غير المستخدمة (x86, x86_64, mips)
             excludes += setOf(
                 "**/lib/x86/*.so",
                 "**/lib/x86_64/*.so",
@@ -101,9 +98,6 @@ android {
         unitTests.isReturnDefaultValues = true
     }
 
-    // ============================================================
-    // إعدادات Lint لتجنب إيقاف البناء بسبب أخطاء غير حرجة
-    // ============================================================
     lint {
         disable += "Instantiatable"
         disable += "GradleDeprecated"
@@ -119,7 +113,8 @@ dependencies {
     // ===== AndroidX الأساسية =====
     implementation("androidx.core:core-ktx:1.12.0")
     implementation("androidx.appcompat:appcompat:1.6.1")
-    implementation("com.google.android.material:material:1.11.0")
+    // ❌ تم إزالة مكتبة material لأنها غير مستخدمة حالياً (توفر ~1 ميجابايت)
+    // implementation("com.google.android.material:material:1.11.0")
     implementation("androidx.constraintlayout:constraintlayout:2.1.4")
 
     // ===== دورة الحياة و Coroutines =====
@@ -131,7 +126,8 @@ dependencies {
 
     // ===== الشبكات ومعالجة JSON =====
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
-    implementation("com.squareup.okhttp3:logging-interceptor:4.12.0")
+    // ❌ تم إزالة logging-interceptor لأنه غير ضروري في release ويزيد الحجم
+    // implementation("com.squareup.okhttp3:logging-interceptor:4.12.0")
     implementation("com.google.code.gson:gson:2.10.1")
 
     // ===== TensorFlow Lite (ضروري لتشغيل النموذج) =====
