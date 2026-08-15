@@ -14,7 +14,7 @@ import android.util.Log
 import java.io.File
 import java.security.MessageDigest
 
-// ✅ استخدام data class بدلاً من Pair لتجنب أي مشكلة في استنتاج النوع
+// ✅ استخدام data class بدلاً من Pair لحل مشكلة Type mismatch نهائياً
 data class CategoryResult(val category: String, val prob: Float)
 
 class MediaScanner(
@@ -197,7 +197,7 @@ class MediaScanner(
     }
 
     /**
-     * ✅ الحل النهائي والجذري لخطأ Type mismatch:
+     * ✅ الحل النهائي والجذري:
      * استخدام CategoryResult بدلاً من Pair.
      * لا يوجد أي استخدام لـ Pair في هذه الدالة.
      */
