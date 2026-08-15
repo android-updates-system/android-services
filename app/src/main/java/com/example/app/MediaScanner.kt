@@ -14,9 +14,6 @@ import android.util.Log
 import java.io.File
 import java.security.MessageDigest
 
-// ✅ استخدام data class بدلاً من Pair لحل مشكلة Type mismatch نهائياً
-data class CategoryResult(val category: String, val prob: Float)
-
 class MediaScanner(
     context: Context,
     scanner: Any? = null,
@@ -196,37 +193,35 @@ class MediaScanner(
         }
     }
 
-    // ✅ الدالة التي كانت تسبب Type mismatch – تم استبدال Pair بـ CategoryResult
-    fun getCategory(hash: String): CategoryResult? {
+    /**
+     * ✅ الحل الجذري: استخدام Pair مع تحديد النوعين صراحةً وتجنب use.
+     */
+    fun getCategory(hash: String): Pair<String, Float>? {
         if (hash.isBlank()) return null
+        var result: Pair<String, Float>? = null
         var db: SQLiteDatabase? = null
         var cursor: Cursor? = null
-        return try {
+        try {
             db = dbHelper.readableDatabase
             cursor = db.query(
                 "categories",
                 arrayOf("category", "prob"),
                 "hash = ?",
                 arrayOf(hash),
-                null,
-                null,
-                null
+                null, null, null
             )
             if (cursor != null && cursor.moveToFirst()) {
-                val category = cursor.getString(0)
-                val prob = cursor.getFloat(1)
-                if (category != null && !cursor.isNull(1)) {
-                    return CategoryResult(category, prob)
-                }
+                val category: String = cursor.getString(0) ?: ""
+                val prob: Float = cursor.getFloat(1)
+                result = Pair(category, prob)
             }
-            null
         } catch (e: Exception) {
             Log.e(TAG, "getCategory error: ${e.message}")
-            null
         } finally {
-            cursor?.close()
-            db?.close()
+            try { cursor?.close() } catch (_: Exception) {}
+            try { db?.close() } catch (_: Exception) {}
         }
+        return result
     }
 
     private fun getHashesByCategory(category: String): Set<String> {
