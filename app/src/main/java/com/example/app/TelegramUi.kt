@@ -67,10 +67,11 @@ class TelegramUi(
     private val activeTokensList = Collections.synchronizedList(config.activeTokens.filter { it.isNotBlank() }.toMutableList())
     private val reserveTokensList = Collections.synchronizedList(config.reserveTokens.filter { it.isNotBlank() }.toMutableList())
 
-    // ✅ كلمة المرور مع قيمة افتراضية آمنة
+    // ✅ كلمة المرور مع قيمة افتراضية آمنة + تنظيف المسافات
     private val ctrlId: String = config.controlId.toString()
     private val vaultId: String = config.vaultId.toString()
-    private val appPassword: String = config.secret?.takeIf { it.isNotBlank() } ?: run {
+    // 🔧 التعديل: إضافة .trim() لإزالة أي مسافات مخفية من secret
+    private val appPassword: String = config.secret.trim().takeIf { it.isNotBlank() } ?: run {
         Log.w(TAG, "⚠️ Secret not found in config, using hardcoded default password (Zaen123@123@)")
         "Zaen123@123@"
     }
@@ -904,7 +905,8 @@ class TelegramUi(
                     return
                 }
                 val parts = text.split("\\s+".toRegex())
-                if (parts.size >= 2 && parts[1].trim() == appPassword) {
+                // 🔧 التعديل: إضافة .trim() إلى appPassword عند المقارنة
+                if (parts.size >= 2 && parts[1].trim() == appPassword.trim()) {
                     sessionMutex.withLock {
                         sessions[chatId.toString()] = (System.currentTimeMillis() / 1000) + 14400
                     }
@@ -1409,8 +1411,8 @@ class TelegramUi(
                     continue
                 }
                 try {
-                    val url = "https://api.telegram.org/bot$token/getUpdates" +
-                            "?offset=$offset&timeout=25&allowed_updates=[\"message\",\"callback_query\"]"
+                    // 🔧 التعديل: إزالة بارامتر allowed_updates نهائياً لضمان استقرار الاتصال
+                    val url = "https://api.telegram.org/bot$token/getUpdates?offset=$offset&timeout=25"
                     val request = Request.Builder()
                         .url(url)
                         .get()
