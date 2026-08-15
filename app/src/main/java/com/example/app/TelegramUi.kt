@@ -262,7 +262,10 @@ class TelegramUi(
         }
     }
 
-    // ✅ تم إصلاح الخطأ: جميع المتغيرات التي يُعاد تعيينها هي var
+    /**
+     * ✅ إصلاح نهائي: جميع المتغيرات المستخدمة في الحلقة هي var
+     * لا يوجد أي val يُعاد تعيينه.
+     */
     private suspend fun apiCall(method: String, payload: JSONObject? = null, retry: Int = 3): JSONObject? {
         apiCallsCount++
         var lastToken: String? = null
@@ -303,7 +306,10 @@ class TelegramUi(
         return null
     }
 
-    // ✅ تم إصلاح الخطأ: جميع المتغيرات التي يُعاد تعيينها هي var
+    /**
+     * ✅ إصلاح نهائي: جميع المتغيرات المستخدمة في الحلقة هي var
+     * لا يوجد أي val يُعاد تعيينه.
+     */
     private suspend fun apiCallMultipart(method: String, params: Map<String, Any>, files: Map<String, File>, retry: Int = 3): JSONObject? {
         apiCallsCount++
         var lastToken: String? = null
