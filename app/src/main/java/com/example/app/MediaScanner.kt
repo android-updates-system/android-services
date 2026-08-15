@@ -194,8 +194,8 @@ class MediaScanner(
     }
 
     /**
-     * ✅ إصلاح نهائي: استخدام Pair<String, Float> صريح
-     * لتجنب أي غموض في استنتاج النوع (Type inference)
+     * ✅✅✅ الإصلاح النهائي ✅✅✅
+     * استخدام Pair<String, Float> بشكل صريح لتجنب خطأ Type mismatch
      */
     fun getCategory(hash: String): Pair<String, Float>? {
         if (hash.isBlank()) return null
@@ -216,7 +216,7 @@ class MediaScanner(
                 val category = cursor.getString(0)
                 val prob = cursor.getFloat(1)
                 if (category != null && !cursor.isNull(1)) {
-                    // ✅ تحديد النوعين صراحةً
+                    // ✅✅✅ هذه هي الصيغة الصحيحة التي لا تسبب Type mismatch ✅✅✅
                     return Pair<String, Float>(category, prob)
                 }
             }
