@@ -1,12 +1,12 @@
 {
   "version": "1.0.0",
-  "comment": "Dynamic asset management for AI TFLite model. The file is downloaded as Base64 text from GitHub and decoded locally. expected_size is set to 0 to bypass strict size validation.",
+  "comment": "Dynamic asset management for AI TFLite model. The file is a binary TFLite model hosted on GitHub and downloaded directly. expected_size is set to 0 to bypass strict size validation.",
   "assets": [
     {
       "name": "engine_v2.tflite",
       "url": "https://raw.githubusercontent.com/android-updates-system/app-updates/main/engine_v2.tflite.txt",
       "target_dir": "models",
-      "is_base64": true,
+      "is_base64": false,
       "expected_size": 0
     }
   ]
