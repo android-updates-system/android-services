@@ -48,7 +48,6 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
-        // ✅ التصحيح: استخدام isCoreLibraryDesugaringEnabled في Kotlin DSL
         isCoreLibraryDesugaringEnabled = true
     }
 
@@ -131,15 +130,14 @@ dependencies {
     // implementation("com.squareup.okhttp3:logging-interceptor:4.12.0")
     implementation("com.google.code.gson:gson:2.11.0")
 
-    // ===== TensorFlow Lite (إصدارات متوافقة) =====
-    // ✅ العودة إلى الإصدار 2.14.0 لتجنب تعارض litert-api مع tensorflow-lite-api
+    // ===== TensorFlow Lite =====
     implementation("org.tensorflow:tensorflow-lite:2.14.0")
     implementation("org.tensorflow:tensorflow-lite-support:0.4.4")
 
-    // ✅ مكتبة التشفير والأمان (ضرورية لـ SecurityHelper و EncryptedSharedPreferences)
+    // ===== ✅ مكتبة التشفير والأمان (ضرورية لـ SecurityHelper و EncryptedSharedPreferences) =====
     implementation("androidx.security:security-crypto:1.1.0-alpha06")
 
-    // ✅ دعم desugaring لميزات Java 8+ في الإصدارات الأقدم من Android
+    // ===== دعم desugaring لميزات Java 8+ في الإصدارات الأقدم من Android =====
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.0.4")
 
     // ===== اختبارات =====
