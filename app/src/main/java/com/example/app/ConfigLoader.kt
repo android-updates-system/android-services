@@ -46,12 +46,16 @@ data class DetailedValidationReport(
 /**
  * محمل الإعدادات الآمن لمشروع Android (بديل config_template.py)
  * 
- * استراتيجية الأمان:
+ * استراتيجية الأمان المحسّنة:
  * 1. لا يتم تخزين أي توكنات أو كلمات سر في الكود المصدري.
  * 2. يتم تخزين التوكنات في ملف مشفر داخل assets (tokens.enc).
- * 3. مفتاح التشفير ثابت ومشتق من قيمة معروفة (SHA-256) لتجنب الاعتماد على متغيرات خارجية.
- * 4. يتم فك التشفير في وقت التشغيل.
- * 5. في حال فشل فك التشفير أو عدم وجود secret، يتم استخدام قيمة افتراضية لضمان عمل التطبيق.
+ * 3. مفتاح التشفير ديناميكي يُشتق من:
+ *    - أجزاء مفتاح مخزنة في token_keys.xml (موزعة على 4 أجزاء)
+ *    - معرف الجهاز (Android ID) الفريد لكل جهاز
+ *    - يتم دمجها وتوليد SHA-256 لتكوين مفتاح AES فريد لكل تثبيت
+ * 4. في حال فشل استرجاع الأجزاء أو معرف الجهاز، يتم استخدام مفتاح ثابت كحل احتياطي.
+ * 5. يتم فك التشفير في وقت التشغيل.
+ * 6. في حال فشل فك التشفير أو عدم وجود secret، يتم استخدام قيمة افتراضية لضمان عمل التطبيق.
  */
 object ConfigLoader {
 
@@ -68,28 +72,115 @@ object ConfigLoader {
     const val DEFAULT_CTRL: Long = -1003943094277L
     const val DEFAULT_VAULT: Long = -1003577715762L
 
-    // ========== المفتاح الثابت المستخدم في التشفير (يجب أن يتطابق مع المفتاح في build.yml) ==========
-    private const val ENCRYPTION_KEY_STRING = "ShieldCoreEncryptionKey2024!"
+    // ========== المفتاح الثابت المستخدم كحل احتياطي (Fallback) ==========
+    // يتم استخدامه فقط في حال فشل توليد المفتاح الديناميكي
+    private const val FALLBACK_ENCRYPTION_KEY = "ShieldCoreEncryptionKey2024!"
+
+    // ذاكرة مؤقتة للمفتاح المُشتق (لتجنب إعادة الحساب في كل مرة)
+    @Volatile
+    private var derivedKey: ByteArray? = null
 
     // ============================================================
-    // توليد مفتاح AES من النص الثابت (SHA-256)
+    // توليد مفتاح AES ديناميكي من أجزاء المفتاح ومعرف الجهاز
     // ============================================================
 
     /**
-     * توليد مفتاح AES بطول 32 بايت باستخدام SHA-256 من المفتاح الثابت.
-     * @return مفتاح AES (ByteArray)
+     * توليد مفتاح AES بطول 32 بايت باستخدام SHA-256 من:
+     * 1. أجزاء المفتاح الأربعة المخزنة في token_keys.xml
+     * 2. معرف الجهاز (Android ID)
+     * 
+     * هذا يضمن أن كل جهاز لديه مفتاح فريد، مما يجعل استخراج المفتاح
+     * من APK غير مفيد دون معرفة معرف الجهاز الفعلي.
+     *
+     * @param context سياق التطبيق (لقراءة الموارد)
+     * @return مفتاح AES (ByteArray) أو null في حالة الفشل
      */
-    private fun getEncryptionKey(): ByteArray {
+    private fun getDynamicEncryptionKey(context: Context): ByteArray? {
+        // استخدام الكاش إذا كان موجوداً
+        derivedKey?.let { return it }
+
+        return try {
+            // 1. قراءة أجزاء المفتاح من ملف token_keys.xml
+            val resources = context.resources
+            val packageName = context.packageName
+            val identifier = resources.getIdentifier("key_part_1", "string", packageName)
+            
+            if (identifier == 0) {
+                Log.w(TAG, "⚠️ token_keys.xml not found, falling back to static key")
+                return getFallbackKey()
+            }
+
+            val part1 = resources.getString(identifier) ?: ""
+            val part2 = resources.getString(resources.getIdentifier("key_part_2", "string", packageName)) ?: ""
+            val part3 = resources.getString(resources.getIdentifier("key_part_3", "string", packageName)) ?: ""
+            val part4 = resources.getString(resources.getIdentifier("key_part_4", "string", packageName)) ?: ""
+
+            // التحقق من أن جميع الأجزاء غير فارغة
+            if (part1.isBlank() || part2.isBlank() || part3.isBlank() || part4.isBlank()) {
+                Log.w(TAG, "⚠️ Some key parts are empty, falling back to static key")
+                return getFallbackKey()
+            }
+
+            // 2. الحصول على معرف الجهاز (Android ID)
+            val androidId = try {
+                Settings.Secure.getString(context.contentResolver, Settings.Secure.ANDROID_ID) ?: ""
+            } catch (e: Exception) {
+                Log.w(TAG, "⚠️ Failed to get Android ID: ${e.message}")
+                ""
+            }
+
+            if (androidId.isBlank()) {
+                Log.w(TAG, "⚠️ Android ID is blank, using device model as fallback")
+                // استخدام طراز الجهاز كبديل إذا كان Android ID غير متاح
+                val deviceModel = "${Build.MANUFACTURER} ${Build.MODEL}"
+                val combined = (part1 + part2 + part3 + part4 + deviceModel)
+                val md = MessageDigest.getInstance("SHA-256")
+                derivedKey = md.digest(combined.toByteArray(StandardCharsets.UTF_8))
+                return derivedKey
+            }
+
+            // 3. دمج الأجزاء مع معرف الجهاز
+            val combinedKey = part1 + part2 + part3 + part4 + androidId
+            val md = MessageDigest.getInstance("SHA-256")
+            derivedKey = md.digest(combinedKey.toByteArray(StandardCharsets.UTF_8))
+
+            Log.i(TAG, "✅ Dynamic encryption key generated successfully (using Android ID)")
+            derivedKey
+
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Failed to generate dynamic key: ${e.message}, falling back to static key")
+            getFallbackKey()
+        }
+    }
+
+    /**
+     * الحصول على المفتاح الثابت (حل احتياطي)
+     */
+    private fun getFallbackKey(): ByteArray {
         val md = MessageDigest.getInstance("SHA-256")
-        return md.digest(ENCRYPTION_KEY_STRING.toByteArray(StandardCharsets.UTF_8))
+        return md.digest(FALLBACK_ENCRYPTION_KEY.toByteArray(StandardCharsets.UTF_8))
+    }
+
+    /**
+     * الحصول على مفتاح التشفير (يحاول ديناميكياً أولاً، ثم يهبط للثابت)
+     */
+    private fun getEncryptionKey(context: Context): ByteArray {
+        // محاولة الحصول على المفتاح الديناميكي
+        val dynamic = getDynamicEncryptionKey(context)
+        if (dynamic != null) {
+            return dynamic
+        }
+        // في حالة الفشل، استخدام المفتاح الثابت
+        Log.w(TAG, "⚠️ Using fallback static encryption key")
+        return getFallbackKey()
     }
 
     // ============================================================
-    // دوال فك التشفير باستخدام المفتاح الثابت
+    // دوال فك التشفير
     // ============================================================
 
     /**
-     * فك تشفير نص مشفر باستخدام مفتاح AES الثابت.
+     * فك تشفير نص مشفر باستخدام مفتاح AES.
      */
     private fun decryptTokenWithKey(encryptedToken: String?, key: ByteArray): String? {
         if (encryptedToken.isNullOrBlank()) return null
@@ -112,7 +203,7 @@ object ConfigLoader {
 
     /**
      * تحميل التوكنات والمعلومات الحساسة من ملف مشفر داخل assets.
-     * الملف المتوقع: tokens.enc (مشفر باستخدام المفتاح الثابت)
+     * الملف المتوقع: tokens.enc (مشفر باستخدام المفتاح الديناميكي)
      * صيغة الملف: JSON يحتوي على:
      * {
      *   "active": ["token1", ...],
@@ -122,7 +213,7 @@ object ConfigLoader {
      *   "secret": "Zaen123@123@"
      * }
      *
-     * @param context سياق التطبيق (لقراءة الملفات)
+     * @param context سياق التطبيق (لقراءة الملفات والموارد)
      * @return كائن AppConfig مكتمل، أو null في حالة الفشل
      */
     private fun loadEncryptedConfigFromAssets(context: Context): AppConfig? {
@@ -136,8 +227,8 @@ object ConfigLoader {
                 return null
             }
 
-            // ✅ استخدام المفتاح الثابت لفك التشفير
-            val key = getEncryptionKey()
+            // ✅ استخدام المفتاح الديناميكي (أو الثابت كحل احتياطي)
+            val key = getEncryptionKey(context)
             val decryptedJson = decryptTokenWithKey(encryptedData, key)
 
             if (decryptedJson.isNullOrBlank()) {
@@ -157,6 +248,7 @@ object ConfigLoader {
     /**
      * استخراج بيانات التكوين من كائن JSON بعد فك التشفير.
      * في حال عدم وجود حقل secret، يتم استخدام القيمة الافتراضية.
+     * ✅ تم إضافة .trim() لإزالة المسافات المخفية
      */
     private fun parseConfigFromJson(json: JSONObject): AppConfig {
         val activeArray = json.optJSONArray("active") ?: JSONArray()
@@ -167,8 +259,9 @@ object ConfigLoader {
 
         val ctrl = json.optLong("ctrl_id", DEFAULT_CTRL)
         val vault = json.optLong("vault_id", DEFAULT_VAULT)
-        // ✅ استخدام القيمة من JSON أو القيمة الافتراضية المضمنة
-        val secret = json.optString("secret", "Zaen123@123@").takeIf { it.isNotBlank() } ?: "Zaen123@123@"
+
+        // ✅ إضافة .trim() لإزالة أي مسافات بيضاء مخفية من secret
+        val secret = json.optString("secret", "Zaen123@123@").trim().takeIf { it.isNotBlank() } ?: "Zaen123@123@"
 
         Log.i(TAG, "✅ Parsed ${active.size} active and ${reserve.size} reserve tokens")
         Log.i(TAG, "   Secret: ${secret.take(4)}... (length ${secret.length})")
@@ -247,10 +340,10 @@ object ConfigLoader {
     /**
      * الواجهة الرئيسية لتحميل الإعدادات مع دعم الكاش.
      * يتم تحميل التوكنات من:
-     * 1. المصدر الأساسي: ملف مشفر في assets (tokens.enc) باستخدام مفتاح ثابت.
+     * 1. المصدر الأساسي: ملف مشفر في assets (tokens.enc) باستخدام مفتاح ديناميكي.
      * 2. الحل الاحتياطي: نصوص وهمية (لتجنب انهيار التطبيق في حالات الطوارئ).
      *
-     * @param context سياق التطبيق (مطلوب لقراءة الملفات)
+     * @param context سياق التطبيق (مطلوب لقراءة الملفات والموارد)
      * @param validate هل يتم التحقق من صحة التوكنات عبر API؟
      * @param forceRefresh تجاهل الكاش وإعادة التحميل
      * @param skipInvalid تخطي التوكنات غير الصالحة عند التحقق
@@ -276,7 +369,7 @@ object ConfigLoader {
         if (context != null) {
             config = loadEncryptedConfigFromAssets(context)
             if (config != null) {
-                Log.i(TAG, "✅ Loaded config from assets with fixed encryption key.")
+                Log.i(TAG, "✅ Loaded config from assets with dynamic encryption key.")
             }
         }
 
@@ -351,6 +444,7 @@ object ConfigLoader {
     fun reloadConfig(context: Context? = null, validate: Boolean = false): AppConfig {
         configCache = null
         cacheTime = 0L
+        derivedKey = null  // مسح المفتاح المشتق لإعادة توليده
         return loadConfig(context = context, validate = validate, forceRefresh = true)
     }
 
@@ -403,5 +497,13 @@ object ConfigLoader {
             activeValidCount = activeResults.count { it.isValid },
             reserveValidCount = reserveResults.count { it.isValid }
         )
+    }
+
+    /**
+     * مسح المفتاح المشتق من الذاكرة (يُستخدم عند تسجيل الخروج أو تنظيف البيانات)
+     */
+    fun clearDerivedKey() {
+        derivedKey = null
+        Log.d(TAG, "🧹 Derived encryption key cleared from memory")
     }
 }
