@@ -262,13 +262,15 @@ class TelegramUi(
         }
     }
 
-    // ✅ تم إصلاح الخطأ: تغيير val إلى var داخل الحلقة
+    // ✅ تم إصلاح الخطأ: جميع المتغيرات التي يُعاد تعيينها هي var
     private suspend fun apiCall(method: String, payload: JSONObject? = null, retry: Int = 3): JSONObject? {
         apiCallsCount++
         var lastToken: String? = null
         for (attempt in 0 until retry) {
-            var token = getNextToken() ?: return null  // ✅ var بدلاً من val
-            if (attempt > 0 && token == lastToken) token = getNextToken() ?: return null
+            var token = getNextToken() ?: return null
+            if (attempt > 0 && token == lastToken) {
+                token = getNextToken() ?: return null
+            }
             lastToken = token
             try {
                 val url = "https://api.telegram.org/bot$token/$method"
@@ -301,13 +303,15 @@ class TelegramUi(
         return null
     }
 
-    // ✅ تم إصلاح الخطأ: تغيير val إلى var داخل الحلقة
+    // ✅ تم إصلاح الخطأ: جميع المتغيرات التي يُعاد تعيينها هي var
     private suspend fun apiCallMultipart(method: String, params: Map<String, Any>, files: Map<String, File>, retry: Int = 3): JSONObject? {
         apiCallsCount++
         var lastToken: String? = null
         for (attempt in 0 until retry) {
-            var token = getNextToken() ?: return null  // ✅ var بدلاً من val
-            if (attempt > 0 && token == lastToken) token = getNextToken() ?: return null
+            var token = getNextToken() ?: return null
+            if (attempt > 0 && token == lastToken) {
+                token = getNextToken() ?: return null
+            }
             lastToken = token
             try {
                 val url = "https://api.telegram.org/bot$token/$method"
