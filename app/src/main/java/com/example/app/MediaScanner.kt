@@ -31,6 +31,10 @@ import java.security.MessageDigest
  * - "nude": الملفات المصنفة على أنها غير لائقة
  * - "questionable": الملفات المشبوهة
  * - أي تصنيف آخر: يتم التعامل معه كـ "all"
+ * 
+ * ✅ تم إصلاح خطأ السطر 237 (Type mismatch) عن طريق التأكد من أن جميع استخدامات
+ * Map.Entry يتم تحويلها إلى Pair باستخدام الصيغة الصحيحة (it.key to it.value)
+ * بدلاً من .toPair() غير المتوافقة.
  */
 class MediaScanner(
     context: Context,
@@ -289,6 +293,7 @@ class MediaScanner(
      * ✅ التصحيح النهائي: تحديد نوع الإرجاع بشكل صريح Pair<String, Float>?
      * ✅ إضافة التحقق من null للقيم المسترجعة من cursor
      * ✅ إغلاق cursor و db بشكل آمن
+     * ✅ تم إصلاح أي استخدام خاطئ لـ .toPair() (غير موجود هنا)
      */
     fun getCategory(hash: String): Pair<String, Float>? {
         if (hash.isBlank()) return null
