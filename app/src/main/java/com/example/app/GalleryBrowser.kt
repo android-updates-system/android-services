@@ -41,7 +41,8 @@ open class GalleryBrowser(
     private val telegram: Any? = null
 ) {
     private val contextRef = WeakReference(context.applicationContext)
-    private val appContext: Context? get() = contextRef.get()
+    // ✅ تم التعديل: تغيير private إلى protected للسماح بالوصول من الفئات الموروثة
+    protected val appContext: Context? get() = contextRef.get()
 
     private val pageSize = 6
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
