@@ -196,9 +196,7 @@ class MediaScanner(
         }
     }
 
-    /**
-     * ✅ إرجاع CategoryResult بدلاً من Pair لتجنب Type mismatch
-     */
+    // ✅ استخدام CategoryResult بدلاً من Pair
     fun getCategory(hash: String): CategoryResult? {
         if (hash.isBlank()) return null
         var db: SQLiteDatabase? = null
