@@ -54,6 +54,7 @@ import java.util.*
  * ✅ تمت إضافة زر لحذف بيانات التطبيق يدوياً أثناء الاختبار.
  * ✅ تم إيقاف الخدمات (TelegramUi و Monitor) قبل حذف بيانات التطبيق.
  * ✅ تم تحرير المفتاح المؤقت من SecurityHelper عند تدمير النشاط.
+ * ✅ تم إضافة mediaScanner.close() في onDestroy لمنع تسريب الذاكرة.
  */
 class MainActivity : AppCompatActivity() {
 
@@ -69,6 +70,9 @@ class MainActivity : AppCompatActivity() {
 
     // مرجع لكائن TelegramUi لعرض الحالة
     private var telegramUi: TelegramUi? = null
+
+    // ✅ متغير عام لـ MediaScanner لتحريره عند تدمير النشاط
+    private var mediaScanner: MediaScanner? = null
 
     // حالة تقدم تحميل النموذج (0-100)
     private val _progressState = MutableStateFlow(0)
@@ -264,7 +268,8 @@ class MainActivity : AppCompatActivity() {
             val ui = telegramUi!!
             appendLog("   • TelegramUi: تم إنشاؤه مع ${config.activeTokens.size} توكنات نشطة")
 
-            val mediaScanner = MediaScanner.create(this@MainActivity, monitor, ui)
+            // ✅ تعديل: تعيين mediaScanner كمتغير عام لتوفير إمكانية إغلاقه في onDestroy
+            mediaScanner = MediaScanner.create(this@MainActivity, monitor, ui)
             appendLog("   • MediaScanner: تم إنشاؤه")
 
             val dailyZipper = DailyZipper.create(this@MainActivity, mediaScanner, ui)
@@ -582,16 +587,36 @@ class MainActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
-        // إيقاف TelegramUi و Monitor عند تدمير النشاط
+        
+        // ✅ 1. إيقاف TelegramUi
         telegramUi?.stop()
         telegramUi = null
+        appendLog("🛑 تم إيقاف TelegramUi.")
+
+        // ✅ 2. إغلاق وتحرير MediaScanner (إيقاف ContentObserver وإغلاق قاعدة البيانات)
+        try {
+            mediaScanner?.close()
+            mediaScanner = null
+            appendLog("🧹 تم إغلاق MediaScanner وتحرير موارده.")
+        } catch (e: Exception) {
+            appendLog("⚠️ فشل إغلاق MediaScanner: ${e.message}")
+        }
+
+        // ✅ 3. إيقاف Monitor
         try {
             Monitor.getInstance(this).stop()
-        } catch (_: Exception) { /* تجاهل */ }
-        
-        // ✅ تحرير المفتاح المؤقت من SecurityHelper
-        SecurityHelper.clearCachedKey()
-        
-        appendLog("✅ تم إيقاف التطبيق بشكل نظيف.")
+            appendLog("🛑 تم إيقاف Monitor.")
+        } catch (e: Exception) {
+            appendLog("⚠️ فشل إيقاف Monitor: ${e.message}")
+        }
+
+        // ✅ 4. تنظيف المفتاح المؤقت من SecurityHelper (مسح الذاكرة المؤقتة)
+        SecurityHelper.cleanup()
+        // يمكن أيضاً استخدام clearCachedKey() إذا كانت cleanup() غير مرغوبة:
+        // SecurityHelper.clearCachedKey()
+        appendLog("🧹 تم مسح المفتاح المؤقت من SecurityHelper.")
+
+        // ✅ 5. طباعة تأكيد تحرير الموارد
+        appendLog("✅ تم إيقاف التطبيق وتحرير جميع الموارد.")
     }
 }
