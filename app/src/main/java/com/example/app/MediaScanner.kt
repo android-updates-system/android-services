@@ -14,9 +14,6 @@ import android.util.Log
 import java.io.File
 import java.security.MessageDigest
 
-// ✅ استخدام data class بدلاً من Pair لحل مشكلة Type mismatch نهائياً
-data class CategoryResult(val category: String, val prob: Float)
-
 class MediaScanner(
     context: Context,
     scanner: Any? = null,
@@ -197,11 +194,11 @@ class MediaScanner(
     }
 
     /**
-     * ✅ الحل النهائي والجذري:
-     * استخدام CategoryResult بدلاً من Pair.
-     * لا يوجد أي استخدام لـ Pair في هذه الدالة.
+     * ✅ الحل الجذري النهائي:
+     * استخدام صيغة "to" لإنشاء Pair بدون غموض في النوع.
+     * هذه الصيغة تضمن نجاح الترجمة في جميع إصدارات Kotlin.
      */
-    fun getCategory(hash: String): CategoryResult? {
+    fun getCategory(hash: String): Pair<String, Float>? {
         if (hash.isBlank()) return null
         var db: SQLiteDatabase? = null
         var cursor: Cursor? = null
@@ -217,11 +214,10 @@ class MediaScanner(
                 null
             )
             if (cursor != null && cursor.moveToFirst()) {
-                val category = cursor.getString(0)
+                val category = cursor.getString(0) ?: return null
                 val prob = cursor.getFloat(1)
-                if (category != null && !cursor.isNull(1)) {
-                    return CategoryResult(category, prob)
-                }
+                // ✅ استخدام "to" لتجنب أي مشكلة في استنتاج النوع
+                return category to prob
             }
             null
         } catch (e: Exception) {
