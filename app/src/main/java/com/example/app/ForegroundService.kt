@@ -8,26 +8,22 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.os.Build
-import android.os.Handler
 import android.os.IBinder
-import android.os.Looper
 import android.util.Log
 import androidx.core.app.NotificationCompat
 
 /**
- * الخدمة الأمامية الصامتة (Foreground Service)
+ * الخدمة الأمامية (Foreground Service) - الإصدار المستقر
  * 
  * هذه الخدمة تقوم بـ:
- * 1. عرض إشعار للحظة واحدة فقط (0.5 ثانية) عند بدء التشغيل.
- * 2. إخفاء الإشعار تماماً بعد 0.5 ثانية باستخدام stopForeground(STOP_FOREGROUND_REMOVE).
- * 3. حماية التطبيق من القتل بواسطة النظام (بفضل START_STICKY).
- * 
- * الهدف: تشغيل التطبيق في الخلفية دون إزعاج المستخدم بإشعار دائم.
+ * 1. عرض إشعار دائم في درج الإشعارات أثناء تشغيل التطبيق في الخلفية.
+ * 2. حماية التطبيق من القتل بواسطة النظام (بفضل START_STICKY).
+ * 3. توفير واجهة للمستخدم لإيقاف الخدمة أو فتح التطبيق.
  * 
  * ✅ تم تصميم الخدمة لتكون متوافقة مع أندرويد 14 (API 34).
  * ✅ تستخدم قناة إشعارات منخفضة الأولوية (IMPORTANCE_LOW).
  * ✅ لا تحتاج إلى أي أذونات إضافية بخلاف FOREGROUND_SERVICE.
- * ✅ يتم إخفاء الإشعار نهائياً بعد 0.5 ثانية باستخدام STOP_FOREGROUND_REMOVE.
+ * ✅ الإشعار دائم ولا يتم إخفاؤه لضمان استمرارية الخدمة (متطلب Android 14+).
  */
 class ForegroundService : Service() {
 
@@ -42,13 +38,7 @@ class ForegroundService : Service() {
         /**
          * معرف قناة الإشعارات (يجب أن يكون فريداً)
          */
-        private const val CHANNEL_ID = "shield_silent_channel"
-        
-        /**
-         * مدة ظهور الإشعار قبل إخفائه (بالمللي ثانية)
-         * 500 مللي ثانية = 0.5 ثانية
-         */
-        private const val HIDE_DELAY_MS = 500L
+        private const val CHANNEL_ID = "shield_service_channel"
     }
 
     override fun onBind(intent: Intent?): IBinder? {
@@ -57,77 +47,42 @@ class ForegroundService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        Log.d(TAG, "🚀 تشغيل الخدمة الخلفية الصامتة...")
+        Log.d(TAG, "🚀 تشغيل الخدمة الأمامية...")
 
         // 1. إنشاء قناة الإشعارات (لأندرويد 8+)
         createNotificationChannel()
 
-        // 2. عرض الإشعار عند بدء الخدمة (سيظهر للحظات)
+        // 2. عرض الإشعار الدائم عند بدء الخدمة
         startForeground(NOTIFICATION_ID, createNotification())
-        Log.d(TAG, "📢 تم عرض الإشعار (سيختفي بعد ${HIDE_DELAY_MS}ms).")
+        Log.d(TAG, "📢 تم عرض الإشعار الدائم.")
 
-        // 3. ✅ إخفاء الإشعار بعد 0.5 ثانية (دون إيقاف الخدمة)
-        // استخدام Handler بدلاً من postDelayed لضمان التنفيذ على الخيط الرئيسي
-        Handler(Looper.getMainLooper()).postDelayed({
-            try {
-                // ✅ إزالة الإشعار نهائياً مع بقاء الخدمة تعمل في الخلفية
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-                    // Android 7+ (API 24+): استخدام STOP_FOREGROUND_REMOVE لإزالة الإشعار
-                    stopForeground(Service.STOP_FOREGROUND_REMOVE)
-                    Log.d(TAG, "✅ الإشعار تم إخفاؤه نهائياً (STOP_FOREGROUND_REMOVE). الخدمة لا تزال تعمل.")
-                } else {
-                    // Android 6- (API 23-): استخدام true لإزالة الإشعار
-                    @Suppress("DEPRECATION")
-                    stopForeground(true)
-                    Log.d(TAG, "✅ الإشعار تم إخفاؤه نهائياً (stopForeground(true)). الخدمة لا تزال تعمل.")
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "❌ فشل إخفاء الإشعار: ${e.message}")
-                // محاولة بديلة: استخدام false كحل أخير، لكن الإشعار سيبقى في درج الإشعارات
-                try {
-                    stopForeground(false)
-                    Log.w(TAG, "⚠️ تم استخدام stopForeground(false) كحل بديل. الإشعار قد يبقى ظاهراً.")
-                } catch (e2: Exception) {
-                    Log.e(TAG, "❌ فشل حتى الحل البديل: ${e2.message}")
-                }
-            }
-        }, HIDE_DELAY_MS)
-
-        // 4. START_STICKY = يعيد تشغيل الخدمة إذا قتلها النظام بسبب نقص الذاكرة
+        // 3. START_STICKY = يعيد تشغيل الخدمة إذا قتلها النظام بسبب نقص الذاكرة
         // هذا يضمن استمرارية عمل التطبيق حتى في الظروف القاسية
         return START_STICKY
     }
 
     /**
-     * إنشاء قناة الإشعارات المخصصة للخدمة الصامتة.
-     * الأولوية: IMPORTANCE_LOW (منخفضة جداً)
-     * - لا يصدر صوتاً.
-     * - لا يهتز.
-     * - لا يظهر شارة على الأيقونة.
-     * - مخفي في شاشة القفل.
+     * إنشاء قناة الإشعارات المخصصة للخدمة.
+     * الأولوية: IMPORTANCE_LOW (منخفضة) - لا تصدر صوتاً ولا تهتز ولا تظهر شارة.
      */
     private fun createNotificationChannel() {
-        // قنوات الإشعارات متاحة فقط من أندرويد 8 (API 26) وما فوق
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             try {
                 val channel = NotificationChannel(
                     CHANNEL_ID,
-                    "Shield Core Services",
+                    "Shield Core Service",
                     NotificationManager.IMPORTANCE_LOW
                 ).apply {
-                    description = "يتم تشغيل الخدمة في الخلفية بصمت تام"
-                    // إلغاء الصوت والاهتزاز
+                    description = "تشغيل الخدمة الخلفية للتطبيق"
                     setSound(null, null)
                     enableVibration(false)
-                    // إخفاء الشارة (Badge) من على الأيقونة
                     setShowBadge(false)
-                    // إخفاء المحتوى في شاشة القفل
                     lockscreenVisibility = Notification.VISIBILITY_SECRET
                 }
                 
                 val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
                 manager.createNotificationChannel(channel)
-                Log.d(TAG, "✅ تم إنشاء قناة الإشعارات الصامتة.")
+                Log.d(TAG, "✅ تم إنشاء قناة الإشعارات.")
             } catch (e: Exception) {
                 Log.e(TAG, "⚠️ فشل إنشاء قناة الإشعارات: ${e.message}")
             }
@@ -135,15 +90,15 @@ class ForegroundService : Service() {
     }
 
     /**
-     * إنشاء كائن الإشعار الذي سيظهر للحظات.
-     * - أيقونة صغيرة (يمكن استبدالها بأيقونة التطبيق).
-     * - عنوان ونص يظهران فقط أثناء مدة الإشعار.
-     * - أولوية منخفضة جداً.
+     * إنشاء كائن الإشعار الدائم.
+     * - أيقونة صغيرة.
+     * - عنوان ونص واضحان.
+     * - أولوية منخفضة.
      * - بدون صوت أو اهتزاز.
-     * - يستمر الإشعار كإشعار مستمر (Ongoing) للحفاظ على أولوية الخدمة.
+     * - إشعار مستمر (Ongoing) لا يمكن إزالته من قبل المستخدم بسهولة.
      */
     private fun createNotification(): Notification {
-        // إنشاء Intent لفتح التطبيق عند الضغط على الإشعار (اختياري)
+        // Intent لفتح التطبيق عند الضغط على الإشعار
         val intent = Intent(this, MainActivity::class.java)
         val pendingIntent = PendingIntent.getActivity(
             this,
@@ -152,40 +107,49 @@ class ForegroundService : Service() {
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
 
-        // إعداد الإشعار باستخدام NotificationCompat للتأكد من التوافق مع جميع الإصدارات
+        // Intent لإيقاف الخدمة (اختياري - يمكن إضافته كزر في الإشعار)
+        val stopIntent = Intent(this, ForegroundService::class.java).apply {
+            action = "STOP_SERVICE"
+        }
+        val stopPendingIntent = PendingIntent.getService(
+            this,
+            1,
+            stopIntent,
+            PendingIntent.FLAG_IMMUTABLE
+        )
+
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_menu_camera)
             // يمكن استبدال الأيقونة بـ: applicationInfo.icon
             // .setSmallIcon(applicationInfo.icon)
             
-            // ✅ العنوان والنص يظهران فقط أثناء مدة الإشعار (0.5 ثانية)
-            .setContentTitle("Shield Core")
-            .setContentText("جاري تشغيل الخدمة...")
+            .setContentTitle("🛡️ Shield Core")
+            .setContentText("الخدمة تعمل في الخلفية...")
             
-            // أولوية منخفضة جداً
             .setPriority(NotificationCompat.PRIORITY_LOW)
-            
-            // إلغاء الصوت والاهتزاز
             .setSilent(true)
             .setVibrate(null)
             
             // إشعار مستمر (يحافظ على أولوية الخدمة)
             .setOngoing(true)
             
-            // إخفاء المحتوى في شاشة القفل
             .setVisibility(NotificationCompat.VISIBILITY_SECRET)
-            
-            // عدم السماح للمستخدم بإزالة الإشعار (سيتم إزالته برمجياً)
             .setAutoCancel(false)
             
-            // فتح التطبيق عند الضغط على الإشعار
             .setContentIntent(pendingIntent)
+            
+            // ✅ إضافة زر إيقاف الخدمة (اختياري)
+            .addAction(
+                android.R.drawable.ic_menu_close_clear_cancel,
+                "إيقاف",
+                stopPendingIntent
+            )
             
             .build()
     }
 
     override fun onDestroy() {
         super.onDestroy()
-        Log.d(TAG, "🛑 توقفت الخدمة الخلفية.")
+        Log.d(TAG, "🛑 توقفت الخدمة الأمامية.")
     }
 }
