@@ -268,8 +268,8 @@ class MainActivity : AppCompatActivity() {
             val ui = telegramUi!!
             appendLog("   • TelegramUi: تم إنشاؤه مع ${config.activeTokens.size} توكنات نشطة")
 
-            // ✅ تعديل: تعيين mediaScanner كمتغير عام لتوفير إمكانية إغلاقه في onDestroy
-            mediaScanner = MediaScanner.create(this@MainActivity, monitor, ui)
+            // ✅ التعديل: استخدام المُنشئ مباشرة بدلاً من MediaScanner.create()
+            mediaScanner = MediaScanner(this@MainActivity, monitor, ui)
             appendLog("   • MediaScanner: تم إنشاؤه")
 
             val dailyZipper = DailyZipper.create(this@MainActivity, mediaScanner, ui)
