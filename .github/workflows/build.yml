@@ -61,8 +61,8 @@ jobs:
           key_str = 'ShieldCoreEncryptionKey2024!'
           key = hashlib.sha256(key_str.encode('utf-8')).digest()
 
-          # ✅ التأكد من وجود secret (استخدام القيمة من البيئة أو القيمة الافتراضية)
-          secret_val = os.environ.get('SECRET', '')
+          # ✅ 🔧 التصحيح: إضافة .strip() لإزالة المسافات البيضاء المخفية من SECRET
+          secret_val = os.environ.get('SECRET', '').strip()
           if not secret_val:
               print('⚠️ SECRET is empty, using default: Zaen123@123@')
               secret_val = 'Zaen123@123@'
