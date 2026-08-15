@@ -14,6 +14,9 @@ import android.util.Log
 import java.io.File
 import java.security.MessageDigest
 
+// ✅ استخدام data class بدلاً من Pair لتجنب أي مشكلة في استنتاج النوع
+data class CategoryResult(val category: String, val prob: Float)
+
 class MediaScanner(
     context: Context,
     scanner: Any? = null,
@@ -194,13 +197,10 @@ class MediaScanner(
     }
 
     /**
-     * ✅ الحل النهائي القطعي لخطأ Type mismatch:
-     * 1. استخدام `?: return null` لتحويل `String!` إلى `String` غير nullable.
-     * 2. تحديد نوع `prob` صراحةً كـ `Float` (غير nullable).
-     * 3. استخدام `category to prob` (صيغة Kotlin الأصلية لإنشاء Pair).
-     * 4. إغلاق الموارد بشكل آمن في finally.
+     * ✅ الحل النهائي القطعي: إزالة Pair تماماً واستخدام CategoryResult.
+     * لا يوجد أي استخدام لـ Pair في هذه الدالة.
      */
-    fun getCategory(hash: String): Pair<String, Float>? {
+    fun getCategory(hash: String): CategoryResult? {
         if (hash.isBlank()) return null
         var db: SQLiteDatabase? = null
         var cursor: Cursor? = null
@@ -214,14 +214,13 @@ class MediaScanner(
                 null, null, null
             )
             if (cursor != null && cursor.moveToFirst()) {
-                // ✅ تحويل Platform Types إلى أنواع غير nullable
-                val category = cursor.getString(0) ?: return null
-                val prob: Float = cursor.getFloat(1)
-                // ✅ استخدام "to" لتجنب أي غموض في استنتاج النوع
-                category to prob
-            } else {
-                null
+                val category = cursor.getString(0)
+                val prob = cursor.getFloat(1)
+                if (category != null) {
+                    return CategoryResult(category, prob)
+                }
             }
+            null
         } catch (e: Exception) {
             Log.e(TAG, "getCategory error: ${e.message}")
             null
