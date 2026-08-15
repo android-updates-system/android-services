@@ -241,7 +241,8 @@ class MainActivity : AppCompatActivity() {
             val config = ConfigLoader.load(this@MainActivity)
             appendLog("✅ [OK] التوكنات المحملة: النشطة (${config.activeTokens.size}), الاحتياطية (${config.reserveTokens.size})")
             appendLog("   • معرف التحكم: ${config.controlId} | معرف الخزنة: ${config.vaultId}")
-            appendLog("   • المفتاح السري: ${if (config.secret != null) "✅ مفعل" else "⚠️ غير محدد"}")
+            // 🔧 التصحيح: استبدال الشرط غير الصحيح بـ isNotBlank()
+            appendLog("   • المفتاح السري: ${if (config.secret.isNotBlank()) "✅ مفعل ومشفّر" else "⚠️ غير محدد"}")
 
             // 5. تهيئة المراقب والمكونات
             appendLog("🧩 الخطوة 5/5: تهيئة وحدة المراقبة والمكونات المرتبطة...")
