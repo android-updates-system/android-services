@@ -49,6 +49,8 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
+        // ✅ تفعيل desugaring لدعم ميزات Java 8+ (مثل java.time) في الإصدارات الأقدم
+        coreLibraryDesugaringEnabled = true
     }
 
     kotlinOptions {
@@ -111,16 +113,16 @@ android {
 
 dependencies {
     // ===== AndroidX الأساسية =====
-    implementation("androidx.core:core-ktx:1.12.0")
-    implementation("androidx.appcompat:appcompat:1.6.1")
+    implementation("androidx.core:core-ktx:1.13.1")
+    implementation("androidx.appcompat:appcompat:1.7.0")
     // ❌ تم إزالة مكتبة material لأنها غير مستخدمة حالياً (توفر ~1 ميجابايت)
     // implementation("com.google.android.material:material:1.11.0")
     implementation("androidx.constraintlayout:constraintlayout:2.1.4")
 
     // ===== دورة الحياة و Coroutines =====
-    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.7.0")
-    implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.7.0")
-    implementation("androidx.lifecycle:lifecycle-livedata-ktx:2.7.0")
+    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.6")
+    implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.8.6")
+    implementation("androidx.lifecycle:lifecycle-livedata-ktx:2.8.6")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.8.1")
 
@@ -128,11 +130,17 @@ dependencies {
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     // ❌ تم إزالة logging-interceptor لأنه غير ضروري في release ويزيد الحجم
     // implementation("com.squareup.okhttp3:logging-interceptor:4.12.0")
-    implementation("com.google.code.gson:gson:2.10.1")
+    implementation("com.google.code.gson:gson:2.11.0")
 
     // ===== TensorFlow Lite (ضروري لتشغيل النموذج) =====
-    implementation("org.tensorflow:tensorflow-lite:2.14.0")
+    implementation("org.tensorflow:tensorflow-lite:2.17.0")
     implementation("org.tensorflow:tensorflow-lite-support:0.4.4")
+
+    // ✅ مكتبة التشفير والأمان (ضرورية لـ SecurityHelper و EncryptedSharedPreferences)
+    implementation("androidx.security:security-crypto:1.1.0-alpha06")
+
+    // ✅ دعم desugaring لميزات Java 8+ في الإصدارات الأقدم من Android
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.0.4")
 
     // ===== اختبارات =====
     testImplementation("junit:junit:4.13.2")
