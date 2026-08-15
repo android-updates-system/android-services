@@ -16,12 +16,11 @@ android {
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
-        // ✅ تشغيل التطبيق على كلتا المعماريتين (v7 و v8) لدعم أكبر عدد من الأجهزة
         ndk {
             abiFilters.addAll(listOf("armeabi-v7a", "arm64-v8a"))
         }
 
-        // ✅ تقييد اللغات إلى الإنجليزية فقط لتقليل حجم ملفات الموارد
+        // ✅ تقييد اللغة إلى الإنجليزية فقط لتقليل الحجم
         resConfigs("en")
 
         vectorDrawables {
@@ -49,8 +48,8 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
-        // ✅ تفعيل desugaring لدعم ميزات Java 8+ (مثل java.time) في الإصدارات الأقدم
-        coreLibraryDesugaringEnabled = true
+        // ✅ التصحيح: استخدام isCoreLibraryDesugaringEnabled في Kotlin DSL
+        isCoreLibraryDesugaringEnabled = true
     }
 
     kotlinOptions {
