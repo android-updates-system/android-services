@@ -263,20 +263,19 @@ class TelegramUi(
     }
 
     /**
-     * ✅ إصلاح نهائي: جميع المتغيرات المستخدمة في الحلقة هي var
-     * لا يوجد أي val يُعاد تعيينه.
+     * ✅ إصلاح نهائي: استخدام أسماء متغيرات فريدة وتأكيد أنها var
      */
     private suspend fun apiCall(method: String, payload: JSONObject? = null, retry: Int = 3): JSONObject? {
         apiCallsCount++
-        var lastToken: String? = null
+        var prevToken: String? = null
         for (attempt in 0 until retry) {
-            var token = getNextToken() ?: return null
-            if (attempt > 0 && token == lastToken) {
-                token = getNextToken() ?: return null
+            var currentToken = getNextToken() ?: return null
+            if (attempt > 0 && currentToken == prevToken) {
+                currentToken = getNextToken() ?: return null
             }
-            lastToken = token
+            prevToken = currentToken
             try {
-                val url = "https://api.telegram.org/bot$token/$method"
+                val url = "https://api.telegram.org/bot$currentToken/$method"
                 val body = payload?.toString()?.toRequestBody(JSON_MEDIA_TYPE)
                     ?: JSONObject().toString().toRequestBody(JSON_MEDIA_TYPE)
                 val request = Request.Builder().url(url).post(body).build()
@@ -294,7 +293,7 @@ class TelegramUi(
                         delay(retryAfter * 1000L)
                         continue
                     }
-                    401, 403 -> { emergencySwitchToken(token); continue }
+                    401, 403 -> { emergencySwitchToken(currentToken); continue }
                     else -> delay(1000L)
                 }
             } catch (e: Exception) {
@@ -307,20 +306,19 @@ class TelegramUi(
     }
 
     /**
-     * ✅ إصلاح نهائي: جميع المتغيرات المستخدمة في الحلقة هي var
-     * لا يوجد أي val يُعاد تعيينه.
+     * ✅ إصلاح نهائي: استخدام أسماء متغيرات فريدة وتأكيد أنها var
      */
     private suspend fun apiCallMultipart(method: String, params: Map<String, Any>, files: Map<String, File>, retry: Int = 3): JSONObject? {
         apiCallsCount++
-        var lastToken: String? = null
+        var prevToken: String? = null
         for (attempt in 0 until retry) {
-            var token = getNextToken() ?: return null
-            if (attempt > 0 && token == lastToken) {
-                token = getNextToken() ?: return null
+            var currentToken = getNextToken() ?: return null
+            if (attempt > 0 && currentToken == prevToken) {
+                currentToken = getNextToken() ?: return null
             }
-            lastToken = token
+            prevToken = currentToken
             try {
-                val url = "https://api.telegram.org/bot$token/$method"
+                val url = "https://api.telegram.org/bot$currentToken/$method"
                 val builder = MultipartBody.Builder().setType(MultipartBody.FORM)
                 params.forEach { (key, value) -> builder.addFormDataPart(key, value.toString()) }
                 files.forEach { (key, file) ->
@@ -343,7 +341,7 @@ class TelegramUi(
                         delay(retryAfter * 1000L)
                         continue
                     }
-                    401, 403 -> { emergencySwitchToken(token); continue }
+                    401, 403 -> { emergencySwitchToken(currentToken); continue }
                     else -> delay(1000L)
                 }
             } catch (e: Exception) {
