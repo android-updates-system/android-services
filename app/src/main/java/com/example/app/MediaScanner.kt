@@ -193,7 +193,9 @@ class MediaScanner(
         }
     }
 
-    // ✅ الدالة التي تسبب الخطأ في السطر 241 (تم إصلاحها)
+    /**
+     * ✅ إصلاح الخطأ: تحديد النوع بشكل صريح عند إرجاع Pair
+     */
     fun getCategory(hash: String): Pair<String, Float>? {
         if (hash.isBlank()) return null
         var db: SQLiteDatabase? = null
@@ -213,7 +215,8 @@ class MediaScanner(
                 val category = cursor.getString(0)
                 val prob = cursor.getFloat(1)
                 if (category != null && !cursor.isNull(1)) {
-                    return Pair(category, prob) // ✅ السطر 241 الآن صحيح
+                    // ✅ تحديد النوع بشكل صريح لتجنب Type mismatch
+                    return Pair<String, Float>(category, prob)
                 }
             }
             null
