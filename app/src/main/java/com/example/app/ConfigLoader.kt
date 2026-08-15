@@ -64,7 +64,7 @@ object ConfigLoader {
     private var configCache: AppConfig? = null
     @Volatile
     private var cacheTime: Long = 0L
-    // ✅ تم تقليل مدة الكاش من 60 إلى 30 ثانية
+    // ✅ تم تقليل مدة الكاش من 60 إلى 30 ثانية (CACHE_TTL_MS = 30_000L)
     private const val CACHE_TTL_MS: Long = 30_000L // 30 ثانية
 
     // ========== القيم الافتراضية للكروبات ==========
@@ -100,11 +100,9 @@ object ConfigLoader {
      * - استخدام مفتاح ديناميكي (Android ID) سيفشل في فك التشفير لأن CI لا يعرف Android ID.
      * - المفتاح الثابت مطلوب لضمان نجاح فك التشفير على الجهاز الحقيقي.
      * 
-     * تم الاحتفاظ بدالة getDynamicEncryptionKey للاستخدامات المحلية المستقبلية
-     * (مثل تشفير البيانات المخزنة محلياً بعد فك التشفير).
+     * ✅ تم إجبار الدالة على إعادة المفتاح الثابت مباشرة (بدلاً من المفتاح الديناميكي)
      */
     private fun getEncryptionKey(context: Context): ByteArray {
-        // ✅ إجبار استخدام المفتاح الثابت لملفات assets
         Log.i(TAG, "🔑 Using fallback static encryption key for assets decryption")
         return getFallbackKey()
     }
