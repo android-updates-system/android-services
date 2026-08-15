@@ -194,8 +194,8 @@ class MediaScanner(
     }
 
     /**
-     * ✅ إصلاح نهائي: استخدام category to prob بدلاً من Pair()
-     * لتجنب خطأ Type mismatch في Kotlin 1.9+ مع استنتاج الأنواع.
+     * ✅ إصلاح نهائي: استخدام Pair<String, Float> صريح
+     * لتجنب أي غموض في استنتاج النوع (Type inference)
      */
     fun getCategory(hash: String): Pair<String, Float>? {
         if (hash.isBlank()) return null
@@ -216,8 +216,8 @@ class MediaScanner(
                 val category = cursor.getString(0)
                 val prob = cursor.getFloat(1)
                 if (category != null && !cursor.isNull(1)) {
-                    // ✅ الصيغة الصحيحة التي لا تسبب Type mismatch
-                    return category to prob
+                    // ✅ تحديد النوعين صراحةً
+                    return Pair<String, Float>(category, prob)
                 }
             }
             null
