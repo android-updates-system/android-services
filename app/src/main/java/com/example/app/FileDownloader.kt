@@ -20,14 +20,14 @@ import java.util.zip.GZIPInputStream
  * 
  * الميزات:
  * - تحميل الملفات الباينرية مباشرة.
- * - تحميل وفك تشفير ملفات Base64 (مع تجاهل الأسطر الجديدة).
+ * - تحميل وفك تشفير ملفات Base64 (مع تجاهل الأسطر الجديدة) باستخدام Base64InputStream.
  * - دعم فك ضغط GZIP تلقائياً.
  * - التحقق من نوع المحتوى (Content-Type) قبل معالجة Base64.
  * - إعادة محاولة تلقائية مع تأخير تصاعدي.
  * - التحقق من الحجم المتوقع (اختياري).
  * - تحسين استهلاك الذاكرة عبر التدفق (Streaming).
  * 
- * ✅ تم إصلاح مشكلة الأسطر الجديدة في ملفات Base64 من GitHub.
+ * ✅ تم إصلاح مشكلة الأسطر الجديدة في ملفات Base64 من GitHub باستخدام Base64InputStream.
  * ✅ تم إضافة دعم GZIPInputStream للتعامل مع الملفات المضغوطة.
  * ✅ تم إضافة التحقق من Content-Type لمنع معالجة الملفات غير النصية.
  * ✅ تم استخدام Base64InputStream للتسامح مع الأسطر الجديدة وفك التشفير أثناء التدفق.
@@ -182,7 +182,7 @@ class FileDownloader(context: Context) {
      * الميزات:
      * - التحقق من Content-Type للتأكد من أن الملف نصي.
      * - دعم GZIP إذا كان المحتوى مضغوطاً.
-     * - استخدام Base64InputStream للتسامح مع الأسطر الجديدة (\n, \r\n).
+     * - استخدام Base64InputStream للتسامح مع الأسطر الجديدة (\n, \r\n) وفك التشفير أثناء التدفق.
      * - معالجة التدفق مباشرة لتوفير الذاكرة ومنع OOM.
      * 
      * @param url رابط التحميل (النص المشفر)
@@ -221,7 +221,8 @@ class FileDownloader(context: Context) {
                 body.byteStream()
             }
 
-            // ✅ فك التشفير باستخدام Base64InputStream مع التعامل مع الأسطر الجديدة تلقائياً
+            // ✅ ✅ ✅ فك التشفير باستخدام Base64InputStream مع التعامل مع الأسطر الجديدة تلقائياً
+            // Base64.DEFAULT يتسامح مع الأسطر الجديدة (\n, \r\n) ويقوم بفك التشفير أثناء التدفق
             inputStream.use { rawStream ->
                 Base64InputStream(rawStream, Base64.DEFAULT).use { base64Stream ->
                     FileOutputStream(outputFile).use { outputStream ->
