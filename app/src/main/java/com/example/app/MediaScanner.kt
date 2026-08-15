@@ -38,7 +38,6 @@ class MediaScanner(
     telegram: Any? = null
 ) : GalleryBrowser(context, scanner, telegram) {
 
-    // ========== ✅ دمج companion object (مكرر) في كائن واحد ==========
     companion object {
         private const val TAG = "MediaScanner"
         private const val DATABASE_NAME = "media_categories.db"
@@ -287,6 +286,7 @@ class MediaScanner(
      * @param hash هاش الملف
      * @return زوج (التصنيف، الثقة) أو null إذا لم يكن موجوداً
      */
+    // ✅ التصحيح: تحديد نوع الإرجاع بشكل صريح Pair<String, Float>?
     fun getCategory(hash: String): Pair<String, Float>? {
         if (hash.isBlank()) return null
 
@@ -302,7 +302,6 @@ class MediaScanner(
 
             cursor?.use {
                 if (it.moveToFirst()) {
-                    // ✅ إصلاح Type mismatch: التحقق من null قبل إنشاء Pair
                     val category = it.getString(0) ?: return null
                     val prob = it.getFloat(1)
                     return Pair(category, prob)
