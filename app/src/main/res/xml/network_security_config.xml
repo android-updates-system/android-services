@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <!-- ✅ السماح فقط بالاتصالات المشفرة (HTTPS) بشكل افتراضي -->
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <!-- الثقة بشهادات النظام فقط (الأكثر أماناً) -->
+            <certificates src="system" />
+            
+            <!-- ✅ إضافة شهادات مخصصة إن لزم الأمر (اختياري) -->
+            <!-- <certificates src="@raw/my_certificate" /> -->
+        </trust-anchors>
+    </base-config>
+
+    <!-- ============================================================
+         🔧 استثناءات للاتصالات غير المشفرة (اختياري)
+         يُستخدم للاختبار أو للتواصل مع خوادم داخلية لا تدعم HTTPS
+    ============================================================ -->
+    
+    <!-- مثال: السماح بالاتصال غير المشفر بخادم محلي للاختبار -->
+    <!--
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="true">10.0.2.2</domain>
+        <domain includeSubdomains="true">localhost</domain>
+        <domain includeSubdomains="true">127.0.0.1</domain>
+    </domain-config>
+    -->
+
+    <!-- مثال: السماح بالاتصال غير المشفر بنطاق معين -->
+    <!--
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="true">api.example.com</domain>
+        <domain includeSubdomains="true">test-server.local</domain>
+    </domain-config>
+    -->
+
+    <!-- ============================================================
+         📦 تخصيص الثقة لمجال معين (للمطورين المتقدمين)
+    ============================================================ -->
+    <!--
+    <domain-config>
+        <domain includeSubdomains="true">secure.example.com</domain>
+        <trust-anchors>
+            <certificates src="system" />
+            <certificates src="@raw/custom_ca" />
+        </trust-anchors>
+    </domain-config>
+    -->
+</network-security-config>
