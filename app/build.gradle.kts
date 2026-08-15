@@ -131,8 +131,9 @@ dependencies {
     // implementation("com.squareup.okhttp3:logging-interceptor:4.12.0")
     implementation("com.google.code.gson:gson:2.11.0")
 
-    // ===== TensorFlow Lite (ضروري لتشغيل النموذج) =====
-    implementation("org.tensorflow:tensorflow-lite:2.17.0")
+    // ===== TensorFlow Lite (إصدارات متوافقة) =====
+    // ✅ العودة إلى الإصدار 2.14.0 لتجنب تعارض litert-api مع tensorflow-lite-api
+    implementation("org.tensorflow:tensorflow-lite:2.14.0")
     implementation("org.tensorflow:tensorflow-lite-support:0.4.4")
 
     // ✅ مكتبة التشفير والأمان (ضرورية لـ SecurityHelper و EncryptedSharedPreferences)
