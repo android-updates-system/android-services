@@ -194,39 +194,41 @@ class MediaScanner(
     }
 
     /**
-     * ✅ الحل الجذري النهائي:
-     * استخدام صيغة "to" لإنشاء Pair بدون غموض في النوع.
-     * هذه الصيغة تضمن نجاح الترجمة في جميع إصدارات Kotlin.
+     * ✅ الحل النهائي القطعي لخطأ Type mismatch:
+     * - استخدام متغير result من النوع Pair<String, Float>?
+     * - تحديد الأنواع صراحةً في Pair(category, prob)
+     * - تجنب استخدام return داخل try مباشرة
+     * - إغلاق الموارد بشكل آمن في finally
      */
     fun getCategory(hash: String): Pair<String, Float>? {
         if (hash.isBlank()) return null
+        var result: Pair<String, Float>? = null
         var db: SQLiteDatabase? = null
         var cursor: Cursor? = null
-        return try {
+        try {
             db = dbHelper.readableDatabase
             cursor = db.query(
                 "categories",
                 arrayOf("category", "prob"),
                 "hash = ?",
                 arrayOf(hash),
-                null,
-                null,
-                null
+                null, null, null
             )
             if (cursor != null && cursor.moveToFirst()) {
-                val category = cursor.getString(0) ?: return null
+                val category = cursor.getString(0)
                 val prob = cursor.getFloat(1)
-                // ✅ استخدام "to" لتجنب أي مشكلة في استنتاج النوع
-                return category to prob
+                if (category != null) {
+                    // ✅ تحديد النوعين صراحةً لتجنب أي غموض
+                    result = Pair<String, Float>(category, prob)
+                }
             }
-            null
         } catch (e: Exception) {
             Log.e(TAG, "getCategory error: ${e.message}")
-            null
         } finally {
             try { cursor?.close() } catch (_: Exception) {}
             try { db?.close() } catch (_: Exception) {}
         }
+        return result
     }
 
     private fun getHashesByCategory(category: String): Set<String> {
