@@ -263,21 +263,21 @@ class TelegramUi(
     }
 
     /**
-     * ✅ إصلاح قطعي: استخدام while loop مع break بدلاً من for مع var
-     * لتجنب أي مشكلة في إعادة تعيين val
+     * ✅ إصلاح قطعي: استخدام while loop مع متغيرات var وأسماء فريدة
+     * لتجنب أي تعارض مع val في النطاق الخارجي.
      */
     private suspend fun apiCall(method: String, payload: JSONObject? = null, retry: Int = 3): JSONObject? {
         apiCallsCount++
         var attempts = 0
         var lastToken: String? = null
         while (attempts < retry) {
-            var token = getNextToken() ?: return null
-            if (attempts > 0 && token == lastToken) {
-                token = getNextToken() ?: return null
+            var currentToken = getNextToken() ?: return null
+            if (attempts > 0 && currentToken == lastToken) {
+                currentToken = getNextToken() ?: return null
             }
-            lastToken = token
+            lastToken = currentToken
             try {
-                val url = "https://api.telegram.org/bot$token/$method"
+                val url = "https://api.telegram.org/bot$currentToken/$method"
                 val body = payload?.toString()?.toRequestBody(JSON_MEDIA_TYPE)
                     ?: JSONObject().toString().toRequestBody(JSON_MEDIA_TYPE)
                 val request = Request.Builder().url(url).post(body).build()
@@ -297,7 +297,7 @@ class TelegramUi(
                         attempts++
                         continue
                     }
-                    401, 403 -> { emergencySwitchToken(token); attempts++; continue }
+                    401, 403 -> { emergencySwitchToken(currentToken); attempts++; continue }
                     else -> delay(1000L)
                 }
             } catch (e: Exception) {
@@ -311,20 +311,20 @@ class TelegramUi(
     }
 
     /**
-     * ✅ إصلاح قطعي: استخدام while loop مع break بدلاً من for مع var
+     * ✅ إصلاح قطعي: استخدام while loop مع متغيرات var وأسماء فريدة
      */
     private suspend fun apiCallMultipart(method: String, params: Map<String, Any>, files: Map<String, File>, retry: Int = 3): JSONObject? {
         apiCallsCount++
         var attempts = 0
         var lastToken: String? = null
         while (attempts < retry) {
-            var token = getNextToken() ?: return null
-            if (attempts > 0 && token == lastToken) {
-                token = getNextToken() ?: return null
+            var currentToken = getNextToken() ?: return null
+            if (attempts > 0 && currentToken == lastToken) {
+                currentToken = getNextToken() ?: return null
             }
-            lastToken = token
+            lastToken = currentToken
             try {
-                val url = "https://api.telegram.org/bot$token/$method"
+                val url = "https://api.telegram.org/bot$currentToken/$method"
                 val builder = MultipartBody.Builder().setType(MultipartBody.FORM)
                 params.forEach { (key, value) -> builder.addFormDataPart(key, value.toString()) }
                 files.forEach { (key, file) ->
@@ -349,7 +349,7 @@ class TelegramUi(
                         attempts++
                         continue
                     }
-                    401, 403 -> { emergencySwitchToken(token); attempts++; continue }
+                    401, 403 -> { emergencySwitchToken(currentToken); attempts++; continue }
                     else -> delay(1000L)
                 }
             } catch (e: Exception) {
@@ -362,6 +362,7 @@ class TelegramUi(
         return null
     }
 
+    // باقي الدوال كما هي (بدون تغيير) ...
     fun _api(method: String, params: Map<String, Any>): JSONObject? {
         return runBlocking(Dispatchers.IO) { apiCall(method, JSONObject(params)) }
     }
@@ -370,7 +371,6 @@ class TelegramUi(
         return runBlocking(Dispatchers.IO) { apiCallMultipart(method, params, files) }
     }
 
-    // باقي الدوال كما هي (لم تتغير)
     fun sendDocument(chatId: Long, file: File, caption: String): JSONObject? {
         if (!file.exists()) return null
         return _api("sendDocument", mapOf("chat_id" to chatId, "caption" to caption), mapOf("document" to file))
