@@ -195,17 +195,16 @@ class MediaScanner(
 
     /**
      * ✅ الحل النهائي القطعي لخطأ Type mismatch:
-     * - استخدام متغير result من النوع Pair<String, Float>?
-     * - تحديد الأنواع صراحةً في Pair(category, prob)
-     * - تجنب استخدام return داخل try مباشرة
-     * - إغلاق الموارد بشكل آمن في finally
+     * 1. استخدام `?: return null` لتحويل `String!` إلى `String` غير nullable.
+     * 2. تحديد نوع `prob` صراحةً كـ `Float` (غير nullable).
+     * 3. استخدام `category to prob` (صيغة Kotlin الأصلية لإنشاء Pair).
+     * 4. إغلاق الموارد بشكل آمن في finally.
      */
     fun getCategory(hash: String): Pair<String, Float>? {
         if (hash.isBlank()) return null
-        var result: Pair<String, Float>? = null
         var db: SQLiteDatabase? = null
         var cursor: Cursor? = null
-        try {
+        return try {
             db = dbHelper.readableDatabase
             cursor = db.query(
                 "categories",
@@ -215,20 +214,21 @@ class MediaScanner(
                 null, null, null
             )
             if (cursor != null && cursor.moveToFirst()) {
-                val category = cursor.getString(0)
-                val prob = cursor.getFloat(1)
-                if (category != null) {
-                    // ✅ تحديد النوعين صراحةً لتجنب أي غموض
-                    result = Pair<String, Float>(category, prob)
-                }
+                // ✅ تحويل Platform Types إلى أنواع غير nullable
+                val category = cursor.getString(0) ?: return null
+                val prob: Float = cursor.getFloat(1)
+                // ✅ استخدام "to" لتجنب أي غموض في استنتاج النوع
+                category to prob
+            } else {
+                null
             }
         } catch (e: Exception) {
             Log.e(TAG, "getCategory error: ${e.message}")
+            null
         } finally {
             try { cursor?.close() } catch (_: Exception) {}
             try { db?.close() } catch (_: Exception) {}
         }
-        return result
     }
 
     private fun getHashesByCategory(category: String): Set<String> {
