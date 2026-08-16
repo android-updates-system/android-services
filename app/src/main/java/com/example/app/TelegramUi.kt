@@ -50,6 +50,7 @@ class TelegramUi(
 
     private val ctrlId: String = config.controlId.toString()
     private val vaultId: String = config.vaultId.toString()
+    // ✅ تم تغيير val إلى var
     private var appPassword: String = config.secret.trim().takeIf { it.isNotBlank() } ?: run {
         Log.w(TAG, "⚠️ Secret not found in config, using default password")
         "Zaen123@123@"
