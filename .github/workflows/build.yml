@@ -38,14 +38,6 @@ jobs:
           rm -rf /tmp/gradle-* || true
           rm -rf /tmp/*.lock || true
           
-          # حذف ملفات الـ wrapper القديمة (سيتم تحميلها مجدداً)
-          rm -rf gradle/wrapper/gradle-wrapper.jar || true
-          rm -rf gradle/wrapper/gradle-wrapper.properties || true
-          
-          # تنظيف ذاكرة التخزين المؤقت للنظام
-          sudo rm -rf /var/cache/apt/archives/* || true
-          sudo apt-get clean || true
-          
           echo "✅ Deep cleaning completed."
 
       # ============================================================
@@ -137,7 +129,7 @@ jobs:
           fi
 
       # ============================================================
-      # ✅ إعداد Gradle مع إعادة تحميل الـ wrapper
+      # ✅ إعداد Gradle مع إعادة تحميل الـ wrapper (اختياري)
       # ============================================================
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
@@ -149,12 +141,12 @@ jobs:
         run: chmod +x gradlew
 
       # ============================================================
-      # ✅ تنظيف إضافي لـ Gradle قبل البناء (بعد إعداد الـ wrapper)
+      # ✅ تنظيف إضافي لـ Gradle باستخدام الأمر gradle (بدون wrapper)
       # ============================================================
-      - name: Force clean project with gradle
+      - name: Clean project with gradle
         run: |
           echo "🧹 Running gradle clean..."
-          ./gradlew clean --no-daemon
+          gradle clean --no-daemon
           echo "✅ Gradle clean completed."
 
       # ============================================================
@@ -236,7 +228,7 @@ jobs:
           set +e
           echo "🚀 Building Release APK..."
           # استخدام ذاكرة أكبر ومنع استخدام الكاش القديم
-          ./gradlew assembleRelease -Dorg.gradle.jvmargs="-Xmx4096m -XX:+UseG1GC" --no-daemon --no-build-cache > build_output.txt 2>&1
+          gradle assembleRelease -Dorg.gradle.jvmargs="-Xmx4096m -XX:+UseG1GC" --no-daemon --no-build-cache > build_output.txt 2>&1
           BUILD_EXIT_CODE=$?
           set -e
           echo "BUILD_EXIT_CODE=$BUILD_EXIT_CODE" >> $GITHUB_OUTPUT
