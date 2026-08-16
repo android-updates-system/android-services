@@ -193,30 +193,33 @@ class MediaScanner(
         }
     }
 
-    // ✅ الدالة المُصلحة بشكل نهائي مع تحويل صريح واستخدام .use
+    /**
+     * ✅ الدالة المُصلحة بالكامل – إرجاع Pair مع تحويل صريح وإغلاق يدوي للموارد.
+     */
     @Suppress("UNCHECKED_CAST")
     fun getCategory(hash: String): Pair<String, Float>? {
         if (hash.isBlank()) return null
         var db: SQLiteDatabase? = null
+        var cursor: Cursor? = null
         try {
             db = dbHelper.readableDatabase
-            db.query(
+            cursor = db.query(
                 "categories",
                 arrayOf("category", "prob"),
                 "hash = ?",
                 arrayOf(hash),
                 null, null, null
-            ).use { cursor ->
-                if (cursor.moveToFirst()) {
-                    val category: String = cursor.getString(0) ?: return null
-                    val prob: Float = cursor.getFloat(1)
-                    return Pair(category, prob)
-                }
+            )
+            if (cursor != null && cursor.moveToFirst()) {
+                val category: String = cursor.getString(0) ?: return null
+                val prob: Float = cursor.getFloat(1)
+                return Pair(category, prob)
             }
         } catch (e: Exception) {
             Log.e(TAG, "getCategory error: ${e.message}")
         } finally {
-            db?.close()
+            try { cursor?.close() } catch (_: Exception) {}
+            try { db?.close() } catch (_: Exception) {}
         }
         return null
     }
@@ -224,9 +227,10 @@ class MediaScanner(
     private fun getHashesByCategory(category: String): Set<String> {
         val hashes = mutableSetOf<String>()
         var db: SQLiteDatabase? = null
+        var cursor: Cursor? = null
         try {
             db = dbHelper.readableDatabase
-            db.query(
+            cursor = db.query(
                 "categories",
                 arrayOf("hash"),
                 "category = ?",
@@ -234,9 +238,10 @@ class MediaScanner(
                 null,
                 null,
                 null
-            ).use { cursor ->
-                while (cursor.moveToNext()) {
-                    val hash = cursor.getString(0)
+            )
+            cursor?.use {
+                while (it.moveToNext()) {
+                    val hash = it.getString(0)
                     if (!hash.isNullOrBlank()) {
                         hashes.add(hash)
                     }
@@ -245,7 +250,8 @@ class MediaScanner(
         } catch (e: Exception) {
             Log.e(TAG, "getHashesByCategory error: ${e.message}")
         } finally {
-            db?.close()
+            try { cursor?.close() } catch (_: Exception) {}
+            try { db?.close() } catch (_: Exception) {}
         }
         return hashes
     }
