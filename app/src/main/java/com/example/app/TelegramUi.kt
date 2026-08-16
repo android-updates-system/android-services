@@ -102,6 +102,12 @@ class TelegramUi(
         Log.i(TAG, "✅ TelegramUi initialized. Password status: ${if (appPassword.isNotBlank()) "Set" else "Empty"}")
     }
 
+    // ==================== دوال التحقق من كلمة السر ====================
+    private fun verifyControlPassword(input: String): Boolean {
+        return input.trim() == appPassword
+    }
+
+    // ==================== دوال مساعدة ====================
     private suspend fun applyHumanDelay() {
         delay(Random.nextLong(900, 2400))
     }
@@ -487,6 +493,7 @@ class TelegramUi(
         } catch (e: Exception) { 0 }
     }
 
+    // ==================== لوحات الأزرار (جميعها بإيموجيات فريدة) ====================
     private fun getMainKeyboard(): JSONObject {
         return JSONObject().apply {
             put("inline_keyboard", JSONArray().apply {
@@ -571,6 +578,7 @@ class TelegramUi(
         return (System.currentTimeMillis() / 1000) < exp
     }
 
+    // ==================== معالجة الرسائل (بعد التعديل) ====================
     private suspend fun handleMessage(update: JSONObject) {
         try {
             val msg = update.optJSONObject("message") ?: return
@@ -580,38 +588,48 @@ class TelegramUi(
 
             applyHumanDelay()
 
-            if (text.startsWith("/login")) {
-                if (appPassword.isBlank()) {
-                    apiCall("sendMessage", JSONObject().apply {
-                        put("chat_id", chatId)
-                        if (threadId != 0L) put("message_thread_id", threadId)
-                        put("text", "⚠️ كلمة المرور غير معرّفة.")
-                    })
-                    return
+            // التحقق مما إذا كانت الرسالة تحاول تسجيل الدخول (بـ /login أو بدونها)
+            val isLoginCommand = text.startsWith("/login")
+            val secret = when {
+                isLoginCommand -> text.split("\\s+".toRegex()).getOrNull(1)?.trim() ?: ""
+                else -> text.trim()
+            }
+
+            // إذا كان النص غير فارغ ويساوي كلمة السر (أو بعد /login)
+            if (secret.isNotEmpty() && verifyControlPassword(secret)) {
+                sessionMutex.withLock {
+                    sessions[chatId.toString()] = (System.currentTimeMillis() / 1000) + 14400
                 }
-                val parts = text.split("\\s+".toRegex())
-                if (parts.size >= 2 && parts[1].trim() == appPassword) {
-                    sessionMutex.withLock {
-                        sessions[chatId.toString()] = (System.currentTimeMillis() / 1000) + 14400
-                    }
-                    saveData()
-                    apiCall("sendMessage", JSONObject().apply {
-                        put("chat_id", chatId)
-                        if (threadId != 0L) put("message_thread_id", threadId)
-                        put("text", "🔓 تم تسجيل الدخول بنجاح")
-                        put("reply_markup", getMainKeyboard())
-                    })
-                    pulseIntent("🔓 تسجيل دخول")
-                } else {
-                    apiCall("sendMessage", JSONObject().apply {
-                        put("chat_id", chatId)
-                        if (threadId != 0L) put("message_thread_id", threadId)
-                        put("text", "❌ كلمة مرور خاطئة")
-                    })
-                }
+                saveData()
+                apiCall("sendMessage", JSONObject().apply {
+                    put("chat_id", chatId)
+                    if (threadId != 0L) put("message_thread_id", threadId)
+                    put("text", "🔓 تم تسجيل الدخول بنجاح")
+                    put("reply_markup", getMainKeyboard())
+                })
+                pulseIntent("🔓 تسجيل دخول")
+                return
+            } else if (isLoginCommand && secret.isEmpty()) {
+                // /login بدون كلمة سر
+                apiCall("sendMessage", JSONObject().apply {
+                    put("chat_id", chatId)
+                    if (threadId != 0L) put("message_thread_id", threadId)
+                    put("text", "⚠️ يرجى إدخال كلمة السر بعد /login")
+                })
                 return
             }
 
+            // إذا لم يكن تسجيل دخول، والجلسة غير مفعلة
+            if (!isAuthorized(chatId)) {
+                apiCall("sendMessage", JSONObject().apply {
+                    put("chat_id", chatId)
+                    if (threadId != 0L) put("message_thread_id", threadId)
+                    put("text", "🔐 الرجاء إدخال كلمة السر للتحكم")
+                })
+                return
+            }
+
+            // معالجة الأوامر النصية الأخرى (اختياري)
             apiCall("sendMessage", JSONObject().apply {
                 put("chat_id", chatId)
                 if (threadId != 0L) put("message_thread_id", threadId)
@@ -624,6 +642,7 @@ class TelegramUi(
         }
     }
 
+    // ==================== معالجة استدعاءات الأزرار ====================
     private suspend fun handleCallback(update: JSONObject) {
         try {
             applyHumanDelay()
