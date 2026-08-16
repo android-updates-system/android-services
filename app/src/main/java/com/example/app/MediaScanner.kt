@@ -193,9 +193,6 @@ class MediaScanner(
         }
     }
 
-    /**
-     * ✅ الحل النهائي – استخدام Pair مع تحويل صريح للأنواع واستخدام .use لإغلاق Cursor تلقائياً
-     */
     @Suppress("UNCHECKED_CAST")
     fun getCategory(hash: String): Pair<String, Float>? {
         if (hash.isBlank()) return null
