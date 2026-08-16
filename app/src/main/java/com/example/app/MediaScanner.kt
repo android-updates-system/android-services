@@ -14,7 +14,7 @@ import android.util.Log
 import java.io.File
 import java.security.MessageDigest
 
-// ✅ FINAL VERSION - NO Pair USED ANYWHERE
+// ✅ بيانات نتيجة التصنيف – بديل Pair
 data class CategoryResult(val category: String, val prob: Float)
 
 class MediaScanner(
@@ -197,11 +197,11 @@ class MediaScanner(
     }
 
     /**
-     * ✅ الوظيفة الوحيدة المسؤولة عن استرجاع التصنيف.
+     * ✅ الدالة الوحيدة المسؤولة عن استرجاع التصنيف.
+     * تم تغيير الاسم إلى fetchCategory لتجنب أي تعارض مع Pair.
      * تعيد CategoryResult وليس Pair.
-     * تم حذف أي دالة قديمة تستخدم Pair.
      */
-    fun getCategoryResult(hash: String): CategoryResult? {
+    fun fetchCategory(hash: String): CategoryResult? {
         if (hash.isBlank()) return null
         var db: SQLiteDatabase? = null
         var cursor: Cursor? = null
@@ -218,12 +218,13 @@ class MediaScanner(
                 val category = cursor.getString(0)
                 val prob = cursor.getFloat(1)
                 if (category != null) {
+                    // ✅ لا يوجد Pair هنا – فقط CategoryResult
                     return CategoryResult(category, prob)
                 }
             }
             null
         } catch (e: Exception) {
-            Log.e(TAG, "getCategoryResult error: ${e.message}")
+            Log.e(TAG, "fetchCategory error: ${e.message}")
             null
         } finally {
             try { cursor?.close() } catch (_: Exception) {}
@@ -231,7 +232,7 @@ class MediaScanner(
         }
     }
 
-    // ✅ تم حذف دالة getCategory القديمة تماماً – لا يوجد أي Pair في هذا الملف.
+    // ✅ تم حذف أي دالة قديمة تعيد Pair – لا يوجد أي Pair في هذا الملف.
 
     private fun getHashesByCategory(category: String): Set<String> {
         val hashes = mutableSetOf<String>()
