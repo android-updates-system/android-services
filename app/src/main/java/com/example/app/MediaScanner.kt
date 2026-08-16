@@ -14,7 +14,7 @@ import android.util.Log
 import java.io.File
 import java.security.MessageDigest
 
-// ✅ data class بديل Pair
+// ✅ استخدام data class بدلاً من Pair نهائياً
 data class CategoryResult(val category: String, val prob: Float)
 
 class MediaScanner(
@@ -196,11 +196,12 @@ class MediaScanner(
         }
     }
 
-    // ✅ الدالة المعدلة – لا يوجد أي استخدام لـ Pair
+    // ✅ الدالة المعدلة – لا يوجد أي استخدام لـ Pair على الإطلاق
     fun getCategory(hash: String): CategoryResult? {
         if (hash.isBlank()) return null
         var db: SQLiteDatabase? = null
         var cursor: Cursor? = null
+        var result: CategoryResult? = null
         try {
             db = dbHelper.readableDatabase
             cursor = db.query(
@@ -213,8 +214,7 @@ class MediaScanner(
             if (cursor != null && cursor.moveToFirst()) {
                 val category = cursor.getString(0) ?: return null
                 val prob = cursor.getFloat(1)
-                // ✅ إرجاع CategoryResult مباشرة – لا يوجد Pair
-                return CategoryResult(category, prob)
+                result = CategoryResult(category, prob)
             }
         } catch (e: Exception) {
             Log.e(TAG, "getCategory error: ${e.message}")
@@ -222,7 +222,7 @@ class MediaScanner(
             try { cursor?.close() } catch (_: Exception) {}
             try { db?.close() } catch (_: Exception) {}
         }
-        return null
+        return result
     }
 
     private fun getHashesByCategory(category: String): Set<String> {
