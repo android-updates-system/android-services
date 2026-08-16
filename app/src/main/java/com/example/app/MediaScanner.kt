@@ -195,9 +195,10 @@ class MediaScanner(
 
     /**
      * ✅ الدالة المُصلحة بالكامل – إرجاع Pair مع تحويل صريح وإغلاق يدوي للموارد.
+     * تم تغيير نوع الإرجاع إلى kotlin.Pair لتجنب تعارض الأنواع.
      */
     @Suppress("UNCHECKED_CAST")
-    fun getCategory(hash: String): Pair<String, Float>? {
+    fun getCategory(hash: String): kotlin.Pair<String, Float>? {
         if (hash.isBlank()) return null
         var db: SQLiteDatabase? = null
         var cursor: Cursor? = null
@@ -213,7 +214,7 @@ class MediaScanner(
             if (cursor != null && cursor.moveToFirst()) {
                 val category: String = cursor.getString(0) ?: return null
                 val prob: Float = cursor.getFloat(1)
-                return Pair(category, prob)
+                return kotlin.Pair(category, prob)   // إجبار استخدام kotlin.Pair
             }
         } catch (e: Exception) {
             Log.e(TAG, "getCategory error: ${e.message}")
