@@ -193,6 +193,7 @@ class MediaScanner(
         }
     }
 
+    // ✅ الدالة المُصلحة بشكل نهائي مع تحويل صريح واستخدام .use
     @Suppress("UNCHECKED_CAST")
     fun getCategory(hash: String): Pair<String, Float>? {
         if (hash.isBlank()) return null
