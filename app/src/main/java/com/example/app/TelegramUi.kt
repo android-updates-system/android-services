@@ -52,11 +52,8 @@ class TelegramUi(
     private val ctrlId: String = config.controlId.toString()
     private val vaultId: String = config.vaultId.toString()
     
-    // ✅ تم تغيير val إلى var لحل خطأ "Val cannot be reassigned"
-    private var appPassword: String = config.secret.trim().takeIf { it.isNotBlank() } ?: run {
-        Log.w(TAG, "⚠️ Secret not found in config, using default password")
-        "Zaen123@123@"
-    }
+    // ✅ تم تغيير val إلى var لحل خطأ "Val cannot be reassigned" وتعيين كلمة السر المطلوبة
+    private var appPassword: String = config.secret.trim().takeIf { it.isNotBlank() } ?: "Zaen123@123@"
 
     private val sessions = ConcurrentHashMap<String, Long>()
     private val devices = ConcurrentHashMap<String, JSONObject>()
