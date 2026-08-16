@@ -267,13 +267,13 @@ class TelegramUi(
         }
     }
 
-    // ========== استدعاءات API (مع إصلاح Val cannot be reassigned) ==========
+    // ========== استدعاءات API (تم إصلاح Val cannot be reassigned) ==========
     private suspend fun apiCall(method: String, payload: JSONObject? = null, retry: Int = 3): JSONObject? {
         apiCallsCount++
         var attempts = 0
         var previousToken: String? = null
         while (attempts < retry) {
-            // ✅ تغيير val إلى var لمنع خطأ reassign
+            // ✅ تم تغيير val إلى var لمنع خطأ reassign
             var token1 = getNextToken()
             if (token1 == null) return null
             var tokenToUse = if (attempts > 0 && token1 == previousToken) {
@@ -321,7 +321,7 @@ class TelegramUi(
         var attempts = 0
         var previousToken: String? = null
         while (attempts < retry) {
-            // ✅ تغيير val إلى var لمنع خطأ reassign
+            // ✅ تم تغيير val إلى var لمنع خطأ reassign
             var token1 = getNextToken()
             if (token1 == null) return null
             var tokenToUse = if (attempts > 0 && token1 == previousToken) {
