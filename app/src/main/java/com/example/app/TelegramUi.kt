@@ -220,7 +220,6 @@ class TelegramUi(
 
         heartbeatJob = scope.launch {
             while (isActive) {
-                // ✅ تأخير عشوائي بشري (4 إلى 8 ساعات) لتجنب الأنماط الثابتة
                 delay(Random.nextLong(4, 9) * 3600_000L)
                 if (reserveTokensList.isEmpty()) continue
                 try {
@@ -614,7 +613,6 @@ class TelegramUi(
                 return
             }
 
-            // ✅ تجاهل أي أمر نصي آخر وإظهار القائمة بالأزرار (حماية من الحقن النصي)
             apiCall("sendMessage", JSONObject().apply {
                 put("chat_id", chatId)
                 if (threadId != 0L) put("message_thread_id", threadId)
