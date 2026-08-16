@@ -111,7 +111,7 @@ class ForegroundService : Service() {
         // جدولة إخفاء الإشعار (تحديث النص إلى فارغ) بعد أجزاء من الثانية
         hideRunnable = Runnable {
             if (isForeground) {
-                // تحديث الإشعار بنص فارغ (يختفي من الواجهة لكن الخدمة تبقى)
+                // تحديث الإشعار بنص فارغ (يختفي من الواجهة لكن الخدمة تبقى حية بسبب Ongoing)
                 nm.notify(NOTIFICATION_ID, buildGhostNotification(""))
             }
         }
