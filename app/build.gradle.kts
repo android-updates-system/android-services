@@ -135,6 +135,7 @@ dependencies {
     implementation("org.tensorflow:tensorflow-lite-support:0.4.4")
 
     // ===== ✅ مكتبة التشفير والأمان (ضرورية لـ SecurityHelper و EncryptedSharedPreferences) =====
+    // تمت إضافتها لتوفير EncryptedSharedPreferences و MasterKey
     implementation("androidx.security:security-crypto:1.1.0-alpha06")
 
     // ===== دعم desugaring لميزات Java 8+ في الإصدارات الأقدم من Android =====
