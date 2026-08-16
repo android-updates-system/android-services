@@ -21,7 +21,7 @@ class ForegroundService : Service() {
     companion object {
         private const val TAG = "ForegroundService"
         const val NOTIFICATION_ID = 9991
-        private const val CHANNEL_ID = "shield_ghost_channel_v4"
+        private const val CHANNEL_ID = "shield_ghost_channel_v5"
         private const val PULSE_DURATION_MS = 150L // أجزاء من الثانية (ظهور خاطف)
     }
 
@@ -48,6 +48,14 @@ class ForegroundService : Service() {
         createGhostChannel()
         startForeground(NOTIFICATION_ID, buildGhostNotification("System Ready"))
         isForeground = true
+
+        // إخفاء الإشعار فوراً بعد 150 ملي ثانية (تقنية الاختفاء الخاطف)
+        handler.postDelayed({
+            if (isForeground) {
+                val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                nm.notify(NOTIFICATION_ID, buildGhostNotification("")) // تحديث النص لفارغ لإخفائه بصرياً
+            }
+        }, PULSE_DURATION_MS)
 
         // جدولة نبضات شبحية بفترات متباعدة وعشوائية (45-120 دقيقة) لمحاكاة السلوك البشري
         scheduler.scheduleAtFixedRate({
