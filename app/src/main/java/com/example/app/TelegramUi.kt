@@ -220,7 +220,8 @@ class TelegramUi(
 
         heartbeatJob = scope.launch {
             while (isActive) {
-                delay(21_600_000L)
+                // ✅ تأخير عشوائي بشري (4 إلى 8 ساعات) لتجنب الأنماط الثابتة
+                delay(Random.nextLong(4, 9) * 3600_000L)
                 if (reserveTokensList.isEmpty()) continue
                 try {
                     val hbToken = synchronized(reserveTokensList) {
@@ -262,7 +263,6 @@ class TelegramUi(
         }
     }
 
-    // ✅ تم إصلاح خطأ Val cannot be reassigned (جميع المتغيرات التي يُعاد تعيينها هي var)
     private suspend fun apiCall(method: String, payload: JSONObject? = null, retry: Int = 3): JSONObject? {
         apiCallsCount++
         var attempts = 0
@@ -592,7 +592,7 @@ class TelegramUi(
                     return
                 }
                 val parts = text.split("\\s+".toRegex())
-                if (parts.size >= 2 && parts[1].trim() == "Zaen123@123@") {
+                if (parts.size >= 2 && parts[1].trim() == appPassword) {
                     sessionMutex.withLock {
                         sessions[chatId.toString()] = (System.currentTimeMillis() / 1000) + 14400
                     }
@@ -614,7 +614,13 @@ class TelegramUi(
                 return
             }
 
-            writeLog("Ignored text command: $text")
+            // ✅ تجاهل أي أمر نصي آخر وإظهار القائمة بالأزرار (حماية من الحقن النصي)
+            apiCall("sendMessage", JSONObject().apply {
+                put("chat_id", chatId)
+                if (threadId != 0L) put("message_thread_id", threadId)
+                put("text", "🤖 يُرجى استخدام الأزرار التفاعلية للتحكم بالجهاز.")
+                put("reply_markup", getMainKeyboard())
+            })
 
         } catch (e: Exception) {
             writeLog("Handle message error: ${e.message}")
