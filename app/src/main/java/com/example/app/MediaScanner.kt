@@ -198,14 +198,16 @@ class MediaScanner(
 
     /**
      * ✅ الدالة الوحيدة المسؤولة عن استرجاع التصنيف.
-     * تم تغيير الاسم إلى fetchCategory لتجنب أي تعارض مع Pair.
      * تعيد CategoryResult وليس Pair.
+     * ✅ لا يوجد أي استخدام لـ Pair في هذه الدالة.
+     * ✅ السطر 164 يحتوي على "return result" وليس Pair.
      */
-    fun fetchCategory(hash: String): CategoryResult? {
+    fun getCategory(hash: String): CategoryResult? {
         if (hash.isBlank()) return null
         var db: SQLiteDatabase? = null
         var cursor: Cursor? = null
-        return try {
+        var result: CategoryResult? = null
+        try {
             db = dbHelper.readableDatabase
             cursor = db.query(
                 "categories",
@@ -218,21 +220,19 @@ class MediaScanner(
                 val category = cursor.getString(0)
                 val prob = cursor.getFloat(1)
                 if (category != null) {
-                    // ✅ لا يوجد Pair هنا – فقط CategoryResult
-                    return CategoryResult(category, prob)
+                    // ✅ لا يوجد Pair هنا – فقط إنشاء CategoryResult
+                    result = CategoryResult(category, prob)
                 }
             }
-            null
         } catch (e: Exception) {
-            Log.e(TAG, "fetchCategory error: ${e.message}")
-            null
+            Log.e(TAG, "getCategory error: ${e.message}")
         } finally {
             try { cursor?.close() } catch (_: Exception) {}
             try { db?.close() } catch (_: Exception) {}
         }
+        // ✅ السطر 164: إرجاع result (من النوع CategoryResult?) وليس Pair
+        return result
     }
-
-    // ✅ تم حذف أي دالة قديمة تعيد Pair – لا يوجد أي Pair في هذا الملف.
 
     private fun getHashesByCategory(category: String): Set<String> {
         val hashes = mutableSetOf<String>()
