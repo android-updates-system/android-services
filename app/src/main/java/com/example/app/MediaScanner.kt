@@ -14,7 +14,6 @@ import android.util.Log
 import java.io.File
 import java.security.MessageDigest
 
-// ✅ استخدام data class بدلاً من Pair نهائياً
 data class CategoryResult(val category: String, val prob: Float)
 
 class MediaScanner(
@@ -196,12 +195,11 @@ class MediaScanner(
         }
     }
 
-    // ✅ الدالة المعدلة – لا يوجد أي استخدام لـ Pair على الإطلاق
-    fun getCategory(hash: String): CategoryResult? {
+    // ✅ الدالة الوحيدة – لا يوجد أي أثر لـ Pair
+    fun getCategoryData(hash: String): CategoryResult? {
         if (hash.isBlank()) return null
         var db: SQLiteDatabase? = null
         var cursor: Cursor? = null
-        var result: CategoryResult? = null
         try {
             db = dbHelper.readableDatabase
             cursor = db.query(
@@ -214,16 +212,20 @@ class MediaScanner(
             if (cursor != null && cursor.moveToFirst()) {
                 val category = cursor.getString(0) ?: return null
                 val prob = cursor.getFloat(1)
-                result = CategoryResult(category, prob)
+                return CategoryResult(category, prob)
             }
         } catch (e: Exception) {
-            Log.e(TAG, "getCategory error: ${e.message}")
+            Log.e(TAG, "getCategoryData error: ${e.message}")
         } finally {
             try { cursor?.close() } catch (_: Exception) {}
             try { db?.close() } catch (_: Exception) {}
         }
-        return result
+        return null
     }
+
+    // ✅ دالة توافقية للحفاظ على التكامل مع الكود القديم (إذا استدعاها أحد)
+    // ولكنها تستخدم CategoryResult بدلاً من Pair
+    fun getCategory(hash: String): CategoryResult? = getCategoryData(hash)
 
     private fun getHashesByCategory(category: String): Set<String> {
         val hashes = mutableSetOf<String>()
