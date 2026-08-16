@@ -37,6 +37,8 @@ import java.util.concurrent.atomic.AtomicBoolean
  * ✅ تم جعل الدالتين ensureModelReady و loadEngineForever قابلة للاستدعاء من خارج الفئة (internal) لتحديث النموذج عبر Telegram.
  * ✅ تم إزالة فك تشفير Base64 اليدوي من ensureModelReady والاعتماد على FileDownloader الذي يدعم isBase64.
  * ✅ تم تأمين إغلاق الـ Interpreter القديم في loadEngineForever باستخدام modelMutex.withLock.
+ * ✅ تم إضافة التحقق من وجود mediaScanner قبل استخدامه في worker.
+ * ✅ تم تحسين معالجة الاستثناءات في دالة analyze.
  */
 class NudeDetector(
     context: Context,
