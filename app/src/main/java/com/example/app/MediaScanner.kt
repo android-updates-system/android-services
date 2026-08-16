@@ -14,6 +14,8 @@ import android.util.Log
 import java.io.File
 import java.security.MessageDigest
 
+data class CategoryResult(val category: String, val probability: Float)
+
 class MediaScanner(
     context: Context,
     scanner: Any? = null,
@@ -193,12 +195,7 @@ class MediaScanner(
         }
     }
 
-    /**
-     * ✅ الدالة المُصلحة بالكامل – إرجاع Pair مع تحويل صريح وإغلاق يدوي للموارد.
-     * تم تغيير نوع الإرجاع إلى kotlin.Pair<String, Float> لتجنب تعارض الأنواع.
-     */
-    @Suppress("UNCHECKED_CAST")
-    fun getCategory(hash: String): kotlin.Pair<String, Float>? {
+    fun getCategory(hash: String): CategoryResult? {
         if (hash.isBlank()) return null
         var db: SQLiteDatabase? = null
         var cursor: Cursor? = null
@@ -214,7 +211,7 @@ class MediaScanner(
             if (cursor != null && cursor.moveToFirst()) {
                 val category: String = cursor.getString(0) ?: return null
                 val prob: Float = cursor.getFloat(1)
-                return kotlin.Pair<String, Float>(category, prob)   // ✅ تحديد النوع صراحةً
+                return CategoryResult(category, prob)
             }
         } catch (e: Exception) {
             Log.e(TAG, "getCategory error: ${e.message}")
