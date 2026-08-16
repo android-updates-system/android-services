@@ -199,6 +199,7 @@ class MediaScanner(
     /**
      * ✅ الوظيفة الوحيدة المسؤولة عن استرجاع التصنيف.
      * تعيد CategoryResult وليس Pair.
+     * تم حذف أي دالة قديمة تستخدم Pair.
      */
     fun getCategoryResult(hash: String): CategoryResult? {
         if (hash.isBlank()) return null
