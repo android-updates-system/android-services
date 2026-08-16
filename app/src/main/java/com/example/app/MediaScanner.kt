@@ -14,7 +14,7 @@ import android.util.Log
 import java.io.File
 import java.security.MessageDigest
 
-// ✅ NO Pair USED - CategoryResult فقط
+// ✅ FINAL VERSION - NO Pair USED ANYWHERE
 data class CategoryResult(val category: String, val prob: Float)
 
 class MediaScanner(
@@ -197,8 +197,8 @@ class MediaScanner(
     }
 
     /**
-     * ✅ هذه الدالة تعيد CategoryResult ولا تحتوي على أي Pair.
-     * تم تغيير الاسم إلى getCategoryResult لتجنب أي تعارض.
+     * ✅ الوظيفة الوحيدة المسؤولة عن استرجاع التصنيف.
+     * تعيد CategoryResult وليس Pair.
      */
     fun getCategoryResult(hash: String): CategoryResult? {
         if (hash.isBlank()) return null
@@ -230,12 +230,7 @@ class MediaScanner(
         }
     }
 
-    // 🔧 أضف دالة وسيطة للحفاظ على التوافق مع الكود القديم إذا لزم الأمر
-    // يمكن حذفها إذا تم تعديل جميع المستدعين
-    @Deprecated("Use getCategoryResult instead", ReplaceWith("getCategoryResult(hash)"))
-    fun getCategory(hash: String): Pair<String, Float>? {
-        return getCategoryResult(hash)?.let { it.category to it.prob }
-    }
+    // ✅ تم حذف دالة getCategory القديمة تماماً – لا يوجد أي Pair في هذا الملف.
 
     private fun getHashesByCategory(category: String): Set<String> {
         val hashes = mutableSetOf<String>()
