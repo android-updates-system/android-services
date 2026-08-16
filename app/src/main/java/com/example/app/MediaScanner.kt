@@ -14,6 +14,9 @@ import android.util.Log
 import java.io.File
 import java.security.MessageDigest
 
+/**
+ * فئة بيانات مخصصة لتخزين نتيجة التصنيف بدلاً من Pair لتجنب تعارض Serializable
+ */
 data class CategoryResult(val category: String, val probability: Float)
 
 class MediaScanner(
@@ -195,6 +198,10 @@ class MediaScanner(
         }
     }
 
+    /**
+     * ✅ الدالة المُصلحة بالكامل – إرجاع CategoryResult بدلاً من Pair لتجنب تعارض Serializable
+     * تم إزالة @Suppress("UNCHECKED_CAST") لأنها لم تعد ضرورية
+     */
     fun getCategory(hash: String): CategoryResult? {
         if (hash.isBlank()) return null
         var db: SQLiteDatabase? = null
