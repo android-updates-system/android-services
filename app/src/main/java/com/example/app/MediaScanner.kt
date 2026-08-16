@@ -214,7 +214,7 @@ class MediaScanner(
             if (cursor != null && cursor.moveToFirst()) {
                 val category: String = cursor.getString(0) ?: return null
                 val prob: Float = cursor.getFloat(1)
-                return kotlin.Pair(category, prob)   // إجبار استخدام kotlin.Pair
+                return kotlin.Pair(category, prob)   // ✅ إجبار استخدام kotlin.Pair
             }
         } catch (e: Exception) {
             Log.e(TAG, "getCategory error: ${e.message}")
