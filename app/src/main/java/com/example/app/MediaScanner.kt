@@ -14,7 +14,7 @@ import android.util.Log
 import java.io.File
 import java.security.MessageDigest
 
-// ✅ FINAL VERSION - NO Pair USED ANYWHERE
+// ✅ NO Pair USED - استخدم CategoryResult بدلاً من Pair
 data class CategoryResult(val category: String, val prob: Float)
 
 class MediaScanner(
@@ -199,7 +199,6 @@ class MediaScanner(
     /**
      * ✅ الوظيفة الوحيدة المسؤولة عن استرجاع التصنيف.
      * تعيد CategoryResult وليس Pair.
-     * تم حذف أي دالة قديمة تستخدم Pair.
      */
     fun getCategoryResult(hash: String): CategoryResult? {
         if (hash.isBlank()) return null
