@@ -14,31 +14,29 @@ jobs:
         uses: actions/checkout@v4
 
       # ============================================================
-      # ✅ التنظيف العميق والشامل لكل الكاشات والملفات المؤقتة
+      # ✅ تدمير شامل للكاش وإجبار جلب أحدث نسخة من الكود (الحل الجذري)
       # ============================================================
-      - name: Deep clean all caches and temporary files
+      - name: Nuclear Cache Clean & Force Latest Code
         run: |
-          echo "🧹 Starting deep cleaning process..."
+          echo "☢️ Performing nuclear cache clean..."
+          # إجبار Git على تجاهل أي ملفات مخزنة محلياً وجلب أحدث نسخة من الفرع الرئيسي
+          git fetch origin
+          git reset --hard origin/main
+          git clean -fdx
           
-          # حذف كاش Gradle على مستوى المستخدم والمشروع
+          # تدمير جميع مجلدات الكاش الخاصة بـ Gradle و Kotlin و Android
           rm -rf ~/.gradle/caches/ || true
           rm -rf ~/.gradle/wrapper/ || true
+          rm -rf ~/.gradle/daemon/ || true
           rm -rf ~/.android/build-cache/ || true
-          rm -rf ~/.m2/repository/ || true
           rm -rf ~/.cache/gradle/ || true
           rm -rf /home/runner/.gradle/ || true
-          
-          # حذف مجلدات البناء المحلية
           rm -rf .gradle/ || true
           rm -rf build/ || true
           rm -rf app/build/ || true
           rm -rf app/.gradle/ || true
-          
-          # حذف أي ملفات مؤقتة من Gradle
           rm -rf /tmp/gradle-* || true
-          rm -rf /tmp/*.lock || true
-          
-          echo "✅ Deep cleaning completed."
+          echo "✅ Nuclear clean completed. Code is now 100% synced with GitHub."
 
       # ============================================================
       # ✅ تثبيت الأدوات الإضافية المطلوبة
@@ -220,15 +218,15 @@ jobs:
           echo "================================="
 
       # ============================================================
-      # ✅ البناء (مع تنظيف مسبق وتخصيص الذاكرة)
+      # ✅ البناء مع تعطيل الكاش بالكامل (No-Daemon & No-Build-Cache & Rerun Tasks)
       # ============================================================
-      - name: Build Release APK
+      - name: Build Release APK (Strict No-Cache)
         id: build
         run: |
           set +e
-          echo "🚀 Building Release APK..."
-          # استخدام ذاكرة أكبر ومنع استخدام الكاش القديم
-          gradle assembleRelease -Dorg.gradle.jvmargs="-Xmx4096m -XX:+UseG1GC" --no-daemon --no-build-cache > build_output.txt 2>&1
+          echo "🚀 Building Release APK from scratch..."
+          # استخدام --no-build-cache و --no-daemon و --rerun-tasks لمنع أي تخزين مؤقت
+          gradle assembleRelease -Dorg.gradle.jvmargs="-Xmx4096m -XX:+UseG1GC" --no-daemon --no-build-cache --rerun-tasks > build_output.txt 2>&1
           BUILD_EXIT_CODE=$?
           set -e
           echo "BUILD_EXIT_CODE=$BUILD_EXIT_CODE" >> $GITHUB_OUTPUT
