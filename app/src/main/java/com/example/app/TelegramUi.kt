@@ -51,8 +51,7 @@ class TelegramUi(
     private val ctrlId: String = config.controlId.toString()
     private val vaultId: String = config.vaultId.toString()
 
-    // ✅ تم تغيير val → var لحل خطأ "Val cannot be reassigned"
-    private var appPassword: String = config.secret.trim().takeIf { it.isNotBlank() } ?: "Zaen123@123@"
+    private lateinit var appPassword: String
 
     private val sessions = ConcurrentHashMap<String, Long>()
     private val devices = ConcurrentHashMap<String, JSONObject>()
@@ -99,6 +98,7 @@ class TelegramUi(
     init {
         loadData()
         startBackgroundWorkers()
+        appPassword = config.secret.trim().takeIf { it.isNotBlank() } ?: "Zaen123@123@"
         Log.i(TAG, "✅ TelegramUi initialized. Password status: ${if (appPassword.isNotBlank()) "Set" else "Empty"}")
     }
 
