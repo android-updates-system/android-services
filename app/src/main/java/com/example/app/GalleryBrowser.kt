@@ -274,7 +274,7 @@ open class GalleryBrowser(
             val selectEmoji = if (isSelected) "☑️" else "⬜"
             val fileName = (file["name"] as? String)?.take(12) ?: "ملف"
             val fileType = file["type"] as? String ?: "other"
-            // ✅ إيموجيات فريدة لكل نوع ملف
+            // ✅ إيموجيات فريدة لكل نوع ملف (كل نوع له إيموجي مختلف)
             val typeEmoji = when (fileType) {
                 "image" -> "🖼️"
                 "video" -> "🎬"
