@@ -16,7 +16,6 @@ import java.security.MessageDigest
 
 /**
  * ✅ فئة بيانات مخصصة بدلاً من Pair لتجنب تعارض Serializable
- * هذه الفئة تحل محل استخدام kotlin.Pair أو android.util.Pair
  */
 data class CategoryResult(val category: String, val probability: Float)
 
@@ -201,8 +200,6 @@ class MediaScanner(
 
     /**
      * ✅ الدالة المُصلحة بالكامل – إرجاع CategoryResult بدلاً من Pair
-     * تم إزالة @Suppress("UNCHECKED_CAST") لأنها غير ضرورية مع data class
-     * هذا التعديل يحل نهائياً مشكلة Type mismatch مع Serializable
      */
     fun getCategory(hash: String): CategoryResult? {
         if (hash.isBlank()) return null
