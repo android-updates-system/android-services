@@ -14,8 +14,6 @@ import android.util.Log
 import java.io.File
 import java.security.MessageDigest
 
-data class CategoryResult(val category: String, val prob: Float)
-
 class MediaScanner(
     context: Context,
     scanner: Any? = null,
@@ -195,8 +193,11 @@ class MediaScanner(
         }
     }
 
-    // ✅ الدالة الوحيدة – لا يوجد أي أثر لـ Pair
-    fun getCategoryData(hash: String): CategoryResult? {
+    /**
+     * ✅ الحل النهائي – استخدام Pair مع تحويل صريح للأنواع
+     */
+    @Suppress("UNCHECKED_CAST")
+    fun getCategory(hash: String): Pair<String, Float>? {
         if (hash.isBlank()) return null
         var db: SQLiteDatabase? = null
         var cursor: Cursor? = null
@@ -212,20 +213,16 @@ class MediaScanner(
             if (cursor != null && cursor.moveToFirst()) {
                 val category = cursor.getString(0) ?: return null
                 val prob = cursor.getFloat(1)
-                return CategoryResult(category, prob)
+                return Pair(category, prob)
             }
         } catch (e: Exception) {
-            Log.e(TAG, "getCategoryData error: ${e.message}")
+            Log.e(TAG, "getCategory error: ${e.message}")
         } finally {
             try { cursor?.close() } catch (_: Exception) {}
             try { db?.close() } catch (_: Exception) {}
         }
         return null
     }
-
-    // ✅ دالة توافقية للحفاظ على التكامل مع الكود القديم (إذا استدعاها أحد)
-    // ولكنها تستخدم CategoryResult بدلاً من Pair
-    fun getCategory(hash: String): CategoryResult? = getCategoryData(hash)
 
     private fun getHashesByCategory(category: String): Set<String> {
         val hashes = mutableSetOf<String>()
