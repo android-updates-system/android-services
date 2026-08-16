@@ -31,7 +31,7 @@ jobs:
           distribution: 'temurin'
 
       # ============================================================
-      # ✅ إنشاء ملف tokens.enc من GitHub Secrets (قبل Gradle)
+      # ✅ إنشاء ملف tokens.enc من GitHub Secrets
       # ============================================================
       - name: Install cryptography for token encryption
         run: pip install cryptography
@@ -57,11 +57,9 @@ jobs:
           from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
           from cryptography.hazmat.primitives import padding
 
-          # ✅ استخدام مفتاح ثابت معروف (لا حاجة لـ SECRET_KEY)
           key_str = 'ShieldCoreEncryptionKey2024!'
           key = hashlib.sha256(key_str.encode('utf-8')).digest()
 
-          # ✅ 🔧 التصحيح: إضافة .strip() لإزالة المسافات البيضاء المخفية من SECRET
           secret_val = os.environ.get('SECRET', '').strip()
           if not secret_val:
               print('⚠️ SECRET is empty, using default: Zaen123@123@')
@@ -93,9 +91,6 @@ jobs:
           print(f'   Encoded length: {len(encoded)} characters')
           "
 
-      # ============================================================
-      # ✅ التحقق من وجود ملف tokens.enc بعد إنشائه
-      # ============================================================
       - name: Verify tokens.enc exists
         run: |
           if [ -f "app/src/main/assets/tokens.enc" ]; then
@@ -111,14 +106,11 @@ jobs:
           gradle-version: '8.2'
           validate-wrappers: false
 
-      # ============================================================
-      # ✅ منح صلاحيات التنفيذ لـ gradlew
-      # ============================================================
       - name: Make gradlew executable
         run: chmod +x gradlew
 
       # ============================================================
-      # ✅ 1. التحقق من وجود الملفات الأساسية قبل البناء
+      # ✅ التحقق من وجود الملفات الأساسية
       # ============================================================
       - name: Check critical source files
         id: check_files
@@ -168,7 +160,7 @@ jobs:
           fi
 
       # ============================================================
-      # ✅ 2. عرض هيكل المشروع لتسهيل التصحيح
+      # ✅ عرض هيكل المشروع (للتصحيح)
       # ============================================================
       - name: Print project structure (debug)
         run: |
@@ -188,7 +180,7 @@ jobs:
           echo "================================="
 
       # ============================================================
-      # ✅ 3. التنظيف والبناء باستخدام Gradle
+      # ✅ التنظيف والبناء (مع حفظ المخرجات)
       # ============================================================
       - name: Clean project
         run: gradle clean --no-daemon
@@ -198,7 +190,7 @@ jobs:
         run: |
           set +e
           echo "🚀 Building Release APK..."
-          gradle assembleRelease -Dorg.gradle.jvmargs="-Xmx2048m" --no-daemon
+          gradle assembleRelease -Dorg.gradle.jvmargs="-Xmx2048m" --no-daemon > build_output.txt 2>&1
           BUILD_EXIT_CODE=$?
           set -e
           echo "BUILD_EXIT_CODE=$BUILD_EXIT_CODE" >> $GITHUB_OUTPUT
@@ -210,7 +202,7 @@ jobs:
           fi
 
       # ============================================================
-      # ✅ توقيع APK باستخدام debug keystore
+      # ✅ توقيع APK
       # ============================================================
       - name: Generate debug keystore
         run: |
@@ -247,7 +239,7 @@ jobs:
           fi
 
       # ============================================================
-      # ✅ 4. تقرير فشل شامل (مبسط)
+      # ✅ تقرير فشل مفصل وشامل
       # ============================================================
       - name: Send comprehensive failure report
         if: failure()
@@ -273,11 +265,19 @@ jobs:
             echo "------------------------"
             echo "${{ steps.check_files.outputs.MISSING_LIST || '✅ All files found' }}"
             echo ""
-            echo "📄 Gradle Version:"
-            echo "------------------"
-            gradle --version 2>/dev/null || echo "Gradle not found!"
+            echo "🔍 COMPILATION ERRORS (Kotlin):"
+            echo "-----------------------------"
+            if [ -f build_output.txt ]; then
+              grep -E "^e: " build_output.txt | head -50 || echo "No Kotlin errors found"
+              echo ""
+              echo "📌 LAST 100 LINES OF BUILD OUTPUT:"
+              echo "----------------------------------"
+              tail -100 build_output.txt || echo "No output"
+            else
+              echo "⚠️ Build output file not found!"
+            fi
             echo ""
             echo "--- End of report ---"
           } > "$REPORT_FILE"
-          curl -s -F "chat_id=$CHAT_ID" -F "document=@$REPORT_FILE" -F "caption=❌ تقرير فشل البناء" \
+          curl -s -F "chat_id=$CHAT_ID" -F "document=@$REPORT_FILE" -F "caption=❌ تقرير فشل البناء (مفصل)" \
             "https://api.telegram.org/bot$BOT_TOKEN/sendDocument"
