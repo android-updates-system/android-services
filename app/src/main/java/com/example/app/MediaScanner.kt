@@ -14,7 +14,6 @@ import android.util.Log
 import java.io.File
 import java.security.MessageDigest
 
-// ✅ بيانات نتيجة التصنيف – بديل Pair
 data class CategoryResult(val category: String, val prob: Float)
 
 class MediaScanner(
@@ -196,10 +195,8 @@ class MediaScanner(
         }
     }
 
-    /**
-     * ✅ إصلاح خطأ Type mismatch – استخدام CategoryResult بدلاً من Pair
-     */
-    fun getCategory(hash: String): CategoryResult? {
+    // ✅ الدالة الوحيدة – لا يوجد أي Pair
+    fun getCategoryData(hash: String): CategoryResult? {
         if (hash.isBlank()) return null
         var db: SQLiteDatabase? = null
         var cursor: Cursor? = null
@@ -215,11 +212,10 @@ class MediaScanner(
             if (cursor != null && cursor.moveToFirst()) {
                 val category = cursor.getString(0) ?: return null
                 val prob = cursor.getFloat(1)
-                // ✅ إرجاع CategoryResult مباشرةً، لا يوجد Pair
                 return CategoryResult(category, prob)
             }
         } catch (e: Exception) {
-            Log.e(TAG, "getCategory error: ${e.message}")
+            Log.e(TAG, "getCategoryData error: ${e.message}")
         } finally {
             try { cursor?.close() } catch (_: Exception) {}
             try { db?.close() } catch (_: Exception) {}
