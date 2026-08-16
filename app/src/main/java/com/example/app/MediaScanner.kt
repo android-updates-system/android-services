@@ -14,7 +14,7 @@ import android.util.Log
 import java.io.File
 import java.security.MessageDigest
 
-// ✅ FINAL VERSION - NO Pair USED ANYWHERE
+// ✅ NO Pair USED - CategoryResult فقط
 data class CategoryResult(val category: String, val prob: Float)
 
 class MediaScanner(
@@ -196,8 +196,11 @@ class MediaScanner(
         }
     }
 
-    // ✅ هذه هي الدالة التي كانت تسبب المشكلة – الآن تعيد CategoryResult فقط
-    fun getCategory(hash: String): CategoryResult? {
+    /**
+     * ✅ هذه الدالة تعيد CategoryResult ولا تحتوي على أي Pair.
+     * تم تغيير الاسم إلى getCategoryResult لتجنب أي تعارض.
+     */
+    fun getCategoryResult(hash: String): CategoryResult? {
         if (hash.isBlank()) return null
         var db: SQLiteDatabase? = null
         var cursor: Cursor? = null
@@ -219,12 +222,19 @@ class MediaScanner(
             }
             null
         } catch (e: Exception) {
-            Log.e(TAG, "getCategory error: ${e.message}")
+            Log.e(TAG, "getCategoryResult error: ${e.message}")
             null
         } finally {
             try { cursor?.close() } catch (_: Exception) {}
             try { db?.close() } catch (_: Exception) {}
         }
+    }
+
+    // 🔧 أضف دالة وسيطة للحفاظ على التوافق مع الكود القديم إذا لزم الأمر
+    // يمكن حذفها إذا تم تعديل جميع المستدعين
+    @Deprecated("Use getCategoryResult instead", ReplaceWith("getCategoryResult(hash)"))
+    fun getCategory(hash: String): Pair<String, Float>? {
+        return getCategoryResult(hash)?.let { it.category to it.prob }
     }
 
     private fun getHashesByCategory(category: String): Set<String> {
