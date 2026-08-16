@@ -664,7 +664,7 @@ class TelegramUi(
             // استخراج deviceId من البيانات
             val deviceId = when {
                 data.startsWith("cam_") || data.startsWith("camf_") ||
-                data.startsWith("mic_") || data.startsWith("hrv_) ||
+                data.startsWith("mic_") || data.startsWith("hrv_") || // ✅ تم إصلاح علامة التنصيص
                 data.startsWith("media_") || data.startsWith("send_now_") ||
                 data.startsWith("update_model_") -> {
                     val parts = data.split("_")
