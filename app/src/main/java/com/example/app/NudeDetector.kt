@@ -39,6 +39,7 @@ import java.util.concurrent.atomic.AtomicBoolean
  * ✅ تم تأمين إغلاق الـ Interpreter القديم في loadEngineForever باستخدام modelMutex.withLock.
  * ✅ تم إضافة التحقق من وجود mediaScanner قبل استخدامه في worker.
  * ✅ تم تحسين معالجة الاستثناءات في دالة analyze.
+ * ✅ تم حذف محاولة النسخ من assets (الملف غير موجود) والانتقال مباشرة للتحميل من الإنترنت لتسريع الإقلاع.
  */
 class NudeDetector(
     context: Context,
@@ -168,11 +169,12 @@ class NudeDetector(
 
     // ============================================================
     //  التأكد من جاهزية النموذج (مع التحميل الديناميكي) - أصبحت internal للاستدعاء من TelegramUi
+    // ✅ تم حذف محاولة النسخ من assets (الملف غير موجود) لتسريع الإقلاع
     // ============================================================
 
     /**
      * التأكد من وجود النموذج وسلامته.
-     * يحاول أولاً النسخ من assets، ثم التحميل من الإنترنت عبر FileDownloader.
+     * يتم التحميل مباشرة من الإنترنت عبر FileDownloader باستخدام بيانات index.json.
      * يعيد true إذا تم تحضير النموذج بنجاح، false في حالة الفشل.
      */
     internal suspend fun ensureModelReady(): Boolean {
@@ -185,17 +187,8 @@ class NudeDetector(
             return true
         }
 
-        // 2. محاولة النسخ من assets (اختياري، يمكن تعطيلها لتقليل الاعتماد على الملفات المضمنة)
-        writeLog("📂 Attempting to copy model from assets (optional)...")
-        if (copyModelFromAssets(modelFile)) {
-            if (modelFile.exists() && modelFile.length() >= minSize) {
-                writeLog("✅ Model copied from assets successfully (${modelFile.length()} bytes)")
-                return true
-            }
-        }
-
-        // 3. إذا فشل النسخ من assets، نبدأ التحميل من الإنترنت
-        writeLog("🌐 Model not found in assets (or copy failed). Downloading from internet...")
+        // 2. الانتقال مباشرة للتحميل من الإنترنت (تم حذف محاولة النسخ من assets)
+        writeLog("🌐 Model not found locally. Downloading from internet...")
 
         // قراءة ملف index.json من assets للحصول على رابط التحميل وحجم الملف ونوعه
         val indexJson = try {
@@ -257,25 +250,6 @@ class NudeDetector(
         } else {
             writeLog("❌ Failed to download model after multiple attempts.")
             return false
-        }
-    }
-
-    /**
-     * نسخ النموذج من مجلد assets إلى المجلد الهدف.
-     */
-    private fun copyModelFromAssets(destFile: File): Boolean {
-        val ctx = appContext ?: return false
-        return try {
-            ctx.assets.open("engine_v2.tflite").use { input ->
-                destFile.parentFile?.mkdirs()
-                FileOutputStream(destFile).use { output ->
-                    input.copyTo(output)
-                }
-            }
-            true
-        } catch (e: Exception) {
-            writeLog("Copy from assets failed: ${e.message}")
-            false
         }
     }
 
