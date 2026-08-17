@@ -49,6 +49,7 @@ class DailyZipper(
     private val activeMutex = Mutex()
 
     private val zipperActive = AtomicBoolean(false)
+    // ✅ التصحيح: تحديد النوع العام <String> لمنع خطأ Type mismatch
     private val processedHashes = Collections.synchronizedSet(mutableSetOf<String>())
     private val failedHashes = Collections.synchronizedSet(mutableSetOf<String>())
 
