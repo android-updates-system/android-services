@@ -21,6 +21,7 @@ import java.text.SimpleDateFormat
 import java.util.*
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
+import kotlin.random.Random // ✅ تم إضافة هذا الاستيراد لحل مشكلة Unresolved reference
 
 /**
  * فئة كاشف المحتوى (NudeDetector) باستخدام TensorFlow Lite و SQLite.
@@ -32,6 +33,7 @@ import java.util.concurrent.atomic.AtomicBoolean
  * ✅ تم إضافة @Volatile للمتغيرات المشتركة لضمان رؤية التغييرات بين الخيوط.
  * ✅ تم تحسين معالجة الأخطاء وإعادة المحاولة مع عداد أخطاء.
  * ✅ تم منع استدعاء loadEngineForever بشكل متكرر في analyze.
+ * ✅ تم إضافة استيراد kotlin.random.Random لحل أخطاء Unresolved reference.
  */
 class NudeDetector(
     context: Context,
