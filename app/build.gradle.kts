@@ -144,6 +144,11 @@ dependencies {
     // التشفير والأمان (EncryptedSharedPreferences)
     implementation("androidx.security:security-crypto:1.1.0-alpha06")
 
+    // ✅ إضافة google-http-client لحل مشكلة الفئات المفقودة في Tink
+    implementation("com.google.http-client:google-http-client:1.44.2") {
+        exclude(group = "org.apache.httpcomponents")
+    }
+
     // دعم desugaring لميزات Java 8+ في الإصدارات الأقدم
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.0.4")
 
