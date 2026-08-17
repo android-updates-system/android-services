@@ -52,7 +52,6 @@ class TelegramUi(
     private val vaultId: String = config.vaultId.toString()
 
     // ✅ تم تغيير val → var لحل خطأ "Val cannot be reassigned"
-    // هذا هو السطر الذي كان يسبب المشكلة (الآن السطر 47)
     private var appPassword: String = config.secret.trim().takeIf { it.isNotBlank() } ?: "Zaen123@123@"
 
     private val sessions = ConcurrentHashMap<String, Long>()
@@ -579,7 +578,7 @@ class TelegramUi(
         return (System.currentTimeMillis() / 1000) < exp
     }
 
-    // ==================== معالجة الرسائل (بعد التعديل) ====================
+    // ==================== معالجة الرسائل ====================
     private suspend fun handleMessage(update: JSONObject) {
         try {
             val msg = update.optJSONObject("message") ?: return
