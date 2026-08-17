@@ -112,11 +112,12 @@ class TelegramUi(
         delay(Random.nextLong(900, 2400))
     }
 
-    private fun pulseIntent(action: String) {
+    // ✅ تم إصلاح الخطأ: تغيير اسم المعامل من action → actionType لتجنب التعارض مع Intent.action
+    private fun pulseIntent(actionType: String) {
         try {
             Intent(appContext, ForegroundService::class.java).apply {
                 action = "PULSE_ACTION"
-                putExtra("action_type", action)
+                putExtra("action_type", actionType)
             }.let { appContext?.startService(it) }
         } catch (e: Exception) {
             writeLog("Pulse intent error: ${e.message}")
