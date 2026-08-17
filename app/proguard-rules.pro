@@ -129,5 +129,15 @@
 -dontwarn okio.**
 
 # ============================================================
+#  ✅ حماية فئات Google HTTP Client (مطلوبة بواسطة security-crypto/Tink)
+#  (تم إضافتها لحل مشكلة Missing class في R8)
+# ============================================================
+-keep class com.google.api.client.http.** { *; }
+-keep class com.google.api.client.http.javanet.** { *; }
+-dontwarn com.google.api.client.http.**
+-dontwarn com.google.api.client.http.javanet.**
+-dontwarn com.google.crypto.tink.util.KeysDownloader
+
+# ============================================================
 #  نهاية القواعد
 # ============================================================
