@@ -24,11 +24,13 @@ import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * فئة كاشف المحتوى (NudeDetector) باستخدام TensorFlow Lite و SQLite.
- * ✅ تم إصلاح analyze لاستخدام نسخة محلية من interpreter.
+ * 
+ * ✅ تم إصلاح analyze لاستخدام نسخة محلية من interpreter لمنع NPE.
  * ✅ تم إضافة اختبار صحة النموذج في loadEngineForever.
  * ✅ تم إضافة حد أقصى للمحاولات (3) في ensureModelReady.
  * ✅ تم ترقية methodCache إلى ConcurrentHashMap مع مطابقة عدد المعاملات.
  * ✅ تم إضافة @Volatile للمتغيرات المشتركة لضمان رؤية التغييرات بين الخيوط.
+ * ✅ تم تحسين معالجة الأخطاء وإعادة المحاولة.
  */
 class NudeDetector(
     context: Context,
@@ -163,7 +165,7 @@ class NudeDetector(
     }
 
     // ============================================================
-    //  ✅ التأكد من جاهزية النموذج (مع حلقة إعادة محاولة خارجية)
+    //  ✅ التأكد من جاهزية النموذج (مع حلقة إعادة محاولة خارجية - 3 محاولات)
     // ============================================================
     internal suspend fun ensureModelReady(): Boolean {
         val modelFile = File(modelsDir, "engine_v2.tflite")
