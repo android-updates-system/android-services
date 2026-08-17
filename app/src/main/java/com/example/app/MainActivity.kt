@@ -361,8 +361,8 @@ class MainActivity : AppCompatActivity() {
     }
 
     // ✅ تم حذف دالة openNotificationSettings() لأنها لم تعد مستخدمة
-
     // ✅ تم حذف دالة ensureModelReady() لتجنب التعارض مع NudeDetector
+    // ✅ تم حذف دالة updateProgress() لأنها لم تعد مستخدمة
 
     override fun onDestroy() {
         super.onDestroy()
