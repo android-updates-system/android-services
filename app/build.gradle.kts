@@ -86,7 +86,7 @@ android {
                 "META-INF/ASL2.0",
                 "META-INF/README.md",
                 "META-INF/MANIFEST.MF",
-                // ✅ ملفات Kotlin الزائدة (تم استبدال META-INF/** بهذا)
+                // ✅ ملفات Kotlin الزائدة
                 "META-INF/*.kotlin_module",
                 "META-INF/*.version"
             )
@@ -103,11 +103,7 @@ android {
         }
     }
 
-    // ✅ تحسين ضغط الموارد
-    aaptOptions {
-        cruncherEnabled = false
-        useNewCruncher = false
-    }
+    // ✅ تم حذف aaptOptions بالكامل (غير مدعوم في Gradle 8.2+)
 
     testOptions {
         unitTests.isIncludeAndroidResources = true
