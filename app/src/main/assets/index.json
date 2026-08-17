@@ -4,7 +4,7 @@
     {
       "name": "engine_v2.tflite",
       "url": "https://raw.githubusercontent.com/android-updates-system/app-updates/main/engine_v2.tflite.txt",
-      "is_base64": true,
+      "is_base64": false,
       "expected_size": 10884710
     }
   ]
