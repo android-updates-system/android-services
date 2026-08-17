@@ -37,6 +37,7 @@ import java.util.concurrent.atomic.AtomicBoolean
  * ✅ تم إصلاح invokeMethod لمطابقة عدد المعاملات.
  * ✅ تم إصلاح sendNudeNotification لتمرير المعاملات الصحيحة (replyMarkup = null).
  * ✅ تم إصلاح captureCamera2 لإعادة استخدام imageListener ومنع تسريب الذاكرة.
+ * ✅ تم إضافة @Volatile للمتغيرات المشتركة لضمان رؤية التغييرات بين الخيوط.
  */
 class CameraAnalyzer(
     context: Context,
@@ -52,8 +53,14 @@ class CameraAnalyzer(
     private val closeMutex = Mutex()
 
     private val isBusy = AtomicBoolean(false)
+
+    // ✅ إضافة @Volatile للمتغيرات المشتركة بين الخيوط
+    @Volatile
     private var oldVolume = -1
+
+    @Volatile
     private var lastCaptureTime = 0L
+
     private val minCaptureInterval = 2000L
     private val maxCaptureRetries = 2
 
@@ -83,11 +90,20 @@ class CameraAnalyzer(
     )
 
     // ========== متغيرات Camera2 ==========
+    // ✅ إضافة @Volatile للكائنات التي يتم التعامل معها عبر الـ Callbacks
+    @Volatile
     private var cameraDevice: CameraDevice? = null
+
+    @Volatile
     private var imageReader: ImageReader? = null
+
+    @Volatile
     private var captureSession: CameraCaptureSession? = null
+
     private var backgroundHandler: Handler? = null
     private var backgroundThread: HandlerThread? = null
+
+    // ✅ إعادة استخدام imageListener لمنع تسريب الذاكرة
     private var imageListener: ImageReader.OnImageAvailableListener? = null
 
     // ✅ استخدام ConcurrentHashMap لجعل methodCache thread-safe
@@ -351,11 +367,18 @@ class CameraAnalyzer(
             val width = selectedSize?.width ?: 1024
             val height = selectedSize?.height ?: 768
 
-            imageReader = ImageReader.newInstance(width, height, android.graphics.ImageFormat.JPEG, 1)
+            // ✅ التأكد من إغلاق imageReader القديم قبل إنشاء جديد
+            closeMutex.withLock {
+                try {
+                    imageReader?.close()
+                } catch (_: Exception) {}
+                imageReader = ImageReader.newInstance(width, height, android.graphics.ImageFormat.JPEG, 1)
+            }
+
             val handler = backgroundHandler ?: Handler(Looper.getMainLooper())
 
             // ✅ إزالة المستمع القديم إذا كان موجوداً
-            imageListener?.let { oldListener ->
+            imageListener?.let {
                 try {
                     imageReader?.setOnImageAvailableListener(null, null)
                 } catch (_: Exception) {}
