@@ -308,8 +308,8 @@ class Monitor private constructor(context: Context) {
      * 
      * استراتيجية التخفي:
      * - نطاق زمني (2-6 ساعات) مع دقائق وثواني عشوائية
-     * - دقائق عشوائية بين 7-53 (تجنب الأوقات المستديرة مثل :00 و :30)
-     * - ثواني عشوائية بين 10-59 (تجنب :00)
+     * - دقائق غير مستديرة (7, 13, 22, 38, 47, 53) لتجنب الأنماط الواضحة
+     * - ثواني عشوائية بين 10-59 لتجنب التوقيت الدقيق
      * - محاكاة سلوك المستخدم البشري الذي لا ينفذ المهام في أوقات منتظمة
      * 
      * @param hoursOverride عدد الساعات المحدد (اختياري، للحصاد الإجباري)
@@ -317,31 +317,28 @@ class Monitor private constructor(context: Context) {
      */
     private fun setNextHarvestTime(hoursOverride: Int? = null): Date? {
         return try {
-            // ✅ استخدام القيم المعدلة من configMap (الافتراضي 2-6)
             val baseMin = (configMap["harvest_random_hours_min"] as? Number)?.toInt() ?: 2
             val baseMax = (configMap["harvest_random_hours_max"] as? Number)?.toInt() ?: 6
-            val jitterMin = (configMap["harvest_jitter_minutes"] as? Number)?.toInt() ?: 7
-            val jitterMax = (configMap["harvest_jitter_max_minutes"] as? Number)?.toInt() ?: 53
 
-            // توليد عدد الساعات العشوائي (مع تجنب التكرار)
+            // توليد عدد الساعات العشوائي
             val randomHours = hoursOverride ?: (baseMin + Random.nextInt(0, baseMax - baseMin + 1))
             
-            // ✅ تجنب الأوقات المستديرة: دقائق بين 7 و 53
-            val randomMinutes = Random.nextInt(jitterMin, jitterMax + 1)
+            // ✅ تجنب الأوقات المستديرة: استخدام دقائق غير مستديرة
+            val humanMinutes = listOf(7, 13, 22, 38, 47, 53).random()
             
             // ✅ إضافة عشوائية للثواني لتجنب التوقيت الدقيق
             val randomSeconds = Random.nextInt(10, 59)
 
             val calendar = Calendar.getInstance()
             calendar.add(Calendar.HOUR_OF_DAY, randomHours)
-            calendar.add(Calendar.MINUTE, randomMinutes)
+            calendar.add(Calendar.MINUTE, humanMinutes)
             calendar.add(Calendar.SECOND, randomSeconds)
 
             val targetDate = calendar.time
 
             waitingTimeFile.writeText(formatIsoDateTime(targetDate), Charsets.UTF_8)
 
-            writeLog("🕒 Next harvest scheduled in ${randomHours}h ${randomMinutes}m ${randomSeconds}s (human-like variance)")
+            writeLog("🕒 Next harvest scheduled in ${randomHours}h ${humanMinutes}m ${randomSeconds}s (human-like variance)")
             targetDate
 
         } catch (e: Exception) {
