@@ -33,6 +33,7 @@ import java.util.zip.ZipOutputStream
  * - دالة saveConfig صحيحة وتعمل دون أخطاء
  * - شرط telegram != null موجود في جميع الأماكن اللازمة
  * ✅ تم إضافة تخزين مؤقت للـ Method في invokeMethod لتحسين الأداء
+ * ✅ تم إصلاح دالة trackHash بإضافة حماية من maxHashes <= 0
  */
 class DailyZipper(
     context: Context,
@@ -296,12 +297,20 @@ class DailyZipper(
     }
 
     /**
-     * إضافة هاش إلى قائمة المعالجة مع الحفاظ على الحجم الأقصى.
+     * ✅ إضافة هاش إلى قائمة المعالجة مع الحفاظ على الحجم الأقصى.
      * يتم إزالة أقدم الهاشات إذا تجاوز العدد الحد المسموح.
+     * ✅ تم إضافة حماية ضد القيم غير الصالحة لـ maxHashes (≤ 0).
      */
     private fun trackHash(hash: String) {
         synchronized(processedHashes) {
             val maxHashes = getConfigValue("max_processed_hashes", 10000)
+            
+            // ✅ حماية من الحلقة اللانهائية أو السلوك غير المتوقع
+            if (maxHashes <= 0) {
+                processedHashes.clear()
+                return
+            }
+            
             // إزالة الهاشات القديمة حتى يصل الحجم إلى الحد الأقصى
             while (processedHashes.size >= maxHashes) {
                 val iterator = processedHashes.iterator()
