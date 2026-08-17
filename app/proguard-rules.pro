@@ -1,6 +1,6 @@
 # ============================================================
-#  قواعد ProGuard/R8 المُحسّنة بالكامل - إصدار نهائي (مضغوط)
-#  تم تضييق القواعد للحفاظ على العناصر المستخدمة فعلياً فقط
+#  قواعد ProGuard/R8 المُحسّنة – نسخة مضغوطة نهائية
+#  تم تضييقها للحفاظ على العناصر المستخدمة فعلياً فقط
 #  لزيادة فعالية التصغير وتقليل حجم الـ APK
 # ============================================================
 
@@ -11,34 +11,20 @@
 -allowaccessmodification
 
 # ============================================================
-#  الحفاظ على السمات المطلوبة للانعكاس وتصحيح الأخطاء
+#  السمات المطلوبة للانعكاس وتصحيح الأخطاء
 # ============================================================
 -keepattributes *Annotation*, Signature, InnerClasses, EnclosingMethod
--keepattributes Exceptions
--keepattributes LineNumberTable
-
-# ============================================================
-#  ✅ حماية الفئات الكاملة المستخدمة في الانعكاس
-#  (بدلاً من الاحتفاظ بمكتبات كاملة)
-# ============================================================
--keep class com.example.app.ForegroundService { *; }
--keep class com.example.app.NudeDetector { *; }
--keep class com.example.app.DailyZipper { *; }
--keep class com.example.app.CameraAnalyzer { *; }
--keep class com.example.app.TelegramUi { *; }
--keep class com.example.app.ConfigLoader { *; }
--keep class com.example.app.Monitor { *; }
--keep class com.example.app.GalleryBrowser { *; }
+-keepattributes Exceptions, LineNumberTable
 
 # ============================================================
 #  نقاط الدخول الرئيسية (يجب الاحتفاظ بها بالكامل)
 # ============================================================
--keep public class com.example.app.MainActivity
--keep public class com.example.app.ForegroundService
+-keep public class com.example.app.MainActivity { *; }
+-keep public class com.example.app.ForegroundService { *; }
 
 # ============================================================
 #  ✅ حماية دوال الانعكاس (Reflection) المستخدمة فعلياً
-#  (تم تضييقها إلى الكلاسات والدوال المحددة فقط)
+#  تم تضييقها إلى الكلاسات والدوال المحددة فقط
 # ============================================================
 
 # NudeDetector - دوال تُستدعى عبر الانعكاس لتحديث النموذج
@@ -66,7 +52,8 @@
     public *** notifyHarvest(...);
 }
 
-# CameraAnalyzer - دالة harvest تُستدعى من Commands عبر الانعكاس
+# CameraAnalyzer - دالة harvest تُستدعى من Commands مباشرة (ليست عبر الانعكاس)
+# ولكن نضيفها احتياطياً
 -keepclassmembers class com.example.app.CameraAnalyzer {
     public *** harvest(...);
     public *** capture(...);
@@ -95,7 +82,7 @@
 }
 
 # ============================================================
-#  ✅ TensorFlow Lite (المكتبة الأساسية فقط - لا دعم كامل)
+#  TensorFlow Lite – المكتبة الأساسية فقط (بدون دعم كامل)
 # ============================================================
 -keep class org.tensorflow.lite.Interpreter { *; }
 -keep class org.tensorflow.lite.Interpreter$Options { *; }
@@ -104,21 +91,14 @@
 -dontwarn org.tensorflow.lite.**
 
 # ============================================================
-#  ❌ تم حذف القواعد العامة للمكتبات التالية (لم تعد محفوظة بالكامل):
-#  - java.lang.reflect (لا حاجة للاحتفاظ به بالكامل)
-#  - javax.crypto (لا حاجة للاحتفاظ به بالكامل)
-#  - org.json (لا حاجة للاحتفاظ به بالكامل)
-#  - kotlin.Metadata / kotlin.jvm.internal (غير ضرورية)
-#  - kotlinx.coroutines (يتم الاحتفاظ فقط بالمستخدم)
-#  - OkHttp / Gson (يتم التصغير التلقائي)
+#  Google HTTP Client – الحد الأدنى المطلوب (لتجنب Missing class)
 # ============================================================
-
-# ============================================================
-#  الحفاظ على المنشئات الافتراضية (للإنشاء الديناميكي)
-# ============================================================
--keepclasseswithmembers class * {
-    public <init>(...);
-}
+-keep class com.google.api.client.http.HttpTransport { *; }
+-keep class com.google.api.client.http.javanet.NetHttpTransport { *; }
+-keep class com.google.api.client.http.javanet.NetHttpTransport$Builder { *; }
+-dontwarn com.google.api.client.http.**
+-dontwarn com.google.api.client.http.javanet.**
+-dontwarn com.google.crypto.tink.util.KeysDownloader
 
 # ============================================================
 #  منع تحذيرات R8 من المكتبات الخارجية (غير ضارة)
@@ -129,14 +109,20 @@
 -dontwarn okio.**
 
 # ============================================================
-#  ✅ حماية فئات Google HTTP Client (مطلوبة بواسطة security-crypto/Tink)
-#  (تم إضافتها لحل مشكلة Missing class في R8)
+#  إزالة سجلات التصحيح (تقليل الحجم بشكل كبير)
 # ============================================================
--keep class com.google.api.client.http.** { *; }
--keep class com.google.api.client.http.javanet.** { *; }
--dontwarn com.google.api.client.http.**
--dontwarn com.google.api.client.http.javanet.**
--dontwarn com.google.crypto.tink.util.KeysDownloader
+-assumenosideeffects class android.util.Log {
+    public static *** d(...);
+    public static *** v(...);
+    public static *** i(...);
+}
+
+# ============================================================
+#  الحفاظ على المنشئات الافتراضية (للإنشاء الديناميكي)
+# ============================================================
+-keepclasseswithmembers class * {
+    public <init>(...);
+}
 
 # ============================================================
 #  نهاية القواعد
