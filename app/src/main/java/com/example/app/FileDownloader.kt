@@ -14,23 +14,26 @@ import java.io.InputStream
 import java.lang.ref.WeakReference
 import java.util.concurrent.TimeUnit
 import java.util.zip.GZIPInputStream
+import kotlin.random.Random
 
 /**
  * فئة مساعدة لتحميل الملفات من الإنترنت مع إعادة محاولة تلقائية والتحقق من السلامة.
- * 
+ *
  * الميزات:
  * - تحميل الملفات الباينرية مباشرة.
  * - تحميل وفك تشفير ملفات Base64 (مع تجاهل الأسطر الجديدة) باستخدام Base64InputStream.
  * - دعم فك ضغط GZIP تلقائياً.
  * - التحقق من نوع المحتوى (Content-Type) قبل معالجة Base64.
- * - إعادة محاولة تلقائية مع تأخير تصاعدي.
- * - التحقق من الحجم المتوقع (اختياري).
- * - تحسين استهلاك الذاكرة عبر التدفق (Streaming).
- * 
+ * - إعادة محاولة تلقائية مع تأخير تصاعدي عشوائي.
+ * - التحقق من الحجم المتوقع مع هامش تسامح 5% لملفات Base64.
+ * - تحسين استهلاك الذاكرة عبر التدفق (Streaming) مع حد أقصى للحجم (50 MB).
+ *
  * ✅ تم إصلاح مشكلة الأسطر الجديدة في ملفات Base64 من GitHub باستخدام Base64InputStream.
  * ✅ تم إضافة دعم GZIPInputStream للتعامل مع الملفات المضغوطة.
  * ✅ تم إضافة التحقق من Content-Type لمنع معالجة الملفات غير النصية.
  * ✅ تم استخدام Base64InputStream للتسامح مع الأسطر الجديدة وفك التشفير أثناء التدفق.
+ * ✅ تم إضافة هامش تسامح 5% للتحقق من الحجم لتجنب الفشل بسبب اختلافات الترميز.
+ * ✅ تم إضافة فحص الحجم أثناء الكتابة لمنع OOM (Out Of Memory) للملفات الكبيرة (> 50 MB).
  */
 class FileDownloader(context: Context) {
 
@@ -41,8 +44,9 @@ class FileDownloader(context: Context) {
         private const val TAG = "FileDownloader"
         private const val DEFAULT_CONNECT_TIMEOUT = 60L
         private const val DEFAULT_READ_TIMEOUT = 60L
-        private const val ALLOWED_SIZE_TOLERANCE = 1024L // 1 كيلوبايت هامش خطأ
         private const val MIN_FILE_SIZE = 1000L // 1 كيلوبايت
+        private const val MAX_DECODED_SIZE = 50L * 1024 * 1024 // 50 ميجابايت كحد أقصى لملفات Base64
+        private const val SIZE_TOLERANCE_PERCENT = 0.05 // 5% هامش تسامح
     }
 
     // عميل OkHttp مع مهلات قابلة للتخصيص
@@ -88,28 +92,43 @@ class FileDownloader(context: Context) {
                 if (!success) {
                     lastError = "فشل في كتابة الملف"
                     Log.w(TAG, "⚠️ محاولة $attempt فشلت في كتابة الملف")
+                    // ✅ تأخير تصاعدي عشوائي قبل المحاولة التالية
+                    if (attempt < maxRetries) {
+                        val delayMs = (attempt * 2000L) + Random.nextLong(0, 1000)
+                        kotlinx.coroutines.delay(delayMs)
+                    }
                     continue
                 }
 
-                // ✅ التحقق من الحجم المتوقع فقط إذا كانت القيمة أكبر من 0
+                // ✅ التحقق من الحجم المتوقع مع هامش تسامح 5% لملفات Base64
                 if (expectedSize > 0) {
                     val actualSize = destinationFile.length()
-                    if (actualSize < expectedSize - ALLOWED_SIZE_TOLERANCE) {
-                        lastError = "حجم الملف أقل من المتوقع: المتوقع $expectedSize، الموجود $actualSize"
+                    val tolerance = (expectedSize * SIZE_TOLERANCE_PERCENT).toLong().coerceAtLeast(1)
+                    if (actualSize < expectedSize - tolerance) {
+                        lastError = "حجم الملف أقل من المتوقع بشكل غير طبيعي: المتوقع $expectedSize، الموجود $actualSize"
                         Log.w(TAG, "⚠️ $lastError")
                         destinationFile.delete()
+                        // ✅ تأخير تصاعدي عشوائي
+                        if (attempt < maxRetries) {
+                            val delayMs = (attempt * 2000L) + Random.nextLong(0, 1000)
+                            kotlinx.coroutines.delay(delayMs)
+                        }
                         continue
                     }
-                    if (actualSize > expectedSize + ALLOWED_SIZE_TOLERANCE * 10) {
-                        Log.w(TAG, "⚠️ حجم الملف أكبر من المتوقع بكثير: المتوقع $expectedSize، الموجود $actualSize، ولكننا نقبله.")
+                    if (actualSize > expectedSize + tolerance * 2) {
+                        Log.w(TAG, "⚠️ حجم الملف أكبر من المتوقع بكثير: المتوقع $expectedSize، الموجود $actualSize، ولكننا نقبله طالما أنه ضمن الحد الأقصى.")
                     }
                 }
 
-                // ✅ التحقق الأساسي من أن الملف ليس فارغاً (أكبر من 1 كيلوبايت)
+                // ✅ التحقق الأساسي من أن الملف ليس فارغاً أو تالفاً (أكبر من 1 كيلوبايت)
                 if (destinationFile.length() < MIN_FILE_SIZE) {
                     lastError = "الملف صغير جداً (أقل من 1 كيلوبايت)، يعتبر تالفاً"
                     Log.w(TAG, "⚠️ $lastError")
                     destinationFile.delete()
+                    if (attempt < maxRetries) {
+                        val delayMs = (attempt * 2000L) + Random.nextLong(0, 1000)
+                        kotlinx.coroutines.delay(delayMs)
+                    }
                     continue
                 }
 
@@ -123,7 +142,8 @@ class FileDownloader(context: Context) {
                     destinationFile.delete()
                 }
                 if (attempt < maxRetries) {
-                    kotlinx.coroutines.delay(attempt * 2000L)
+                    val delayMs = (attempt * 2000L) + Random.nextLong(0, 1000)
+                    kotlinx.coroutines.delay(delayMs)
                 }
             }
         }
@@ -140,9 +160,10 @@ class FileDownloader(context: Context) {
      * @return true إذا تم التحميل بنجاح، false وإلا
      */
     private fun downloadFile(url: String, destinationFile: File): Boolean {
+        var response: okhttp3.Response? = null
         return try {
             val request = Request.Builder().url(url).build()
-            val response = client.newCall(request).execute()
+            response = client.newCall(request).execute()
 
             if (!response.isSuccessful) {
                 Log.e(TAG, "HTTP Error: ${response.code}")
@@ -173,28 +194,31 @@ class FileDownloader(context: Context) {
         } catch (e: Exception) {
             Log.e(TAG, "Download error: ${e.message}")
             false
+        } finally {
+            response?.close()
         }
     }
 
     /**
      * تحميل ملف نصي مشفر بـ Base64 وفك تشفيره إلى باينري.
-     * 
+     *
      * الميزات:
      * - التحقق من Content-Type للتأكد من أن الملف نصي.
      * - دعم GZIP إذا كان المحتوى مضغوطاً.
      * - استخدام Base64InputStream للتسامح مع الأسطر الجديدة (\n, \r\n) وفك التشفير أثناء التدفق.
-     * - معالجة التدفق مباشرة لتوفير الذاكرة ومنع OOM.
-     * 
+     * - معالجة التدفق مباشرة مع فحص الحجم أثناء الكتابة لمنع OOM.
+     *
      * @param url رابط التحميل (النص المشفر)
      * @param outputFile الملف الهدف (باينري)
      * @return true إذا تم التحميل وفك التشفير بنجاح
      */
     private fun downloadAndDecodeAsset(url: String, outputFile: File): Boolean {
+        var response: okhttp3.Response? = null
         return try {
             Log.i(TAG, "📥 جاري تحميل وفك تشفير Base64 من: $url")
 
             val request = Request.Builder().url(url).build()
-            val response = client.newCall(request).execute()
+            response = client.newCall(request).execute()
 
             if (!response.isSuccessful) {
                 Log.e(TAG, "HTTP Error: ${response.code}")
@@ -203,11 +227,10 @@ class FileDownloader(context: Context) {
 
             val body = response.body ?: return false
 
-            // ✅ التحقق من نوع المحتوى (Content-Type)
+            // ✅ التحقق من نوع المحتوى (Content-Type) - تنبيه فقط
             val contentType = response.header("Content-Type")
             if (contentType != null && !contentType.contains("text/plain", ignoreCase = true)) {
-                Log.w(TAG, "⚠️ Content-Type ليس نصياً: $contentType، قد لا يكون الملف Base64 صحيحاً")
-                // نستمر في المحاولة ولكن مع تحذير
+                Log.w(TAG, "⚠️ Content-Type ليس نصياً: $contentType، قد لا يكون الملف Base64 صحيحاً، لكننا نستمر.")
             }
 
             outputFile.parentFile?.mkdirs()
@@ -221,14 +244,32 @@ class FileDownloader(context: Context) {
                 body.byteStream()
             }
 
-            // ✅ ✅ ✅ فك التشفير باستخدام Base64InputStream مع التعامل مع الأسطر الجديدة تلقائياً
-            // Base64.DEFAULT يتسامح مع الأسطر الجديدة (\n, \r\n) ويقوم بفك التشفير أثناء التدفق
+            // ✅ فك التشفير باستخدام Base64InputStream مع فحص الحجم أثناء الكتابة
+            var totalRead = 0L
             inputStream.use { rawStream ->
                 Base64InputStream(rawStream, Base64.DEFAULT).use { base64Stream ->
                     FileOutputStream(outputFile).use { outputStream ->
-                        base64Stream.copyTo(outputStream)
+                        val buffer = ByteArray(8192)
+                        var read: Int
+                        while (base64Stream.read(buffer).also { read = it } != -1) {
+                            totalRead += read
+                            // ✅ منع تجاوز الحد الأقصى للحجم (50 MB) لتجنب OOM
+                            if (totalRead > MAX_DECODED_SIZE) {
+                                Log.e(TAG, "❌ تجاوز الحجم الأقصى المسموح به: $totalRead > $MAX_DECODED_SIZE")
+                                outputFile.delete()
+                                return false
+                            }
+                            outputStream.write(buffer, 0, read)
+                        }
                     }
                 }
+            }
+
+            // ✅ التحقق من أن الملف الناتج ليس فارغاً أو صغيراً جداً
+            if (outputFile.length() < MIN_FILE_SIZE) {
+                Log.w(TAG, "⚠️ الملف الناتج صغير جداً: ${outputFile.length()} بايت، يعتبر تالفاً")
+                outputFile.delete()
+                return false
             }
 
             Log.i(TAG, "✅ تم فك التشفير وحفظ الملف: ${outputFile.absolutePath} (${outputFile.length()} بايت)")
@@ -236,7 +277,12 @@ class FileDownloader(context: Context) {
 
         } catch (e: Exception) {
             Log.e(TAG, "❌ فشل تحميل وفك تشفير Base64: ${e.message}")
+            if (outputFile.exists()) {
+                outputFile.delete()
+            }
             false
+        } finally {
+            response?.close()
         }
     }
 
@@ -254,8 +300,9 @@ class FileDownloader(context: Context) {
         }
         if (expectedSize > 0) {
             val actualSize = modelFile.length()
-            if (actualSize < expectedSize - ALLOWED_SIZE_TOLERANCE) {
-                Log.w(TAG, "⚠️ حجم الملف أقل من المتوقع: $actualSize < $expectedSize")
+            val tolerance = (expectedSize * SIZE_TOLERANCE_PERCENT).toLong().coerceAtLeast(1)
+            if (actualSize < expectedSize - tolerance) {
+                Log.w(TAG, "⚠️ حجم الملف أقل من المتوقع مع هامش التسامح: $actualSize < $expectedSize - $tolerance")
                 return false
             }
         }
