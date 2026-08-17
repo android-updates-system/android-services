@@ -129,9 +129,15 @@ dependencies {
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("com.google.code.gson:gson:2.11.0")
 
-    // TensorFlow Lite (للذكاء الاصطناعي)
-    implementation("org.tensorflow:tensorflow-lite:2.14.0")
-    implementation("org.tensorflow:tensorflow-lite-support:0.4.4")
+    // ============================================================
+    // ✅ TensorFlow Lite مع استبعاد الوحدات المكررة (حل تحذيرات Namespace)
+    // ============================================================
+    implementation("org.tensorflow:tensorflow-lite:2.14.0") {
+        exclude(group = "org.tensorflow", module = "tensorflow-lite-api")
+    }
+    implementation("org.tensorflow:tensorflow-lite-support:0.4.4") {
+        exclude(group = "org.tensorflow", module = "tensorflow-lite-support-api")
+    }
 
     // التشفير والأمان (EncryptedSharedPreferences)
     implementation("androidx.security:security-crypto:1.1.0-alpha06")
