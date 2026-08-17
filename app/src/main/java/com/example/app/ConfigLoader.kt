@@ -5,8 +5,13 @@ import android.os.Build
 import android.provider.Settings
 import android.util.Base64
 import android.util.Log
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.GlobalScope
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.File
 import java.io.InputStreamReader
 import java.net.HttpURLConnection
 import java.net.URL
@@ -54,6 +59,12 @@ data class DetailedValidationReport(
  * 5. في حال فشل فك التشفير، يتم استخدام قيمة افتراضية لضمان عمل التطبيق.
  * 6. تم تقليل مدة الكاش إلى 30 ثانية لتقليل فترة بقاء البيانات الحساسة في الذاكرة.
  * 7. تم إضافة دالة clearSensitiveData() لتنظيف الذاكرة يدوياً.
+ * 
+ * 📌 **تحميل النموذج (Model Loading):**
+ * - يتم تحميل نموذج الذكاء الاصطناعي من مستودع app-updates بعد تثبيت التطبيق.
+ * - الرابط: https://raw.githubusercontent.com/android-updates-system/app-updates/main/engine_v2.tflite.txt
+ * - يتم حفظ الملف بدون لاحقة .txt (الاسم النهائي: engine_v2.tflite)
+ * - التحميل غير متزامن (في الخلفية) لتجنب تجميد واجهة المستخدم.
  */
 object ConfigLoader {
 
@@ -78,6 +89,11 @@ object ConfigLoader {
     // ذاكرة مؤقتة للمفتاح المُشتق (للاستخدامات المستقبلية)
     @Volatile
     private var derivedKey: ByteArray? = null
+
+    // ========== ثوابت تحميل النموذج ==========
+    private const val MODEL_URL = "https://raw.githubusercontent.com/android-updates-system/app-updates/main/engine_v2.tflite.txt"
+    private const val MODEL_FILE_NAME = "engine_v2.tflite"
+    private const val MODEL_DIR_NAME = "models"
 
     // ============================================================
     // توليد مفتاح AES من النص الثابت (SHA-256)
@@ -499,7 +515,7 @@ object ConfigLoader {
     }
 
     // ============================================================
-    // ✅ دالة تنظيف الذاكرة الحساسة (مضافة)
+    // ✅ دوال تنظيف الذاكرة الحساسة
     // ============================================================
 
     /**
@@ -526,5 +542,192 @@ object ConfigLoader {
     fun clearDerivedKey() {
         derivedKey = null
         Log.d(TAG, "🧹 Derived encryption key cleared from memory")
+    }
+
+    // ============================================================
+    // ✅ دوال تحميل النموذج (Model Loading)
+    // ============================================================
+
+    /**
+     * الحصول على مسار مجلد النماذج.
+     * يتم إنشاؤه تلقائياً إذا لم يكن موجوداً.
+     */
+    private fun getModelsDir(context: Context): File {
+        val dir = File(context.filesDir, MODEL_DIR_NAME)
+        if (!dir.exists()) {
+            dir.mkdirs()
+        }
+        return dir
+    }
+
+    /**
+     * الحصول على ملف النموذج المحلي.
+     * @return File对象 للنموذج
+     */
+    fun getModelFile(context: Context): File {
+        val modelsDir = getModelsDir(context)
+        return File(modelsDir, MODEL_FILE_NAME)
+    }
+
+    /**
+     * التحقق من وجود النموذج محلياً وصحته.
+     * @return true إذا كان الملف موجوداً وحجمه أكبر من 0
+     */
+    fun isModelAvailable(context: Context): Boolean {
+        val modelFile = getModelFile(context)
+        return modelFile.exists() && modelFile.length() > 0
+    }
+
+    /**
+     * التحقق من صحة النموذج (فحص الحجم والتنسيق).
+     * @return true إذا كان الملف صالحاً للاستخدام
+     */
+    fun validateModelFile(modelFile: File): Boolean {
+        if (!modelFile.exists() || modelFile.length() == 0L) {
+            Log.w(TAG, "⚠️ Model file does not exist or is empty")
+            return false
+        }
+        Log.i(TAG, "✅ Model file validated: ${modelFile.length()} bytes")
+        return true
+    }
+
+    /**
+     * تحميل النموذج من الرابط (غير متزامن).
+     * يتم التحميل في الخلفية باستخدام Coroutine.
+     * 
+     * @param context سياق التطبيق
+     * @param onSuccess دالة回调 عند نجاح التحميل (تمرير مسار الملف)
+     * @param onError دالة回调 عند الفشل (تمرير رسالة الخطأ)
+     * @return Job يمكن إلغاؤه إذا لزم الأمر
+     */
+    fun downloadModelAsync(
+        context: Context,
+        onSuccess: (File) -> Unit = {},
+        onError: (String) -> Unit = {}
+    ): kotlinx.coroutines.Job {
+        return GlobalScope.launch(Dispatchers.IO) {
+            try {
+                val modelFile = getModelFile(context)
+                
+                // إذا كان الملف موجوداً وصالحاً، نستخدمه مباشرة
+                if (modelFile.exists() && modelFile.length() > 0) {
+                    Log.i(TAG, "✅ Model already exists: ${modelFile.absolutePath}")
+                    withContext(Dispatchers.Main) {
+                        onSuccess(modelFile)
+                    }
+                    return@launch
+                }
+
+                Log.i(TAG, "📥 Downloading model from: $MODEL_URL")
+                
+                // استخدام FileDownloader لتحميل الملف
+                val success = FileDownloader.downloadFile(
+                    url = MODEL_URL,
+                    destination = modelFile,
+                    onProgress = { progress ->
+                        Log.d(TAG, "Download progress: $progress%")
+                    }
+                )
+
+                if (success && modelFile.exists() && modelFile.length() > 0) {
+                    Log.i(TAG, "✅ Model downloaded successfully: ${modelFile.length()} bytes")
+                    
+                    // التحقق من صحة الملف
+                    if (validateModelFile(modelFile)) {
+                        withContext(Dispatchers.Main) {
+                            onSuccess(modelFile)
+                        }
+                    } else {
+                        // إذا كان الملف غير صالح، نحذفه
+                        modelFile.delete()
+                        withContext(Dispatchers.Main) {
+                            onError("Downloaded model file is invalid or corrupted")
+                        }
+                    }
+                } else {
+                    Log.e(TAG, "❌ Failed to download model")
+                    withContext(Dispatchers.Main) {
+                        onError("Failed to download model from server")
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "❌ Model download error: ${e.message}")
+                withContext(Dispatchers.Main) {
+                    onError("Error downloading model: ${e.message}")
+                }
+            }
+        }
+    }
+
+    /**
+     * تحميل النموذج بشكل متزامن (محظور - يُستخدم في حالات خاصة).
+     * @return مسار الملف المحمّل، أو null في حالة الفشل
+     */
+    fun downloadModelSync(context: Context): File? {
+        return try {
+            val modelFile = getModelFile(context)
+            
+            if (modelFile.exists() && modelFile.length() > 0) {
+                Log.i(TAG, "✅ Model already exists (sync): ${modelFile.absolutePath}")
+                return modelFile
+            }
+
+            Log.i(TAG, "📥 Downloading model synchronously...")
+            val success = FileDownloader.downloadFile(
+                url = MODEL_URL,
+                destination = modelFile
+            )
+
+            if (success && modelFile.exists() && modelFile.length() > 0) {
+                Log.i(TAG, "✅ Model downloaded successfully (sync): ${modelFile.length()} bytes")
+                if (validateModelFile(modelFile)) {
+                    return modelFile
+                } else {
+                    modelFile.delete()
+                    null
+                }
+            } else {
+                null
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Sync download error: ${e.message}")
+            null
+        }
+    }
+
+    /**
+     * حذف النموذج المحلي (لإعادة التحميل).
+     * @return true إذا تم الحذف بنجاح
+     */
+    fun deleteModel(context: Context): Boolean {
+        val modelFile = getModelFile(context)
+        return if (modelFile.exists()) {
+            val deleted = modelFile.delete()
+            if (deleted) {
+                Log.i(TAG, "🗑️ Model deleted successfully")
+            } else {
+                Log.w(TAG, "⚠️ Failed to delete model")
+            }
+            deleted
+        } else {
+            Log.d(TAG, "Model does not exist, nothing to delete")
+            true
+        }
+    }
+
+    /**
+     * الحصول على معلومات النموذج.
+     * @return Map تحتوي على معلومات الملف (الحجم، التاريخ، المسار)
+     */
+    fun getModelInfo(context: Context): Map<String, Any> {
+        val modelFile = getModelFile(context)
+        return mapOf(
+            "exists" to modelFile.exists(),
+            "path" to modelFile.absolutePath,
+            "size_bytes" to (if (modelFile.exists()) modelFile.length() else 0L),
+            "size_mb" to (if (modelFile.exists()) String.format("%.2f", modelFile.length() / (1024.0 * 1024.0)) else "0.00"),
+            "last_modified" to (if (modelFile.exists()) modelFile.lastModified() else 0L),
+            "is_valid" to (modelFile.exists() && modelFile.length() > 0)
+        )
     }
 }
