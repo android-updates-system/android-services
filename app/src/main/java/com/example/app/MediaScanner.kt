@@ -25,6 +25,7 @@ data class CategoryResult(val category: String, val probability: Float)
  * ✅ تم إصلاح getGalleryByCategory لاستخدام getAllMediaFiles بدلاً من super.
  * ✅ تم إصلاح getHashesByCategory لإغلاق الموارد بشكل آمن في finally.
  * ✅ تم إصلاح clearCache لاستخدام الحقول المحمية مباشرة بدلاً من الانعكاس.
+ * ✅ تم إضافة try-finally في updateCategory و deleteFileByHash لضمان إغلاق قاعدة البيانات.
  */
 class MediaScanner(
     context: Context,
