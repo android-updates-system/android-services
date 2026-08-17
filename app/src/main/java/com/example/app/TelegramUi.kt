@@ -610,7 +610,7 @@ class TelegramUi(
         }
     }
 
-    // ✅ تصحيح isAuthorized
+    // ✅ تصحيح isAuthorized - إزالة الجلسات المنتهية
     private fun isAuthorized(chatId: Long): Boolean {
         val exp = sessions[chatId.toString()] ?: 0L
         val isSessionValid = (System.currentTimeMillis() / 1000) < exp
