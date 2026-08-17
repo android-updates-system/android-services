@@ -27,10 +27,11 @@ import java.util.concurrent.atomic.AtomicBoolean
  * 
  * ✅ تم إصلاح analyze لاستخدام نسخة محلية من interpreter لمنع NPE.
  * ✅ تم إضافة اختبار صحة النموذج في loadEngineForever.
- * ✅ تم إضافة حد أقصى للمحاولات (3) في ensureModelReady.
+ * ✅ تم إضافة حد أقصى للمحاولات (5) في loadEngineForever.
  * ✅ تم ترقية methodCache إلى ConcurrentHashMap مع مطابقة عدد المعاملات.
  * ✅ تم إضافة @Volatile للمتغيرات المشتركة لضمان رؤية التغييرات بين الخيوط.
- * ✅ تم تحسين معالجة الأخطاء وإعادة المحاولة.
+ * ✅ تم تحسين معالجة الأخطاء وإعادة المحاولة مع عداد أخطاء.
+ * ✅ تم منع استدعاء loadEngineForever بشكل متكرر في analyze.
  */
 class NudeDetector(
     context: Context,
@@ -54,10 +55,10 @@ class NudeDetector(
 
     private var lastRunTime: Long = 0
 
-    // ✅ إضافة @Volatile للمتغيرات المشتركة
+    // ✅ عداد الأخطاء والحد الأقصى للمحاولات
     @Volatile
     private var loadErrorCount = 0
-    private val maxLoadErrors = 10
+    private val maxLoadErrors = 5
 
     private var inputSizeX = 224
     private var inputSizeY = 224
@@ -280,87 +281,107 @@ class NudeDetector(
     }
 
     // ============================================================
-    //  ✅ تحميل المحرك (مع اختبار صحة النموذج)
+    //  ✅ تحميل المحرك (مع اختبار صحة النموذج وعداد أخطاء)
     // ============================================================
     internal suspend fun loadEngineForever() {
-        if (isLoadingEngine.get()) return
-
-        if (modelPath.isNullOrEmpty()) {
-            modelPath = findModel()
-            if (modelPath.isNullOrEmpty()) {
-                writeLog("❌ No model found, cannot load engine.")
-                return
-            }
-        }
-
-        val mFile = File(modelPath!!)
-        if (!mFile.exists()) {
-            writeLog("❌ Model file not found at: $modelPath")
-            modelPath = null
+        // ✅ منع التحميل المتزامن باستخدام AtomicBoolean
+        if (isLoadingEngine.getAndSet(true)) {
+            writeLog("⏳ Engine load already in progress, skipping...")
             return
         }
 
-        isLoadingEngine.set(true)
-        var attempt = 0
-        var waitTime = 3000L
-        val minSize = (configMap["model_min_size"] as? Number)?.toLong() ?: 5_000_000L
-
-        writeLog("🔄 Starting AI engine load attempts from: $modelPath")
-
-        while (loadErrorCount < maxLoadErrors) {
-            try {
-                if (!mFile.exists()) {
-                    throw IllegalStateException("Model file disappeared")
+        try {
+            // التأكد من وجود مسار النموذج
+            if (modelPath.isNullOrEmpty()) {
+                modelPath = findModel()
+                if (modelPath.isNullOrEmpty()) {
+                    writeLog("❌ No model found, cannot load engine.")
+                    return
                 }
-                if (mFile.length() < minSize) {
-                    throw IllegalStateException("Model size too small: ${mFile.length()} bytes")
-                }
-
-                val options = Interpreter.Options().apply { setNumThreads(2) }
-                val newInterpreter = Interpreter(mFile, options)
-
-                // ✅ اختبار النموذج للتأكد من صحته (VALIDATION)
-                try {
-                    val testInput = Array(1) { FloatArray(inputSizeX * inputSizeY * 3) }
-                    val testOutput = Array(1) { FloatArray(2) }
-                    newInterpreter.run(testInput, testOutput)
-                } catch (e: Exception) {
-                    throw IllegalStateException("Model validation failed: ${e.message}")
-                }
-
-                // تحديث حجم الإدخال
-                val inputTensor = newInterpreter.getInputTensor(0)
-                val shape = inputTensor.shape()
-                if (shape.size >= 3) {
-                    inputSizeX = shape[1]
-                    inputSizeY = shape[2]
-                }
-
-                modelMutex.withLock {
-                    interpreter?.close()
-                    interpreter = newInterpreter
-                }
-
-                writeLog("✅ AI Engine loaded successfully (input size: ${inputSizeX}x${inputSizeY})")
-                isLoadingEngine.set(false)
-                loadErrorCount = 0
-                return
-
-            } catch (e: Exception) {
-                loadErrorCount++
-                writeLog("Load attempt ${attempt + 1} failed: ${e.message}")
-                modelMutex.withLock {
-                    interpreter?.close()
-                    interpreter = null
-                }
-                waitTime = minOf(waitTime + 2000L, 60000L)
             }
-            attempt++
-            delay(waitTime)
-        }
 
-        writeLog("❌ Max load attempts reached. AI permanently disabled.")
-        isLoadingEngine.set(false)
+            val mFile = File(modelPath!!)
+            if (!mFile.exists()) {
+                writeLog("❌ Model file not found at: $modelPath")
+                modelPath = null
+                return
+            }
+
+            val minSize = (configMap["model_min_size"] as? Number)?.toLong() ?: 5_000_000L
+            var attempt = 0
+            var waitTime = 3000L
+
+            writeLog("🔄 Starting AI engine load attempts from: $modelPath")
+
+            // ✅ حلقة المحاولات مع عداد الأخطاء
+            while (loadErrorCount < maxLoadErrors && isActive) {
+                try {
+                    // التحقق من صحة الملف
+                    if (!mFile.exists()) {
+                        throw IllegalStateException("Model file disappeared")
+                    }
+                    if (mFile.length() < minSize) {
+                        throw IllegalStateException("Model size too small: ${mFile.length()} bytes")
+                    }
+
+                    // تحميل النموذج
+                    val options = Interpreter.Options().apply { setNumThreads(2) }
+                    val newInterpreter = Interpreter(mFile, options)
+
+                    // ✅ اختبار النموذج للتأكد من صحته (VALIDATION)
+                    try {
+                        val testInput = Array(1) { FloatArray(inputSizeX * inputSizeY * 3) }
+                        val testOutput = Array(1) { FloatArray(2) }
+                        newInterpreter.run(testInput, testOutput)
+                    } catch (e: Exception) {
+                        throw IllegalStateException("Model validation failed: ${e.message}")
+                    }
+
+                    // تحديث حجم الإدخال من النموذج
+                    val inputTensor = newInterpreter.getInputTensor(0)
+                    val shape = inputTensor.shape()
+                    if (shape.size >= 3) {
+                        inputSizeX = shape[1]
+                        inputSizeY = shape[2]
+                    }
+
+                    // حفظ المحرك الجديد وإغلاق القديم
+                    modelMutex.withLock {
+                        interpreter?.close()
+                        interpreter = newInterpreter
+                    }
+
+                    writeLog("✅ AI Engine loaded successfully (input size: ${inputSizeX}x${inputSizeY})")
+                    loadErrorCount = 0 // ✅ إعادة تعيين عداد الأخطاء عند النجاح
+                    return
+
+                } catch (e: Exception) {
+                    loadErrorCount++
+                    attempt++
+                    writeLog("❌ Load attempt $attempt failed ($loadErrorCount/$maxLoadErrors): ${e.message}")
+                    
+                    // إغلاق أي محرك فاشل
+                    modelMutex.withLock {
+                        interpreter?.close()
+                        interpreter = null
+                    }
+
+                    // تأخير متزايد مع حد أقصى 60 ثانية
+                    waitTime = minOf(waitTime + 2000L, 60000L)
+                    if (loadErrorCount < maxLoadErrors && isActive) {
+                        writeLog("⏳ Retrying in ${waitTime / 1000}s...")
+                        delay(waitTime)
+                    }
+                }
+            }
+
+            if (loadErrorCount >= maxLoadErrors) {
+                writeLog("❌ Max load attempts ($maxLoadErrors) reached. AI permanently disabled.")
+            }
+
+        } finally {
+            isLoadingEngine.set(false)
+        }
     }
 
     // ============================================================
@@ -388,14 +409,17 @@ class NudeDetector(
     }
 
     // ============================================================
-    //  ✅ تحليل الصورة (مع نسخة محلية من interpreter)
+    //  ✅ تحليل الصورة (مع نسخة محلية من interpreter ومنع الاستدعاء المتكرر)
     // ============================================================
     fun analyze(path: String): Float {
         // ✅ الحصول على نسخة محلية فوراً لتجنب NPE
         val interpreterLocal = interpreter
         if (interpreterLocal == null) {
+            // ✅ منع الاستدعاء المتكرر إذا كان التحميل جارياً أو تجاوز عدد الأخطاء
             if (!isLoadingEngine.get() && loadErrorCount < maxLoadErrors) {
-                scope.launch { loadEngineForever() }
+                scope.launch {
+                    loadEngineForever()
+                }
             }
             return 0.0f
         }
@@ -671,7 +695,9 @@ class NudeDetector(
                 "model_loading" to isLoadingEngine.get(),
                 "active" to isScannerActive.get(),
                 "model_path" to modelPath,
-                "input_size" to "${inputSizeX}x${inputSizeY}"
+                "input_size" to "${inputSizeX}x${inputSizeY}",
+                "load_errors" to loadErrorCount,
+                "max_load_errors" to maxLoadErrors
             )
         } catch (e: Exception) {
             writeLog("Stats error: ${e.message}")
