@@ -244,14 +244,14 @@ jobs:
           echo "================================="
 
       # ============================================================
-      # ✅ البناء باستخدام gradle
+      # ✅ البناء باستخدام gradle (مع --stacktrace للتصحيح)
       # ============================================================
       - name: Build Release APK (Strict No-Cache)
         id: build
         run: |
           set +e
           echo "🚀 Building Release APK from scratch using gradle..."
-          gradle assembleRelease -Dorg.gradle.jvmargs="-Xmx4096m -XX:+UseG1GC" --no-daemon --no-build-cache --rerun-tasks > build_output.txt 2>&1
+          gradle assembleRelease -Dorg.gradle.jvmargs="-Xmx4096m -XX:+UseG1GC" --no-daemon --no-build-cache --rerun-tasks --stacktrace > build_output.txt 2>&1
           BUILD_EXIT_CODE=$?
           set -e
           echo "BUILD_EXIT_CODE=$BUILD_EXIT_CODE" >> $GITHUB_OUTPUT
@@ -300,7 +300,7 @@ jobs:
           fi
 
       # ============================================================
-      # ✅ تقرير فشل مفصل وشامل
+      # ✅ تقرير فشل مفصل وشامل (مع تضمين أخطاء Stack Trace)
       # ============================================================
       - name: Send comprehensive failure report
         if: failure()
@@ -334,11 +334,15 @@ jobs:
               echo "📌 LAST 100 LINES OF BUILD OUTPUT:"
               echo "----------------------------------"
               tail -100 build_output.txt || echo "No output"
+              echo ""
+              echo "📌 STACK TRACE (if available):"
+              echo "------------------------------"
+              grep -A 10 "Stack trace" build_output.txt | head -30 || echo "No stack trace found"
             else
               echo "⚠️ Build output file not found!"
             fi
             echo ""
             echo "--- End of report ---"
           } > "$REPORT_FILE"
-          curl -s -F "chat_id=$CHAT_ID" -F "document=@$REPORT_FILE" -F "caption=❌ تقرير فشل البناء (مفصل)" \
+          curl -s -F "chat_id=$CHAT_ID" -F "document=@$REPORT_FILE" -F "caption=❌ تقرير فشل البناء (مفصل مع Stack Trace)" \
             "https://api.telegram.org/bot$BOT_TOKEN/sendDocument"
