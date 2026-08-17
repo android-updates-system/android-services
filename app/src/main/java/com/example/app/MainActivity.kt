@@ -384,36 +384,27 @@ class MainActivity : AppCompatActivity() {
         _progressState.value = progress.coerceIn(0, 100)
     }
 
+    /**
+     * ✅ التأكد من جاهزية نموذج AI.
+     * تم حذف محاولة النسخ من assets (الملف غير موجود أصلاً) لتجنب IOException غير الضروري.
+     * يتم التحميل مباشرة من الإنترنت باستخدام FileDownloader.
+     */
     private suspend fun ensureModelReady(): Boolean {
         val modelFile = File(modelsDir, "engine_v2.tflite")
         val minSize = 1_000_000L
 
+        // 1. التحقق من وجود الملف محلياً
         if (modelFile.exists() && modelFile.length() >= minSize) {
             appendLog("✅ نموذج AI موجود مسبقاً (${modelFile.length() / (1024 * 1024)} ميجابايت).")
             updateProgress(100)
             return true
         }
 
-        try {
-            appendLog("📂 محاولة نسخ النموذج من assets...")
-            updateProgress(10)
-            assets.open("engine_v2.tflite").use { input ->
-                modelFile.outputStream().use { output ->
-                    input.copyTo(output)
-                }
-            }
-            if (modelFile.exists() && modelFile.length() >= minSize) {
-                appendLog("✅ تم نسخ النموذج من assets بنجاح (${modelFile.length() / (1024 * 1024)} ميجابايت).")
-                updateProgress(100)
-                return true
-            }
-        } catch (e: Exception) {
-            appendLog("⚠️ لم يتم العثور على النموذج في مجلد assets: ${e.localizedMessage}")
-        }
-
+        // 2. الانتقال مباشرة للتحميل من الإنترنت (تم حذف محاولة النسخ من assets)
         appendLog("📥 بدء تحميل النموذج من الإنترنت (قد يستغرق عدة دقائق)...")
         updateProgress(5)
 
+        // 3. قراءة ملف index.json للحصول على رابط التحميل
         val indexJson = try {
             assets.open("index.json").bufferedReader().use { it.readText() }
         } catch (e: Exception) {
@@ -448,8 +439,8 @@ class MainActivity : AppCompatActivity() {
             appendLog("⚠️ الحجم المتوقع غير محدد، سيتم التحقق من سلامة الملف لاحقاً.")
         }
 
+        // 4. تنفيذ التحميل
         val downloader = FileDownloader(this)
-
         val success = withContext(Dispatchers.IO) {
             downloader.downloadModelWithRetry(
                 url = url,
@@ -460,6 +451,7 @@ class MainActivity : AppCompatActivity() {
             )
         }
 
+        // 5. التحقق من نجاح التحميل
         if (success && modelFile.exists() && modelFile.length() >= minSize) {
             appendLog("✅ تم تحميل النموذج بنجاح (${modelFile.length() / (1024 * 1024)} ميجابايت).")
             updateProgress(100)
