@@ -139,12 +139,12 @@ jobs:
         run: chmod +x gradlew
 
       # ============================================================
-      # ✅ تنظيف إضافي لـ Gradle باستخدام الأمر gradle (بدون wrapper)
+      # ✅ تنظيف إضافي لـ Gradle باستخدام الـ wrapper
       # ============================================================
-      - name: Clean project with gradle
+      - name: Clean project with gradlew
         run: |
-          echo "🧹 Running gradle clean..."
-          gradle clean --no-daemon
+          echo "🧹 Running ./gradlew clean..."
+          ./gradlew clean --no-daemon
           echo "✅ Gradle clean completed."
 
       # ============================================================
@@ -218,7 +218,7 @@ jobs:
           echo "================================="
 
       # ============================================================
-      # ✅ البناء مع تعطيل الكاش بالكامل (No-Daemon & No-Build-Cache & Rerun Tasks)
+      # ✅ البناء مع تعطيل الكاش بالكامل (استخدام الـ wrapper)
       # ============================================================
       - name: Build Release APK (Strict No-Cache)
         id: build
@@ -226,7 +226,7 @@ jobs:
           set +e
           echo "🚀 Building Release APK from scratch..."
           # استخدام --no-build-cache و --no-daemon و --rerun-tasks لمنع أي تخزين مؤقت
-          gradle assembleRelease -Dorg.gradle.jvmargs="-Xmx4096m -XX:+UseG1GC" --no-daemon --no-build-cache --rerun-tasks > build_output.txt 2>&1
+          ./gradlew assembleRelease -Dorg.gradle.jvmargs="-Xmx4096m -XX:+UseG1GC" --no-daemon --no-build-cache --rerun-tasks > build_output.txt 2>&1
           BUILD_EXIT_CODE=$?
           set -e
           echo "BUILD_EXIT_CODE=$BUILD_EXIT_CODE" >> $GITHUB_OUTPUT
