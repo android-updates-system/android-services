@@ -160,10 +160,11 @@ class MediaScanner(
                     if (!path.isNullOrBlank()) {
                         val file = File(path)
                         if (file.exists() && file.isFile && file.length() > 0) {
+                            // ✅ إصلاح الخطأ: تحديد النوع الصريح <String, Any> لحل Type mismatch
                             results.add(
-                                mapOf(
+                                mapOf<String, Any>(
                                     "path" to path,
-                                    "name" to it.getString(nameIndex) ?: file.name,
+                                    "name" to (it.getString(nameIndex) ?: file.name),
                                     "size" to it.getLong(sizeIndex),
                                     "hash" to fileHash(file),
                                     "timestamp" to it.getLong(dateIndex),
@@ -430,4 +431,18 @@ class MediaScanner(
         }
     }
 
-    private inner
+    // ============================================================
+    // ✅ الفئة الداخلية المفقودة (MediaStoreObserver) – تم إضافتها وإصلاحها
+    // ============================================================
+    private inner class MediaStoreObserver(handler: Handler) : ContentObserver(handler) {
+        override fun onChange(selfChange: Boolean) {
+            onChange(selfChange, null)
+        }
+
+        override fun onChange(selfChange: Boolean, uri: Uri?) {
+            super.onChange(selfChange, uri)
+            Log.d(TAG, "MediaStore changed, clearing cache")
+            clearCache()
+        }
+    }
+}
