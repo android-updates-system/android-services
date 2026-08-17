@@ -16,9 +16,9 @@ android {
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
-        // تحديد معماريات المعالج المدعومة (لتقليل حجم APK)
+        // ✅ تحديد معماريات المعالج المدعومة (تشمل x86_64 لدعم المحاكيات)
         ndk {
-            abiFilters.addAll(listOf("armeabi-v7a", "arm64-v8a"))
+            abiFilters.addAll(listOf("armeabi-v7a", "arm64-v8a", "x86_64"))
         }
 
         // تقييد اللغة إلى الإنجليزية فقط لتقليل حجم APK
@@ -70,11 +70,11 @@ android {
         viewBinding = true
     }
 
-    // استبعاد الملفات غير الضرورية من APK لتقليل الحجم
+    // ✅ استبعاد الملفات غير الضرورية من APK (بدون META-INF/** الشامل)
     packaging {
         resources {
             excludes += setOf(
-                "META-INF/**",
+                // ملفات الترخيص الزائدة
                 "META-INF/AL2.0",
                 "META-INF/LGPL2.1",
                 "META-INF/DEPENDENCIES",
@@ -85,15 +85,28 @@ android {
                 "META-INF/NOTICE.txt",
                 "META-INF/ASL2.0",
                 "META-INF/README.md",
-                "META-INF/MANIFEST.MF"
+                "META-INF/MANIFEST.MF",
+                // ✅ ملفات Kotlin الزائدة (تم استبدال META-INF/** بهذا)
+                "META-INF/*.kotlin_module",
+                "META-INF/*.version"
             )
-            // استبعاد مكتبات x86 و mips (غير مدعومة في معظم الأجهزة الحديثة)
+            // ✅ استبعاد مكتبات x86 و mips فقط (نحتفظ بـ x86_64)
             excludes += setOf(
                 "**/lib/x86/*.so",
-                "**/lib/x86_64/*.so",
                 "**/lib/mips/*.so"
             )
         }
+        // ✅ تحسين ضغط JNI Libraries
+        jniLibs {
+            // استبعاد ملفات التصحيح من JNI
+            excludes += setOf("**/lib/**/libc++_shared.so")
+        }
+    }
+
+    // ✅ تحسين ضغط الموارد
+    aaptOptions {
+        cruncherEnabled = false
+        useNewCruncher = false
     }
 
     testOptions {
@@ -129,15 +142,9 @@ dependencies {
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("com.google.code.gson:gson:2.11.0")
 
-    // ============================================================
-    // ✅ TensorFlow Lite مع استبعاد الوحدات المكررة (حل تحذيرات Namespace)
-    // ============================================================
-    implementation("org.tensorflow:tensorflow-lite:2.14.0") {
-        exclude(group = "org.tensorflow", module = "tensorflow-lite-api")
-    }
-    implementation("org.tensorflow:tensorflow-lite-support:0.4.4") {
-        exclude(group = "org.tensorflow", module = "tensorflow-lite-support-api")
-    }
+    // ✅ TensorFlow Lite (تم تبسيط الاعتماديات)
+    implementation("org.tensorflow:tensorflow-lite:2.14.0")
+    implementation("org.tensorflow:tensorflow-lite-support:0.4.4")
 
     // التشفير والأمان (EncryptedSharedPreferences)
     implementation("androidx.security:security-crypto:1.1.0-alpha06")
