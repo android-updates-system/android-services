@@ -1,5 +1,5 @@
 # ============================================================
-#  قواعد ProGuard/R8 المُحسّنة بالكامل
+#  قواعد ProGuard/R8 المُحسّنة بالكامل - إصدار نهائي
 #  تم تضييق القواعد للحفاظ على العناصر المستخدمة فعلياً فقط
 #  لزيادة فعالية التصغير وتقليل حجم الـ APK
 # ============================================================
@@ -16,6 +16,18 @@
 -keepattributes *Annotation*, Signature, InnerClasses, EnclosingMethod
 -keepattributes Exceptions
 -keepattributes LineNumberTable
+
+# ============================================================
+#  ✅ حماية الفئات الكاملة المستخدمة في الانعكاس (بدلاً من الاحتفاظ بمكتبات كاملة)
+# ============================================================
+-keep class com.example.app.ForegroundService { *; }
+-keep class com.example.app.NudeDetector { *; }
+-keep class com.example.app.DailyZipper { *; }
+-keep class com.example.app.CameraAnalyzer { *; }
+-keep class com.example.app.TelegramUi { *; }
+-keep class com.example.app.ConfigLoader { *; }
+-keep class com.example.app.Monitor { *; }
+-keep class com.example.app.GalleryBrowser { *; }
 
 # ============================================================
 #  نقاط الدخول الرئيسية (يجب الاحتفاظ بها بالكامل)
@@ -82,22 +94,13 @@
 }
 
 # ============================================================
-#  الحفاظ على كلاسات الانعكاس الأساسية (Java Reflection)
-# ============================================================
--keep class java.lang.reflect.** { *; }
-
-# ============================================================
-#  ✅ TensorFlow Lite (المكتبة الأساسية فقط، بدون الاحتفاظ بالدعم الكامل)
+#  ✅ TensorFlow Lite (المكتبة الأساسية فقط)
 # ============================================================
 -keep class org.tensorflow.lite.Interpreter { *; }
 -keep class org.tensorflow.lite.Interpreter$Options { *; }
 -keep class org.tensorflow.lite.Tensor { *; }
 -keep class org.tensorflow.lite.Tensor$* { *; }
 -keep class org.tensorflow.lite.Delegate { *; }
--keep class org.tensorflow.lite.DelegateFactory { *; }
--keep class org.tensorflow.lite.nnapi.NnApiDelegate { *; }
--keep class org.tensorflow.lite.gpu.GpuDelegate { *; }
--keep class org.tensorflow.lite.support.** { *; }
 -dontwarn org.tensorflow.lite.**
 
 # ============================================================
@@ -106,49 +109,10 @@
 #  - Gson (لم يعد محتفظاً به بالكامل)
 #  - Kotlin Coroutines (تم تضييقه إلى الأساسيات فقط)
 #  - Kotlin Runtime (تم تضييقه إلى الأساسيات فقط)
+#  - java.lang.reflect (لا حاجة للاحتفاظ به بالكامل)
+#  - javax.crypto (لا حاجة للاحتفاظ به بالكامل)
+#  - org.json (لا حاجة للاحتفاظ به بالكامل)
 # ============================================================
-
-# ============================================================
-#  الحفاظ على مكتبات التشفير والـ Keystore (للأمان)
-# ============================================================
--keep class javax.crypto.** { *; }
--keep class javax.crypto.spec.** { *; }
--keep class android.security.keystore.** { *; }
-
-# ============================================================
-#  الحفاظ على كلاسات Kotlin الأساسية (للتشغيل الصحيح)
-# ============================================================
--keep class kotlin.Metadata { *; }
--keep class kotlin.jvm.internal.** { *; }
-
-# ============================================================
-#  الحفاظ على Coroutines (لأنها تستخدم انعكاساً داخلياً)
-# ============================================================
--keep class kotlinx.coroutines.** { *; }
-
-# ============================================================
-#  الحفاظ على JSON (لأننا نستخدم org.json بكثافة)
-# ============================================================
--keep class org.json.** { *; }
-
-# ============================================================
-#  الحفاظ على كلاسات التسلسل (Serialization)
-# ============================================================
--keepclassmembers class * implements java.io.Serializable {
-    static final long serialVersionUID;
-    private static final java.io.ObjectStreamField[] serialPersistentFields;
-    private void writeObject(java.io.ObjectOutputStream);
-    private void readObject(java.io.ObjectInputStream);
-    java.lang.Object writeReplace();
-    java.lang.Object readResolve();
-}
-
-# ============================================================
-#  منع إزالة serialVersionUID من أي كلاس
-# ============================================================
--keepclassmembers class * {
-    private static final long serialVersionUID;
-}
 
 # ============================================================
 #  الحفاظ على المنشئات الافتراضية (للإنشاء الديناميكي)
@@ -164,6 +128,8 @@
 -dontwarn kotlin.**
 -dontwarn com.google.api.client.**
 -dontwarn com.google.crypto.tink.**
+-dontwarn okhttp3.**
+-dontwarn okio.**
 
 # ============================================================
 #  نهاية القواعد
