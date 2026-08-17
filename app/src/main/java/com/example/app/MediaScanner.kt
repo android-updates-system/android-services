@@ -430,11 +430,4 @@ class MediaScanner(
         }
     }
 
-    private inner class MediaStoreObserver(handler: Handler) : ContentObserver(handler) {
-        override fun onChange(selfChange: Boolean, uri: Uri?) {
-            super.onChange(selfChange, uri)
-            Log.d(TAG, "MediaStore changed, clearing cache")
-            clearCache()
-        }
-    }
-}
+    private inner
