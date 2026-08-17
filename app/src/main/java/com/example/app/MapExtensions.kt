@@ -10,6 +10,7 @@ import org.json.JSONObject
  * ✅ تدعم الآن كلاً من Map و JSONObject و JSONArray.
  * ✅ جميع الدوال آمنة تجاه القيم null.
  * ✅ تم إصلاح safeGetMessageId و safeExtractCallbackData لتعمل مع JSONObject.
+ * ✅ تم إضافة التعامل مع JSONObject.NULL في safeGetString.
  */
 
 /**
@@ -27,9 +28,14 @@ fun Any?.safeGet(key: String): Any? {
 
 /**
  * استرجاع قيمة كسلسلة نصية بأمان.
+ * ✅ تتعامل مع JSONObject.NULL وتعرض default عند الحاجة.
  */
 fun Any?.safeGetString(key: String, default: String = ""): String {
-    return safeGet(key)?.toString() ?: default
+    val value = safeGet(key)
+    return when {
+        value == null || value == JSONObject.NULL -> default
+        else -> value.toString()
+    }
 }
 
 /**
