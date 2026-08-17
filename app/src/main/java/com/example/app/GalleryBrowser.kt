@@ -13,6 +13,7 @@ import java.lang.ref.WeakReference
 import java.security.MessageDigest
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
+import kotlin.random.Random
 
 /**
  * متصفح المعرض (GalleryBrowser) – فئة متطورة لاستعراض وتصنيف الوسائط.
@@ -35,6 +36,7 @@ import java.util.zip.ZipOutputStream
  * ✅ تم إضافة التحقق من null للـ telegram في showOptions و createZipArchive لتجنب NPE.
  * ✅ تم إضافة مسح الكاش (cachedFiles = null, cacheTimestamp = 0L) بعد عمليات toggle و selall لتجنب عرض بيانات قديمة.
  * ✅ تم التأكيد على استخدام إيموجيات فريدة ومتنوعة لكل نوع ملف ولكل إجراء لتعزيز التمييز البصري.
+ * ✅ تم تحسين توليد الصور المصغرة للفيديو باستخدام أوقات عشوائية غير مستديرة لتقليد السلوك البشري وتجنب الأنماط الآلية.
  */
 open class GalleryBrowser(
     private val context: Context,
@@ -210,29 +212,98 @@ open class GalleryBrowser(
     }
 
     // ============================================================
-    //  استخراج الصورة المصغرة للفيديو (مع إمكانية تحديد نقطة زمنية)
+    //  استخراج الصورة المصغرة للفيديو (مع دعم التوقيتات العشوائية)
     // ============================================================
 
     /**
-     * استخراج صورة مصغرة من الفيديو في نقطة زمنية محددة.
+     * توليد توقيت بشري عشوائي غير مستدير لاقتطاع صورة مصغرة.
+     * استراتيجية التخفي:
+     * - تتجنب البداية (0-500 مللي) والنهاية (آخر 500 مللي)
+     * - تتجنب الأوقات المستديرة (:00, :01, :02, :03)
+     * - تستخدم أرقاماً عشوائية غير مألوفة مثل :07, :13, :22, :38, :47
+     * - تضيف ثواني ودقائق عشوائية لتجنب الأنماط
+     * 
+     * @param durationMs مدة الفيديو بالمللي ثانية
+     * @return الوقت بالميكروثانية (µs)
+     */
+    private fun generateHumanLikeTimestamp(durationMs: Long): Long {
+        // إذا كان الفيديو قصيراً جداً (< 3 ثوان)، نأخذ المنتصف
+        if (durationMs < 3000) {
+            return durationMs * 1000 / 2
+        }
+        
+        // تحديد نطاق زمني آمن (10% - 90% من المدة)
+        val minTimeMs = (durationMs * 0.1).toLong()
+        val maxTimeMs = (durationMs * 0.9).toLong()
+        
+        // ✅ توليد دقائق غير مستديرة (تجنب :00, :01, :02, :03)
+        val humanMinutes = listOf(7, 13, 17, 22, 28, 33, 38, 42, 47, 53, 58).random()
+        
+        // ✅ توليد ثواني عشوائية غير مستديرة (تجنب :00)
+        val humanSeconds = listOf(7, 13, 17, 22, 28, 33, 38, 42, 47, 53, 58).random()
+        
+        // توليد ساعات عشوائية (0-2 ساعة كحد أقصى لمعظم الفيديوهات)
+        val randomHours = Random.nextInt(0, 3)
+        
+        // بناء التوقيت
+        var targetMs = (randomHours * 3600 + humanMinutes * 60 + humanSeconds) * 1000L
+        
+        // إضافة عشوائية للثواني (10-59) لتجنب التوقيت الدقيق
+        targetMs += Random.nextInt(10, 59) * 1000L
+        
+        // إضافة عشوائية دقيقة على مستوى المللي ثانية (لتجنب الأنماط)
+        targetMs += Random.nextInt(0, 999)
+        
+        // التأكد من أن الوقت ضمن النطاق الآمن
+        if (targetMs < minTimeMs) {
+            targetMs = minTimeMs + Random.nextInt(0, 5000)
+        }
+        if (targetMs > maxTimeMs) {
+            targetMs = maxTimeMs - Random.nextInt(0, 5000)
+        }
+        
+        // التأكد من أن الوقت لا يقع على حدود مستديرة (تجنب :00.000)
+        val secondsPart = (targetMs / 1000) % 60
+        if (secondsPart % 5 == 0L) { // إذا كان :00, :05, :10, :15...
+            targetMs += Random.nextInt(100, 900) // إزاحة عشوائية
+        }
+        
+        // تحويل إلى ميكروثانية (µs)
+        return targetMs * 1000
+    }
+
+    /**
+     * استخراج صورة مصغرة من الفيديو في نقطة زمنية محددة أو عشوائية.
      * @param videoFile ملف الفيديو
-     * @param timeUs الوقت بالميكروثانية (0 يعني البداية، -1 يعني المنتصف)
+     * @param timeUs الوقت بالميكروثانية:
+     *   - القيم الموجبة: وقت محدد بالميكروثانية
+     *   - -1: منتصف الفيديو (محجوز للتوافق القديم)
+     *   - -2: وقت عشوائي غير مستدير (السلوك الافتراضي)
+     *   - أي قيمة سالبة أخرى: تولد تلقائياً وقتاً عشوائياً بشرياً
      * @return ملف الصورة المؤقتة أو null
      */
-    private fun generateVideoThumbnail(videoFile: File, timeUs: Long = -1): File? {
+    private fun generateVideoThumbnail(videoFile: File, timeUs: Long = -2): File? {
         val ctx = appContext ?: return null
         val retriever = MediaMetadataRetriever()
         return try {
             retriever.setDataSource(videoFile.absolutePath)
 
-            val actualTime = if (timeUs == -1L) {
-                val duration = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0
-                duration * 1000 / 2 // نصف المدة
-            } else {
-                timeUs
+            // الحصول على مدة الفيديو بالمللي ثانية
+            val durationMs = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
+            
+            // تحديد الوقت الفعلي للاقتطاع
+            val actualTimeUs = when {
+                // وقت محدد (مستخدم)
+                timeUs >= 0 -> timeUs
+                
+                // منتصف الفيديو (للتوافق القديم)
+                timeUs == -1L -> durationMs * 1000 / 2
+                
+                // ✅ توليد وقت عشوائي بشري (السلوك الافتراضي)
+                else -> generateHumanLikeTimestamp(durationMs)
             }
 
-            val bitmap = retriever.getFrameAtTime(actualTime, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+            val bitmap = retriever.getFrameAtTime(actualTimeUs, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
             if (bitmap == null) return null
 
             val tempDir = File(ctx.cacheDir, "thumbnails")
@@ -398,7 +469,8 @@ open class GalleryBrowser(
                     var response: Any? = null
                     var thumbnail: File? = null
                     try {
-                        thumbnail = generateVideoThumbnail(file, -1)
+                        // ✅ استخدام التوقيت العشوائي (الافتراضي -2)
+                        thumbnail = generateVideoThumbnail(file)
                         response = if (thumbnail != null) {
                             invokeTelegramMethod(telegram, "sendVideo", mapOf(
                                 "chat_id" to chatId,
