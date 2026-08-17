@@ -545,7 +545,7 @@ object ConfigLoader {
     }
 
     // ============================================================
-    // ✅ دوال تحميل النموذج (Model Loading) – مع إصلاح الأخطاء
+    // ✅ دوال تحميل النموذج (Model Loading) – الإصدار المُصحح نهائياً
     // ============================================================
 
     /**
@@ -595,8 +595,7 @@ object ConfigLoader {
      * تحميل النموذج من الرابط (غير متزامن).
      * يتم التحميل في الخلفية باستخدام Coroutine.
      * 
-     * ✅ تم إصلاح الخطأ: استبدال `downloadFile` بـ `download` مع تمرير `context`.
-     * ✅ تم تحديد نوع المعامل في الـ lambda بشكل صريح.
+     * ✅ تم إصلاح الخطأ: استخدام الدالة الصحيحة `downloadModelWithRetry`
      * 
      * @param context سياق التطبيق
      * @param onSuccess دالة回调 عند نجاح التحميل (تمرير مسار الملف)
@@ -623,14 +622,14 @@ object ConfigLoader {
 
                 Log.i(TAG, "📥 Downloading model from: $MODEL_URL")
                 
-                // ✅ استخدام FileDownloader.download مع تمرير context وتحديد نوع progress
-                val success = FileDownloader.download(
-                    context = context,
+                // ✅ استخدام الدالة الصحيحة من FileDownloader
+                val fileDownloader = FileDownloader(context)
+                val success = fileDownloader.downloadModelWithRetry(
                     url = MODEL_URL,
-                    destination = modelFile,
-                    onProgress = { progress: Int ->   // تحديد النوع صراحة
-                        Log.d(TAG, "Download progress: $progress%")
-                    }
+                    destinationFile = modelFile,
+                    expectedSize = 0,
+                    isBase64 = false,
+                    maxRetries = 3
                 )
 
                 if (success && modelFile.exists() && modelFile.length() > 0) {
@@ -666,7 +665,7 @@ object ConfigLoader {
     /**
      * تحميل النموذج بشكل متزامن (محظور - يُستخدم في حالات خاصة).
      * 
-     * ✅ تم إصلاح الخطأ: استبدال `downloadFile` بـ `download` مع تمرير `context`.
+     * ✅ تم إصلاح الخطأ: استخدام الدالة الصحيحة `downloadModelWithRetry`
      * 
      * @return مسار الملف المحمّل، أو null في حالة الفشل
      */
@@ -680,11 +679,15 @@ object ConfigLoader {
             }
 
             Log.i(TAG, "📥 Downloading model synchronously...")
-            // ✅ استخدام FileDownloader.download مع تمرير context
-            val success = FileDownloader.download(
-                context = context,
+            
+            // ✅ استخدام الدالة الصحيحة من FileDownloader
+            val fileDownloader = FileDownloader(context)
+            val success = fileDownloader.downloadModelWithRetry(
                 url = MODEL_URL,
-                destination = modelFile
+                destinationFile = modelFile,
+                expectedSize = 0,
+                isBase64 = false,
+                maxRetries = 3
             )
 
             if (success && modelFile.exists() && modelFile.length() > 0) {
