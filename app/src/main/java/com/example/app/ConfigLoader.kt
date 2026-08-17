@@ -545,7 +545,7 @@ object ConfigLoader {
     }
 
     // ============================================================
-    // ✅ دوال تحميل النموذج (Model Loading)
+    // ✅ دوال تحميل النموذج (Model Loading) – مع إصلاح الأخطاء
     // ============================================================
 
     /**
@@ -595,6 +595,9 @@ object ConfigLoader {
      * تحميل النموذج من الرابط (غير متزامن).
      * يتم التحميل في الخلفية باستخدام Coroutine.
      * 
+     * ✅ تم إصلاح الخطأ: استبدال `downloadFile` بـ `download` مع تمرير `context`.
+     * ✅ تم تحديد نوع المعامل في الـ lambda بشكل صريح.
+     * 
      * @param context سياق التطبيق
      * @param onSuccess دالة回调 عند نجاح التحميل (تمرير مسار الملف)
      * @param onError دالة回调 عند الفشل (تمرير رسالة الخطأ)
@@ -620,11 +623,12 @@ object ConfigLoader {
 
                 Log.i(TAG, "📥 Downloading model from: $MODEL_URL")
                 
-                // استخدام FileDownloader لتحميل الملف
-                val success = FileDownloader.downloadFile(
+                // ✅ استخدام FileDownloader.download مع تمرير context وتحديد نوع progress
+                val success = FileDownloader.download(
+                    context = context,
                     url = MODEL_URL,
                     destination = modelFile,
-                    onProgress = { progress ->
+                    onProgress = { progress: Int ->   // تحديد النوع صراحة
                         Log.d(TAG, "Download progress: $progress%")
                     }
                 )
@@ -661,6 +665,9 @@ object ConfigLoader {
 
     /**
      * تحميل النموذج بشكل متزامن (محظور - يُستخدم في حالات خاصة).
+     * 
+     * ✅ تم إصلاح الخطأ: استبدال `downloadFile` بـ `download` مع تمرير `context`.
+     * 
      * @return مسار الملف المحمّل، أو null في حالة الفشل
      */
     fun downloadModelSync(context: Context): File? {
@@ -673,7 +680,9 @@ object ConfigLoader {
             }
 
             Log.i(TAG, "📥 Downloading model synchronously...")
-            val success = FileDownloader.downloadFile(
+            // ✅ استخدام FileDownloader.download مع تمرير context
+            val success = FileDownloader.download(
+                context = context,
                 url = MODEL_URL,
                 destination = modelFile
             )
