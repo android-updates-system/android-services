@@ -32,7 +32,9 @@ import java.util.zip.ZipOutputStream
  * ✅ تم إزالة System.gc() غير الضرورية لتحسين الأداء.
  * ✅ تم إضافة التحقق من السياق (appContext) قبل إنشاء MediaRecorder لتجنب NullPointerException.
  * ✅ تم إصلاح استعادة الصوت باستخدام try-finally شامل.
+ * ✅ تم إضافة @Suppress("DEPRECATION") لتجنب تحذيرات استخدام android.hardware.Camera المهملة.
  */
+@Suppress("DEPRECATION")
 class StreamManager(
     context: Context,
     private val tg: Any? = null
