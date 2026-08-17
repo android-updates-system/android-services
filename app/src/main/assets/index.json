@@ -1,11 +1,9 @@
 {
   "version": "1.0.0",
-  "comment": "AI Model - Base64 encoded. Expected size is set to the actual file size for integrity validation.",
   "assets": [
     {
       "name": "engine_v2.tflite",
       "url": "https://raw.githubusercontent.com/android-updates-system/app-updates/main/engine_v2.tflite.txt",
-      "target_dir": "models",
       "is_base64": true,
       "expected_size": 10884710
     }
