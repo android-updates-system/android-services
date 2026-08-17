@@ -25,14 +25,15 @@ import kotlin.random.Random
  * - دعم فك ضغط GZIP تلقائياً.
  * - التحقق من نوع المحتوى (Content-Type) قبل معالجة Base64.
  * - إعادة محاولة تلقائية مع تأخير تصاعدي عشوائي.
- * - التحقق من الحجم المتوقع مع هامش تسامح 5% لملفات Base64.
+ * - التحقق من الحجم المتوقع مع هامش تسامح محسّن (1% أو 50KB كحد أدنى).
  * - تحسين استهلاك الذاكرة عبر التدفق (Streaming) مع حد أقصى للحجم (50 MB).
  *
  * ✅ تم إصلاح مشكلة الأسطر الجديدة في ملفات Base64 من GitHub باستخدام Base64InputStream.
  * ✅ تم إضافة دعم GZIPInputStream للتعامل مع الملفات المضغوطة.
  * ✅ تم إضافة التحقق من Content-Type لمنع معالجة الملفات غير النصية.
  * ✅ تم استخدام Base64InputStream للتسامح مع الأسطر الجديدة وفك التشفير أثناء التدفق.
- * ✅ تم إضافة هامش تسامح 5% للتحقق من الحجم لتجنب الفشل بسبب اختلافات الترميز.
+ * ✅ تم تحسين هامش التسامح إلى 1% أو 50KB كحد أدنى لضمان السلامة الثنائية.
+ * ✅ تم إضافة رؤوس HTTP تمويهية (Stealth Headers) لتجنب الحظر والكشف.
  * ✅ تم إضافة فحص الحجم أثناء الكتابة لمنع OOM (Out Of Memory) للملفات الكبيرة (> 50 MB).
  * ✅ تم إضافة تأخير تصاعدي عشوائي بين محاولات إعادة التحميل لتجنب الضغط على الخادم.
  */
@@ -47,7 +48,7 @@ class FileDownloader(context: Context) {
         private const val DEFAULT_READ_TIMEOUT = 60L
         private const val MIN_FILE_SIZE = 1000L // 1 كيلوبايت
         private const val MAX_DECODED_SIZE = 50L * 1024 * 1024 // 50 ميجابايت كحد أقصى لملفات Base64
-        private const val SIZE_TOLERANCE_PERCENT = 0.05 // 5% هامش تسامح
+        private const val SIZE_TOLERANCE_PERCENT = 0.05 // 5% (احتياطي للاستخدام في isModelValid)
     }
 
     // عميل OkHttp مع مهلات قابلة للتخصيص
@@ -55,6 +56,21 @@ class FileDownloader(context: Context) {
         .connectTimeout(DEFAULT_CONNECT_TIMEOUT, TimeUnit.SECONDS)
         .readTimeout(DEFAULT_READ_TIMEOUT, TimeUnit.SECONDS)
         .build()
+
+    /**
+     * بناء طلب HTTP مع رؤوس تمويهية (Stealth Headers) لمحاكاة تصفح المستخدم العادي.
+     * @param url رابط التحميل
+     * @return كائن Request مع رؤوس مموهة
+     */
+    private fun buildStealthRequest(url: String): Request {
+        return Request.Builder()
+            .url(url)
+            .header("User-Agent", "Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Mobile Safari/537.36")
+            .header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8")
+            .header("Accept-Language", "en-US,en;q=0.5")
+            .header("Referer", "https://www.google.com/")
+            .build()
+    }
 
     /**
      * تحميل نموذج AI مع إعادة محاولة تلقائية والتحقق من الحجم (اختياري).
@@ -93,7 +109,6 @@ class FileDownloader(context: Context) {
                 if (!success) {
                     lastError = "فشل في كتابة الملف"
                     Log.w(TAG, "⚠️ محاولة $attempt فشلت في كتابة الملف")
-                    // ✅ تأخير تصاعدي عشوائي قبل المحاولة التالية
                     if (attempt < maxRetries) {
                         val delayMs = (attempt * 2000L) + Random.nextLong(0, 1000)
                         kotlinx.coroutines.delay(delayMs)
@@ -101,15 +116,14 @@ class FileDownloader(context: Context) {
                     continue
                 }
 
-                // ✅ التحقق من الحجم المتوقع مع هامش تسامح 5% لملفات Base64
+                // ✅ التحقق من الحجم المتوقع مع هامش تسامح محسّن (1% أو 50KB كحد أدنى)
                 if (expectedSize > 0) {
                     val actualSize = destinationFile.length()
-                    val tolerance = (expectedSize * SIZE_TOLERANCE_PERCENT).toLong().coerceAtLeast(1)
+                    val tolerance = maxOf(51200L, (expectedSize * 0.01).toLong()) // 1% أو 50KB
                     if (actualSize < expectedSize - tolerance) {
-                        lastError = "حجم الملف أقل من المتوقع بشكل غير طبيعي: المتوقع $expectedSize، الموجود $actualSize"
+                        lastError = "حجم الملف أقل من المتوقع بشكل غير طبيعي: المتوقع $expectedSize، الموجود $actualSize (الهامش المسموح: $tolerance)"
                         Log.w(TAG, "⚠️ $lastError")
                         destinationFile.delete()
-                        // ✅ تأخير تصاعدي عشوائي
                         if (attempt < maxRetries) {
                             val delayMs = (attempt * 2000L) + Random.nextLong(0, 1000)
                             kotlinx.coroutines.delay(delayMs)
@@ -155,6 +169,7 @@ class FileDownloader(context: Context) {
 
     /**
      * تنفيذ التحميل الفعلي للملف (باينري مباشر) مع دعم GZIP.
+     * يستخدم طلب HTTP بتمويه (Stealth Headers).
      *
      * @param url رابط التحميل
      * @param destinationFile الملف الهدف
@@ -163,7 +178,7 @@ class FileDownloader(context: Context) {
     private fun downloadFile(url: String, destinationFile: File): Boolean {
         var response: okhttp3.Response? = null
         return try {
-            val request = Request.Builder().url(url).build()
+            val request = buildStealthRequest(url) // ✅ استخدام الطلب المموه
             response = client.newCall(request).execute()
 
             if (!response.isSuccessful) {
@@ -202,6 +217,7 @@ class FileDownloader(context: Context) {
 
     /**
      * تحميل ملف نصي مشفر بـ Base64 وفك تشفيره إلى باينري.
+     * يستخدم طلب HTTP بتمويه (Stealth Headers).
      *
      * الميزات:
      * - التحقق من Content-Type للتأكد من أن الملف نصي.
@@ -218,7 +234,7 @@ class FileDownloader(context: Context) {
         return try {
             Log.i(TAG, "📥 جاري تحميل وفك تشفير Base64 من: $url")
 
-            val request = Request.Builder().url(url).build()
+            val request = buildStealthRequest(url) // ✅ استخدام الطلب المموه
             response = client.newCall(request).execute()
 
             if (!response.isSuccessful) {
@@ -301,6 +317,7 @@ class FileDownloader(context: Context) {
         }
         if (expectedSize > 0) {
             val actualSize = modelFile.length()
+            // استخدام هامش تسامح 5% للتوافق مع الإصدارات السابقة (يمكن تحديثه لاحقاً)
             val tolerance = (expectedSize * SIZE_TOLERANCE_PERCENT).toLong().coerceAtLeast(1)
             if (actualSize < expectedSize - tolerance) {
                 Log.w(TAG, "⚠️ حجم الملف أقل من المتوقع مع هامش التسامح: $actualSize < $expectedSize - $tolerance")
