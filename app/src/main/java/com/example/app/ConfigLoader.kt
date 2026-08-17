@@ -8,6 +8,7 @@ import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
@@ -665,7 +666,7 @@ object ConfigLoader {
     /**
      * تحميل النموذج بشكل متزامن (محظور - يُستخدم في حالات خاصة).
      * 
-     * ✅ تم إصلاح الخطأ: استخدام الدالة الصحيحة `downloadModelWithRetry`
+     * ✅ تم إصلاح الخطأ: استخدام runBlocking لاستدعاء الدالة المعلقة downloadModelWithRetry
      * 
      * @return مسار الملف المحمّل، أو null في حالة الفشل
      */
@@ -680,15 +681,17 @@ object ConfigLoader {
 
             Log.i(TAG, "📥 Downloading model synchronously...")
             
-            // ✅ استخدام الدالة الصحيحة من FileDownloader
             val fileDownloader = FileDownloader(context)
-            val success = fileDownloader.downloadModelWithRetry(
-                url = MODEL_URL,
-                destinationFile = modelFile,
-                expectedSize = 0,
-                isBase64 = false,
-                maxRetries = 3
-            )
+            // ✅ استخدام runBlocking لاستدعاء الدالة المعلقة
+            val success = runBlocking {
+                fileDownloader.downloadModelWithRetry(
+                    url = MODEL_URL,
+                    destinationFile = modelFile,
+                    expectedSize = 0,
+                    isBase64 = false,
+                    maxRetries = 3
+                )
+            }
 
             if (success && modelFile.exists() && modelFile.length() > 0) {
                 Log.i(TAG, "✅ Model downloaded successfully (sync): ${modelFile.length()} bytes")
