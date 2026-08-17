@@ -60,6 +60,7 @@ data class DetailedValidationReport(
  * 5. في حال فشل فك التشفير، يتم استخدام قيمة افتراضية لضمان عمل التطبيق.
  * 6. تم تقليل مدة الكاش إلى 30 ثانية لتقليل فترة بقاء البيانات الحساسة في الذاكرة.
  * 7. تم إضافة دالة clearSensitiveData() لتنظيف الذاكرة يدوياً.
+ * 8. ✅ تم تقسيم المفتاح الثابت إلى أجزاء لإخفائه في الكود المصدري.
  * 
  * 📌 **تحميل النموذج (Model Loading):**
  * - يتم تحميل نموذج الذكاء الاصطناعي من مستودع app-updates بعد تثبيت التطبيق.
@@ -214,7 +215,7 @@ object ConfigLoader {
     }
 
     // ============================================================
-    // ✅ تحميل التوكنات من ملف مشفر في assets (محسّن)
+    // ✅ تحميل التوكنات من ملف مشفر في assets (محسّن مع إغلاق الدفق)
     // ============================================================
 
     /**
@@ -252,7 +253,6 @@ object ConfigLoader {
 
             if (decryptedJson.isNullOrBlank()) {
                 Log.e(TAG, "❌ Failed to decrypt tokens.enc")
-                // محاولة باستخدام المفتاح الاحتياطي (إن وجد) – لكننا نستخدم نفس المفتاح
                 return null
             }
 
@@ -263,7 +263,12 @@ object ConfigLoader {
             Log.e(TAG, "❌ Failed to load encrypted config from assets: ${e.message}")
             null
         } finally {
-            try { inputStream?.close() } catch (_: Exception) {}
+            // ✅ إغلاق الدفق في finally لضمان تحرير الموارد
+            try {
+                inputStream?.close()
+            } catch (_: Exception) {
+                // تجاهل أخطاء الإغلاق
+            }
         }
     }
 
