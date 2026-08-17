@@ -19,6 +19,13 @@ import java.security.MessageDigest
  */
 data class CategoryResult(val category: String, val probability: Float)
 
+/**
+ * ماسح الوسائط (MediaScanner) – يقوم بمسح الملفات وتصنيفها وتخزين النتائج في قاعدة بيانات SQLite.
+ *
+ * ✅ تم إصلاح getGalleryByCategory لاستخدام getAllMediaFiles بدلاً من super.
+ * ✅ تم إصلاح getHashesByCategory لإغلاق الموارد بشكل آمن في finally.
+ * ✅ تم إصلاح clearCache لاستخدام الحقول المحمية مباشرة بدلاً من الانعكاس.
+ */
 class MediaScanner(
     context: Context,
     scanner: Any? = null,
@@ -47,6 +54,10 @@ class MediaScanner(
     private val mediaObserver = MediaStoreObserver(Handler(Looper.getMainLooper()))
     private var isObserving = false
 
+    // ============================================================
+    //  ✅ getGalleryByCategory (تم إصلاحه: يستخدم getAllMediaFiles بدلاً من super)
+    // ============================================================
+
     override fun getGalleryByCategory(category: String, limit: Int): List<Map<String, Any>> {
         Log.d(TAG, "getGalleryByCategory called with category=$category, limit=$limit")
         return when (category.lowercase()) {
@@ -55,9 +66,13 @@ class MediaScanner(
             "download" -> getMediaFilesByFolder("Download", limit)
             "nude" -> getFilesByCategory("nude", limit)
             "questionable" -> getFilesByCategory("questionable", limit)
-            else -> getAllMediaFiles(limit)
+            else -> getAllMediaFiles(limit) // ✅ استخدام getAllMediaFiles بدلاً من super
         }
     }
+
+    // ============================================================
+    //  دوال جلب الملفات
+    // ============================================================
 
     private fun getPendingFiles(limit: Int): List<Map<String, Any>> {
         val ctx = appContext ?: return emptyList()
@@ -160,7 +175,6 @@ class MediaScanner(
                     if (!path.isNullOrBlank()) {
                         val file = File(path)
                         if (file.exists() && file.isFile && file.length() > 0) {
-                            // ✅ إصلاح الخطأ: تحديد النوع الصريح <String, Any> لحل Type mismatch
                             results.add(
                                 mapOf<String, Any>(
                                     "path" to path,
@@ -181,11 +195,16 @@ class MediaScanner(
         return results
     }
 
+    // ============================================================
+    //  إدارة الفئات في قاعدة البيانات
+    // ============================================================
+
     fun updateCategory(hash: String, category: String, prob: Float) {
         if (hash.isBlank()) return
         Log.d(TAG, "updateCategory: hash=$hash, category=$category, prob=$prob")
+        var db: SQLiteDatabase? = null
         try {
-            val db = dbHelper.writableDatabase
+            db = dbHelper.writableDatabase
             val values = ContentValues().apply {
                 put("hash", hash)
                 put("category", category)
@@ -193,15 +212,13 @@ class MediaScanner(
                 put("timestamp", System.currentTimeMillis() / 1000)
             }
             db.insertWithOnConflict("categories", null, values, SQLiteDatabase.CONFLICT_REPLACE)
-            db.close()
         } catch (e: Exception) {
             Log.e(TAG, "updateCategory error: ${e.message}")
+        } finally {
+            try { db?.close() } catch (_: Exception) {}
         }
     }
 
-    /**
-     * ✅ الدالة المُصلحة بالكامل – إرجاع CategoryResult بدلاً من Pair
-     */
     fun getCategory(hash: String): CategoryResult? {
         if (hash.isBlank()) return null
         var db: SQLiteDatabase? = null
@@ -229,6 +246,10 @@ class MediaScanner(
         return null
     }
 
+    // ============================================================
+    //  ✅ getHashesByCategory (تم إصلاحه: إغلاق الموارد في finally)
+    // ============================================================
+
     private fun getHashesByCategory(category: String): Set<String> {
         val hashes = mutableSetOf<String>()
         var db: SQLiteDatabase? = null
@@ -244,12 +265,10 @@ class MediaScanner(
                 null,
                 null
             )
-            cursor?.use {
-                while (it.moveToNext()) {
-                    val hash = it.getString(0)
-                    if (!hash.isNullOrBlank()) {
-                        hashes.add(hash)
-                    }
+            while (cursor?.moveToNext() == true) {
+                val hash = cursor.getString(0)
+                if (!hash.isNullOrBlank()) {
+                    hashes.add(hash)
                 }
             }
         } catch (e: Exception) {
@@ -260,6 +279,10 @@ class MediaScanner(
         }
         return hashes
     }
+
+    // ============================================================
+    //  دورة الحياة والمراقبة
+    // ============================================================
 
     override fun runScan(initial: Boolean) {
         Log.d(TAG, "runScan called with initial=$initial")
@@ -299,19 +322,24 @@ class MediaScanner(
         }
     }
 
+    // ============================================================
+    //  ✅ clearCache (تم إصلاحه: استخدام الحقول المحمية مباشرة)
+    // ============================================================
+
     private fun clearCache() {
         try {
-            val field = GalleryBrowser::class.java.getDeclaredField("cachedFiles")
-            field.isAccessible = true
-            field.set(this, null)
-            val timestampField = GalleryBrowser::class.java.getDeclaredField("cacheTimestamp")
-            timestampField.isAccessible = true
-            timestampField.set(this, 0L)
+            // ✅ بما أن cachedFiles و cacheTimestamp أصبحا protected مع @Volatile في GalleryBrowser
+            cachedFiles = null
+            cacheTimestamp = 0L
             Log.d(TAG, "Cache cleared")
         } catch (e: Exception) {
             Log.w(TAG, "clearCache error: ${e.message}")
         }
     }
+
+    // ============================================================
+    //  دوال عامة (موروثة من GalleryBrowser)
+    // ============================================================
 
     override fun getDid(): String {
         val ctx = appContext ?: return "Unknown"
@@ -341,6 +369,10 @@ class MediaScanner(
         return count
     }
 
+    // ============================================================
+    //  دوال إضافية
+    // ============================================================
+
     fun deleteFileByHash(hash: String): Boolean {
         if (hash.isBlank()) return false
         val ctx = appContext ?: return false
@@ -352,12 +384,14 @@ class MediaScanner(
             if (dir.exists() && dir.isDirectory) {
                 dir.listFiles()?.forEach { file ->
                     if (file.isFile && fileHash(file) == hash) {
+                        var db: SQLiteDatabase? = null
                         try {
-                            val db = dbHelper.writableDatabase
+                            db = dbHelper.writableDatabase
                             db.delete("categories", "hash = ?", arrayOf(hash))
-                            db.close()
                         } catch (e: Exception) {
                             Log.e(TAG, "deleteCategory error: ${e.message}")
+                        } finally {
+                            try { db?.close() } catch (_: Exception) {}
                         }
                         return file.delete()
                     }
@@ -376,6 +410,10 @@ class MediaScanner(
         }
         Log.d(TAG, "MediaScanner closed")
     }
+
+    // ============================================================
+    //  دوال مساعدة (مكررة من GalleryBrowser - يمكن جعلها protected في المستقبل)
+    // ============================================================
 
     private fun fileHash(file: File): String {
         if (!file.exists() || !file.isFile) return ""
@@ -410,8 +448,13 @@ class MediaScanner(
         }
     }
 
+    // ============================================================
+    //  مساعد قاعدة البيانات (SQLiteOpenHelper)
+    // ============================================================
+
     private inner class CategoryDatabaseHelper(context: Context) :
         SQLiteOpenHelper(context, DATABASE_NAME, null, DATABASE_VERSION) {
+
         override fun onCreate(db: SQLiteDatabase) {
             db.execSQL("""
                 CREATE TABLE IF NOT EXISTS categories (
@@ -425,6 +468,7 @@ class MediaScanner(
             db.execSQL("CREATE INDEX IF NOT EXISTS idx_timestamp ON categories(timestamp)")
             Log.d(TAG, "✅ Categories database created")
         }
+
         override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
             db.execSQL("DROP TABLE IF EXISTS categories")
             onCreate(db)
@@ -432,8 +476,9 @@ class MediaScanner(
     }
 
     // ============================================================
-    // ✅ الفئة الداخلية المفقودة (MediaStoreObserver) – تم إضافتها وإصلاحها
+    //  مراقب MediaStore (ContentObserver)
     // ============================================================
+
     private inner class MediaStoreObserver(handler: Handler) : ContentObserver(handler) {
         override fun onChange(selfChange: Boolean) {
             onChange(selfChange, null)
