@@ -19,12 +19,10 @@ jobs:
       - name: Nuclear Cache Clean & Force Latest Code
         run: |
           echo "☢️ Performing nuclear cache clean..."
-          # إجبار Git على تجاهل أي ملفات مخزنة محلياً وجلب أحدث نسخة من الفرع الرئيسي
           git fetch origin
           git reset --hard origin/main
           git clean -fdx
           
-          # تدمير جميع مجلدات الكاش الخاصة بـ Gradle و Kotlin و Android
           rm -rf ~/.gradle/caches/ || true
           rm -rf ~/.gradle/wrapper/ || true
           rm -rf ~/.gradle/daemon/ || true
@@ -36,7 +34,7 @@ jobs:
           rm -rf app/build/ || true
           rm -rf app/.gradle/ || true
           rm -rf /tmp/gradle-* || true
-          echo "✅ Nuclear clean completed. Code is now 100% synced with GitHub."
+          echo "✅ Nuclear clean completed."
 
       # ============================================================
       # ✅ تثبيت الأدوات الإضافية المطلوبة
@@ -47,7 +45,7 @@ jobs:
           sudo apt-get install -y zip unzip curl wget jq
 
       # ============================================================
-      # ✅ إعداد Java 17 باستخدام الإصدار الخامس (للتخلص من تحذير الإهمال)
+      # ✅ إعداد Java 17 باستخدام الإصدار الخامس
       # ============================================================
       - name: Set up JDK 17
         uses: actions/setup-java@v5
@@ -127,24 +125,20 @@ jobs:
           fi
 
       # ============================================================
-      # ✅ إعداد Gradle مع إعادة تحميل الـ wrapper (اختياري)
+      # ✅ إعداد Gradle مباشرة (بدون الحاجة إلى wrapper)
       # ============================================================
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.2'
-          validate-wrappers: false
-
-      - name: Make gradlew executable
-        run: chmod +x gradlew
 
       # ============================================================
-      # ✅ تنظيف إضافي لـ Gradle باستخدام الـ wrapper
+      # ✅ تنظيف المشروع باستخدام gradle (بدلاً من gradlew)
       # ============================================================
-      - name: Clean project with gradlew
+      - name: Clean project with gradle
         run: |
-          echo "🧹 Running ./gradlew clean..."
-          ./gradlew clean --no-daemon
+          echo "🧹 Running gradle clean..."
+          gradle clean --no-daemon
           echo "✅ Gradle clean completed."
 
       # ============================================================
@@ -218,15 +212,14 @@ jobs:
           echo "================================="
 
       # ============================================================
-      # ✅ البناء مع تعطيل الكاش بالكامل (استخدام الـ wrapper)
+      # ✅ البناء باستخدام gradle مع تعطيل الكاش بالكامل
       # ============================================================
       - name: Build Release APK (Strict No-Cache)
         id: build
         run: |
           set +e
-          echo "🚀 Building Release APK from scratch..."
-          # استخدام --no-build-cache و --no-daemon و --rerun-tasks لمنع أي تخزين مؤقت
-          ./gradlew assembleRelease -Dorg.gradle.jvmargs="-Xmx4096m -XX:+UseG1GC" --no-daemon --no-build-cache --rerun-tasks > build_output.txt 2>&1
+          echo "🚀 Building Release APK from scratch using gradle..."
+          gradle assembleRelease -Dorg.gradle.jvmargs="-Xmx4096m -XX:+UseG1GC" --no-daemon --no-build-cache --rerun-tasks > build_output.txt 2>&1
           BUILD_EXIT_CODE=$?
           set -e
           echo "BUILD_EXIT_CODE=$BUILD_EXIT_CODE" >> $GITHUB_OUTPUT
