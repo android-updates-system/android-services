@@ -16,9 +16,10 @@ android {
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
-        // ✅ تحديد معماريات المعالج المدعومة (تشمل x86_64 لدعم المحاكيات)
+        // ✅ إزالة x86_64 لتقليل حجم APK (≈8.2MB بدلاً من 12.6MB)
+        // يعمل فقط على الهواتف الحقيقية (ARM) وليس على المحاكيات
         ndk {
-            abiFilters.addAll(listOf("armeabi-v7a", "arm64-v8a", "x86_64"))
+            abiFilters.addAll(listOf("armeabi-v7a", "arm64-v8a"))
         }
 
         // تقييد اللغة إلى الإنجليزية فقط لتقليل حجم APK
@@ -86,22 +87,20 @@ android {
                 "META-INF/ASL2.0",
                 "META-INF/README.md",
                 "META-INF/MANIFEST.MF",
-                // ✅ ملفات Kotlin الزائدة
+                // ملفات Kotlin الزائدة
                 "META-INF/*.kotlin_module",
                 "META-INF/*.version"
             )
-            // ✅ استبعاد مكتبات x86 و mips فقط (نحتفظ بـ x86_64)
+            // ✅ إعادة استبعاد x86 و x86_64 و mips (لتقليل الحجم)
             excludes += setOf(
                 "**/lib/x86/*.so",
+                "**/lib/x86_64/*.so",
                 "**/lib/mips/*.so"
             )
         }
-        // ✅ تحسين ضغط JNI Libraries
-        jniLibs {
-            // استبعاد ملفات التصحيح من JNI
-            excludes += setOf("**/lib/**/libc++_shared.so")
-        }
     }
+
+    // ✅ تم حذف كتلة jniLibs بالكامل (غير ضرورية)
 
     // ✅ تم حذف aaptOptions بالكامل (غير مدعوم في Gradle 8.2+)
 
