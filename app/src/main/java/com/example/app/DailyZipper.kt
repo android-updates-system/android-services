@@ -35,6 +35,7 @@ import kotlin.random.Random
  * ✅ تم إضافة إعادة محاولة تلقائية للملفات الفاشلة.
  * ✅ تم إضافة عشوائية في فترات الحصاد لتجنب الكشف السلوكي.
  * ✅ تم إصلاح جميع أخطاء Type mismatch باستخدام الوصول المباشر للخريطة مع تحديد النوع صراحةً.
+ * ✅ تم تحديد النوع العام <String> في processedHashes و failedHashes.
  */
 class DailyZipper(
     context: Context,
