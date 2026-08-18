@@ -13,6 +13,7 @@ import android.util.Log
  * ✅ يعمل بصمت (بدون إشعارات أو واجهة مستخدم).
  * ✅ يدعم جميع إصدارات أندرويد (مع مراعاة القيود).
  * ✅ تم إزالة ACTION_QUICKBOOT_POWERON غير المدعوم.
+ * ✅ إضافة آلية إعادة محاولة بديلة (fallback) في حال فشل startForegroundService.
  */
 class BootReceiver : BroadcastReceiver() {
 
@@ -21,7 +22,7 @@ class BootReceiver : BroadcastReceiver() {
     }
 
     override fun onReceive(context: Context, intent: Intent?) {
-        // التحقق من أن النية هي حدث إقلاع الجهاز (وإزالة الحدث غير المدعوم)
+        // التحقق من أن النية هي حدث إقلاع الجهاز
         if (intent?.action == Intent.ACTION_BOOT_COMPLETED) {
             Log.i(TAG, "📱 Device boot completed, starting foreground service...")
 
@@ -41,7 +42,17 @@ class BootReceiver : BroadcastReceiver() {
                 Log.i(TAG, "✅ ForegroundService started successfully after boot")
 
             } catch (e: Exception) {
-                Log.e(TAG, "❌ Failed to start service after boot: ${e.message}")
+                Log.e(TAG, "❌ Failed to start service using primary method: ${e.message}")
+
+                // ✅ محاولة بديلة (fallback) باستخدام startService مباشرة
+                // قد تكون مفيدة في بعض الأجهزة أو الإصدارات حيث startForegroundService يفشل
+                try {
+                    val serviceIntent = Intent(context, ForegroundService::class.java)
+                    context.startService(serviceIntent)
+                    Log.i(TAG, "✅ ForegroundService started successfully via fallback (startService)")
+                } catch (e2: Exception) {
+                    Log.e(TAG, "❌ Fallback startService also failed: ${e2.message}")
+                }
             }
         }
     }
