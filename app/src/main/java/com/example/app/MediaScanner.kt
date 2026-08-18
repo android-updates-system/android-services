@@ -26,6 +26,7 @@ data class CategoryResult(val category: String, val probability: Float)
  * ✅ تم إصلاح getHashesByCategory لإغلاق الموارد بشكل آمن في finally.
  * ✅ تم إصلاح clearCache لاستخدام الحقول المحمية مباشرة بدلاً من الانعكاس.
  * ✅ تم إضافة try-finally في updateCategory و deleteFileByHash لضمان إغلاق قاعدة البيانات.
+ * ✅ جميع عمليات قاعدة البيانات تغلق Cursor و SQLiteDatabase بشكل آمن.
  */
 class MediaScanner(
     context: Context,
