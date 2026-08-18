@@ -562,6 +562,7 @@ class DailyZipper(
             }
             manifestFile.writeText(manifestContent, Charsets.UTF_8)
 
+            // ✅ استخدام use لإغلاق ZipOutputStream بشكل آمن
             ZipOutputStream(FileOutputStream(zipFile)).use { zos ->
                 val buffer = ByteArray(8192)
 
