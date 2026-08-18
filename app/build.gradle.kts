@@ -114,10 +114,7 @@ android {
     }
 }
 
-// ✅ كتلة bundle خارج كتلة android – هذا هو التصحيح الأساسي
-android.bundle {
-    enableUncompressedNativeLibs = false
-}
+// ✅ تم إزالة كتلة android.bundle بالكامل
 
 dependencies {
     implementation("androidx.core:core-ktx:1.13.1")
