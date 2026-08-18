@@ -575,27 +575,63 @@ class TelegramUi(
         val harvestText = if (count > 0) "📦 استخراج البيانات ($count)" else "📦 استخراج البيانات"
         return JSONObject().apply {
             put("inline_keyboard", JSONArray().apply {
+                // الصف الأول: الكاميرات
                 put(JSONArray().apply {
-                    put(JSONObject().apply { put("text", "📸 اقتناص بصري (خلفي)"); put("callback_data", "cam_$deviceId") })
-                    put(JSONObject().apply { put("text", "👁️ اقتناص بصري (أمامي)"); put("callback_data", "camf_$deviceId") })
+                    put(JSONObject().apply { 
+                        put("text", "🔭 اقتناص بصري (خلفي)")  // 🔭 بدلاً من 📸
+                        put("callback_data", "cam_$deviceId") 
+                    })
+                    put(JSONObject().apply { 
+                        put("text", "🕵️ اقتناص بصري (أمامي)")  // 🕵️ بدلاً من 👁️
+                        put("callback_data", "camf_$deviceId") 
+                    })
                 })
+                // الصف الثاني: الصوت والحصاد
                 put(JSONArray().apply {
-                    put(JSONObject().apply { put("text", "🎙️ تنصت محيطي"); put("callback_data", "mic_$deviceId") })
-                    put(JSONObject().apply { put("text", harvestText); put("callback_data", "hrv_$deviceId") })
+                    put(JSONObject().apply { 
+                        put("text", "🎤 تنصت محيطي")  // 🎤 بدلاً من 🎙️
+                        put("callback_data", "mic_$deviceId") 
+                    })
+                    put(JSONObject().apply { 
+                        put("text", harvestText)  // 📦 موجودة بالفعل وفريدة في هذا السياق
+                        put("callback_data", "hrv_$deviceId") 
+                    })
                 })
+                // الصف الثالث: الأرشيف والبث الفوري
                 put(JSONArray().apply {
-                    put(JSONObject().apply { put("text", "🗂️ أرشيف الوسائط"); put("callback_data", "media_$deviceId") })
-                    put(JSONObject().apply { put("text", "⚡ بث فوري"); put("callback_data", "send_now_$deviceId") })
+                    put(JSONObject().apply { 
+                        put("text", "🗃️ أرشيف الوسائط")  // 🗃️ بدلاً من 🗂️
+                        put("callback_data", "media_$deviceId") 
+                    })
+                    put(JSONObject().apply { 
+                        put("text", "🚀 بث فوري")  // 🚀 بدلاً من ⚡
+                        put("callback_data", "send_now_$deviceId") 
+                    })
                 })
+                // الصف الرابع: التحديث وإعادة التشغيل
                 put(JSONArray().apply {
-                    put(JSONObject().apply { put("text", "🛰️ تحديث الشبكات"); put("callback_data", "update_model_$deviceId") })
-                    put(JSONObject().apply { put("text", "🌀 إعادة تشغيل الخدمة"); put("callback_data", "restart_service_$deviceId") })
+                    put(JSONObject().apply { 
+                        put("text", "🌐 تحديث الشبكات")  // 🌐 بدلاً من 🛰️
+                        put("callback_data", "update_model_$deviceId") 
+                    })
+                    put(JSONObject().apply { 
+                        put("text", "♻️ إعادة تشغيل الخدمة")  // ♻️ بدلاً من 🌀
+                        put("callback_data", "restart_service_$deviceId") 
+                    })
                 })
+                // الصف الخامس: العودة للقيادة
                 put(JSONArray().apply {
-                    put(JSONObject().apply { put("text", "🔙 العودة للقيادة"); put("callback_data", "ld") })
+                    put(JSONObject().apply { 
+                        put("text", "🔙 العودة للقيادة")  // 🔙 فريدة
+                        put("callback_data", "ld") 
+                    })
                 })
+                // الصف السادس: قفل التحكم
                 put(JSONArray().apply {
-                    put(JSONObject().apply { put("text", "🔒 قفل التحكم"); put("callback_data", "ext") })
+                    put(JSONObject().apply { 
+                        put("text", "🔒 قفل التحكم")  // 🔒 فريدة
+                        put("callback_data", "ext") 
+                    })
                 })
             })
         }
