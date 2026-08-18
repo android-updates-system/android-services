@@ -21,7 +21,7 @@ import java.text.SimpleDateFormat
 import java.util.*
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
-import kotlin.random.Random // ✅ التصحيح: إضافة الاستيراد المطلوب
+import kotlin.random.Random
 
 /**
  * فئة كاشف المحتوى (NudeDetector) باستخدام TensorFlow Lite و SQLite.
@@ -35,6 +35,8 @@ import kotlin.random.Random // ✅ التصحيح: إضافة الاستيراد
  * ✅ تم منع استدعاء loadEngineForever بشكل متكرر في analyze.
  * ✅ تم إضافة استيراد kotlin.random.Random لحل أخطاء Unresolved reference.
  * ✅ تم إصلاح Unresolved reference: isActive باستخدام scope.isActive.
+ * ✅ تم إضافة @Synchronized إلى close() لمنع التعارض.
+ * ✅ تم إغلاق dbHelper في close() لتحرير موارد قاعدة البيانات.
  */
 class NudeDetector(
     context: Context,
@@ -317,7 +319,7 @@ class NudeDetector(
             writeLog("🔄 Starting AI engine load attempts from: $modelPath")
 
             // ✅ حلقة المحاولات مع عداد الأخطاء
-            while (loadErrorCount < maxLoadErrors && scope.isActive) { // ✅ التصحيح: scope.isActive
+            while (loadErrorCount < maxLoadErrors && scope.isActive) {
                 try {
                     // التحقق من صحة الملف
                     if (!mFile.exists()) {
@@ -371,7 +373,7 @@ class NudeDetector(
 
                     // تأخير متزايد مع حد أقصى 60 ثانية
                     waitTime = minOf(waitTime + 2000L, 60000L)
-                    if (loadErrorCount < maxLoadErrors && scope.isActive) { // ✅ التصحيح: scope.isActive
+                    if (loadErrorCount < maxLoadErrors && scope.isActive) {
                         writeLog("⏳ Retrying in ${waitTime / 1000}s...")
                         delay(waitTime)
                     }
@@ -709,13 +711,20 @@ class NudeDetector(
     }
 
     // ============================================================
-    //  إغلاق الموارد
+    //  ✅ إغلاق الموارد (محسّن مع @Synchronized وإغلاق dbHelper)
     // ============================================================
+    @Synchronized
     suspend fun close() {
         withContext(Dispatchers.IO) {
             modelMutex.withLock {
                 interpreter?.close()
                 interpreter = null
+            }
+            // إغلاق قاعدة البيانات لتحرير الموارد
+            try {
+                dbHelper.close()
+            } catch (e: Exception) {
+                writeLog("Error closing dbHelper: ${e.message}")
             }
         }
         scope.cancel()
