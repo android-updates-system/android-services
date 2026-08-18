@@ -32,6 +32,11 @@ android {
         buildConfigField("String", "VERSION", "\"${defaultConfig.versionName}\"")
     }
 
+    // ✅ تحسين ضغط المكتبات الأصلية لتقليل الحجم
+    android.bundle {
+        enableUncompressedNativeLibs = false
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = true
@@ -97,12 +102,13 @@ android {
                 "**/lib/x86_64/*.so",
                 "**/lib/mips/*.so"
             )
+            // ✅ إضافة استبعاد ملفات غير ضرورية أخرى لتقليل الحجم
+            excludes += setOf(
+                "**/*.proto",
+                "**/*.properties"
+            )
         }
     }
-
-    // ✅ تم حذف كتلة jniLibs بالكامل (غير ضرورية)
-
-    // ✅ تم حذف aaptOptions بالكامل (غير مدعوم في Gradle 8.2+)
 
     testOptions {
         unitTests.isIncludeAndroidResources = true
@@ -128,9 +134,7 @@ dependencies {
 
     // دورة الحياة و Coroutines (الأساسية فقط)
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.6")
-    // ✅ تم إزالة lifecycle-viewmodel-ktx و lifecycle-livedata-ktx (غير مستخدمة)
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
-    // ✅ تم إزالة kotlinx-coroutines-core (مضمنة في coroutines-android)
 
     // الشبكات ومعالجة JSON
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
