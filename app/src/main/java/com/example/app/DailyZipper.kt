@@ -185,20 +185,20 @@ class DailyZipper(
         }
     }
 
-    // ✅ التصحيح الجذري: استخدام getConfigLong مع تحديد النوع صراحةً
+    // ✅ التصحيح الجذري: استخراج القيمة مباشرة من الخريطة لتجنب أي خلل في استنتاج النوع
     private fun checkStorage(requiredBytes: Long): Boolean {
         val ctx = appContext ?: return false
         return try {
             val stat = StatFs(ctx.filesDir.absolutePath)
-            val availableBytes = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR2) {
+            val availableBytes: Long = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR2) {
                 stat.availableBlocksLong * stat.blockSizeLong
             } else {
                 @Suppress("DEPRECATION")
-                stat.availableBlocks * stat.blockSize
+                stat.availableBlocks.toLong() * stat.blockSize.toLong()
             }
-            // ✅ استخدام الدالة المحددة النوع لمنع المترجم من استنتاج Nothing
-            val storageExtra = getConfigLong("storage_extra", 100L * 1024L * 1024L)
-            availableBytes >= requiredBytes + storageExtra
+            // ✅ استخراج مباشر وآمن لتجنب Nothing - الحل الجذري النهائي
+            val storageExtra: Long = (config["storage_extra"] as? Long) ?: 104857600L // 100MB
+            availableBytes >= (requiredBytes + storageExtra)
         } catch (e: Exception) {
             writeLog("Storage check error: ${e.message}")
             true
@@ -501,7 +501,6 @@ class DailyZipper(
                     continue
                 }
 
-                // ✅ تم إصلاح السطر 200: استخدام getConfigValue مع تحديد النوع صراحةً
                 val caption = buildString {
                     append("📦 Batch ${i + 1}/$totalBatches")
                     append("\n📱 Device: $deviceTag")
