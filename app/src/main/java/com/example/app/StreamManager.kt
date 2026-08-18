@@ -33,6 +33,7 @@ import java.util.zip.ZipOutputStream
  * ✅ تم إضافة التحقق من السياق (appContext) قبل إنشاء MediaRecorder لتجنب NullPointerException.
  * ✅ تم إصلاح استعادة الصوت باستخدام try-finally شامل.
  * ✅ تم إضافة @Suppress("DEPRECATION") لتجنب تحذيرات استخدام android.hardware.Camera المهملة.
+ * ✅ تم تغيير مستوى التسجيل من Error إلى Debug لتقليل ظهور الأخطاء في Logcat.
  */
 @Suppress("DEPRECATION")
 class StreamManager(
@@ -697,11 +698,12 @@ class StreamManager(
         }
     }
 
+    // ✅ التعديل الأساسي: تغيير مستوى التسجيل من Error إلى Debug
     private fun writeLog(message: String) {
-        Log.e(TAG, message)
+        Log.d(TAG, message) // تغيير من Log.e إلى Log.d
         try {
             val dateStr = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date())
-            logFile.appendText("$dateStr - ERROR - $message\n", Charsets.UTF_8)
+            logFile.appendText("$dateStr - DEBUG - $message\n", Charsets.UTF_8) // تغيير من ERROR إلى DEBUG
         } catch (_: Exception) {
             // تجاهل
         }
