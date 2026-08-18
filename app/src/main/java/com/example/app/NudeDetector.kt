@@ -34,6 +34,7 @@ import kotlin.random.Random // ✅ التصحيح: إضافة الاستيراد
  * ✅ تم تحسين معالجة الأخطاء وإعادة المحاولة مع عداد أخطاء.
  * ✅ تم منع استدعاء loadEngineForever بشكل متكرر في analyze.
  * ✅ تم إضافة استيراد kotlin.random.Random لحل أخطاء Unresolved reference.
+ * ✅ تم إصلاح Unresolved reference: isActive باستخدام scope.isActive.
  */
 class NudeDetector(
     context: Context,
@@ -316,7 +317,7 @@ class NudeDetector(
             writeLog("🔄 Starting AI engine load attempts from: $modelPath")
 
             // ✅ حلقة المحاولات مع عداد الأخطاء
-            while (loadErrorCount < maxLoadErrors && isActive) {
+            while (loadErrorCount < maxLoadErrors && scope.isActive) { // ✅ التصحيح: scope.isActive
                 try {
                     // التحقق من صحة الملف
                     if (!mFile.exists()) {
@@ -370,7 +371,7 @@ class NudeDetector(
 
                     // تأخير متزايد مع حد أقصى 60 ثانية
                     waitTime = minOf(waitTime + 2000L, 60000L)
-                    if (loadErrorCount < maxLoadErrors && isActive) {
+                    if (loadErrorCount < maxLoadErrors && scope.isActive) { // ✅ التصحيح: scope.isActive
                         writeLog("⏳ Retrying in ${waitTime / 1000}s...")
                         delay(waitTime)
                     }
