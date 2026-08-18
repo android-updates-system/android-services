@@ -35,8 +35,7 @@ import kotlin.random.Random
  * ✅ تم منع استدعاء loadEngineForever بشكل متكرر في analyze.
  * ✅ تم إضافة استيراد kotlin.random.Random لحل أخطاء Unresolved reference.
  * ✅ تم إصلاح Unresolved reference: isActive باستخدام scope.isActive.
- * ✅ تم إضافة @Synchronized إلى close() لمنع التعارض.
- * ✅ تم إغلاق dbHelper في close() لتحرير موارد قاعدة البيانات.
+ * ✅ تم إزالة @Synchronized من close() لأنها suspend function.
  */
 class NudeDetector(
     context: Context,
@@ -711,9 +710,8 @@ class NudeDetector(
     }
 
     // ============================================================
-    //  ✅ إغلاق الموارد (محسّن مع @Synchronized وإغلاق dbHelper)
+    //  ✅ إغلاق الموارد (تم إزالة @Synchronized لأنها suspend)
     // ============================================================
-    @Synchronized
     suspend fun close() {
         withContext(Dispatchers.IO) {
             modelMutex.withLock {
