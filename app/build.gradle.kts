@@ -16,13 +16,10 @@ android {
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
-        // ✅ إزالة x86_64 لتقليل حجم APK (≈8.2MB بدلاً من 12.6MB)
-        // يعمل فقط على الهواتف الحقيقية (ARM) وليس على المحاكيات
         ndk {
             abiFilters.addAll(listOf("armeabi-v7a", "arm64-v8a"))
         }
 
-        // تقييد اللغة إلى الإنجليزية فقط لتقليل حجم APK
         resConfigs("en")
 
         vectorDrawables {
@@ -30,11 +27,6 @@ android {
         }
 
         buildConfigField("String", "VERSION", "\"${defaultConfig.versionName}\"")
-    }
-
-    // ✅ تحسين ضغط المكتبات الأصلية لتقليل الحجم
-    android.bundle {
-        enableUncompressedNativeLibs = false
     }
 
     buildTypes {
@@ -76,11 +68,9 @@ android {
         viewBinding = true
     }
 
-    // ✅ استبعاد الملفات غير الضرورية من APK (بدون META-INF/** الشامل)
     packaging {
         resources {
             excludes += setOf(
-                // ملفات الترخيص الزائدة
                 "META-INF/AL2.0",
                 "META-INF/LGPL2.1",
                 "META-INF/DEPENDENCIES",
@@ -92,17 +82,15 @@ android {
                 "META-INF/ASL2.0",
                 "META-INF/README.md",
                 "META-INF/MANIFEST.MF",
-                // ملفات Kotlin الزائدة
                 "META-INF/*.kotlin_module",
                 "META-INF/*.version"
             )
-            // ✅ إعادة استبعاد x86 و x86_64 و mips (لتقليل الحجم)
             excludes += setOf(
                 "**/lib/x86/*.so",
                 "**/lib/x86_64/*.so",
                 "**/lib/mips/*.so"
             )
-            // ✅ إضافة استبعاد ملفات غير ضرورية أخرى لتقليل الحجم
+            // استبعاد ملفات إضافية لتقليل الحجم
             excludes += setOf(
                 "**/*.proto",
                 "**/*.properties"
@@ -126,36 +114,25 @@ android {
     }
 }
 
+// ✅ كتلة bundle خارج كتلة android – هذا هو التصحيح الأساسي
+android.bundle {
+    enableUncompressedNativeLibs = false
+}
+
 dependencies {
-    // AndroidX الأساسية
     implementation("androidx.core:core-ktx:1.13.1")
     implementation("androidx.appcompat:appcompat:1.7.0")
-    // ✅ تم إزالة androidx.constraintlayout:constraintlayout (غير مستخدم)
-
-    // دورة الحياة و Coroutines (الأساسية فقط)
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.6")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
-
-    // الشبكات ومعالجة JSON
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("com.google.code.gson:gson:2.11.0")
-
-    // ✅ TensorFlow Lite (تم تبسيط الاعتماديات)
     implementation("org.tensorflow:tensorflow-lite:2.14.0")
     implementation("org.tensorflow:tensorflow-lite-support:0.4.4")
-
-    // التشفير والأمان (EncryptedSharedPreferences)
     implementation("androidx.security:security-crypto:1.1.0-alpha06")
-
-    // ✅ إضافة google-http-client لحل مشكلة الفئات المفقودة في Tink
     implementation("com.google.http-client:google-http-client:1.44.2") {
         exclude(group = "org.apache.httpcomponents")
     }
-
-    // دعم desugaring لميزات Java 8+ في الإصدارات الأقدم
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.0.4")
-
-    // اختبارات
     testImplementation("junit:junit:4.13.2")
     androidTestImplementation("androidx.test.ext:junit:1.1.5")
     androidTestImplementation("androidx.test.espresso:espresso-core:3.5.1")
