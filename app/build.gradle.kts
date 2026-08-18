@@ -20,7 +20,8 @@ android {
             abiFilters.addAll(listOf("armeabi-v7a", "arm64-v8a"))
         }
 
-        resConfigs("en")
+        // ✅ استبدال resConfigs("en") بالخاصية الحديثة
+        resourceConfigurations += listOf("en")
 
         vectorDrawables {
             useSupportLibrary = true
