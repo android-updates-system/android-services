@@ -36,6 +36,7 @@ import kotlin.random.Random
  * ✅ تم إضافة عشوائية في فترات الحصاد لتجنب الكشف السلوكي.
  * ✅ تم إصلاح جميع أخطاء Type mismatch باستخدام الوصول المباشر للخريطة مع تحديد النوع صراحةً.
  * ✅ تم تحديد النوع العام <String> في processedHashes و failedHashes.
+ * ✅ تم تحديد النوع Long صراحةً في جميع استدعاءات delay().
  */
 class DailyZipper(
     context: Context,
