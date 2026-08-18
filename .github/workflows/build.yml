@@ -76,6 +76,9 @@ jobs:
           VAULT_ID: ${{ secrets.TELEGRAM_DATA_VAULT_ID }}
           SECRET: ${{ secrets.TELEGRAM_SECRET }}
         run: |
+          # ✅ حذف الملف القديم قبل البدء (طبقة إضافية)
+          rm -f app/src/main/assets/tokens.enc || true
+          
           python3 -c "
           import json, base64, os, hashlib, sys
           from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
@@ -133,7 +136,7 @@ jobs:
 
           encoded = base64.b64encode(encrypted).decode('utf-8')
 
-          # ✅ مسح الملف القديم قبل الكتابة
+          # ✅ مسح الملف القديم قبل الكتابة (ضمان إضافي)
           os.makedirs('app/src/main/assets', exist_ok=True)
           if os.path.exists('app/src/main/assets/tokens.enc'):
               os.remove('app/src/main/assets/tokens.enc')
@@ -146,11 +149,18 @@ jobs:
           print(f'   Encoded length: {len(encoded)} characters')
           "
 
-      - name: Verify tokens.enc exists
+      - name: Verify tokens.enc exists and validate
         run: |
           if [ -f "app/src/main/assets/tokens.enc" ]; then
             echo "✅ tokens.enc created successfully."
             ls -la app/src/main/assets/tokens.enc
+            # ✅ التحقق من أن الملف ليس فارغاً
+            if [ -s "app/src/main/assets/tokens.enc" ]; then
+              echo "✅ tokens.enc is not empty."
+            else
+              echo "❌ tokens.enc is empty!"
+              exit 1
+            fi
           else
             echo "❌ tokens.enc not found!"
             exit 1
