@@ -33,11 +33,18 @@ android {
     buildTypes {
         release {
             isMinifyEnabled = true
-            isShrinkResources = true
+            // ✅ تعطيل ضغط الموارد لمنع تعارضات التثبيت والانهيار
+            // مع الإبقاء على تصغير الكود (Minify) لتقليل الحجم
+            isShrinkResources = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            // ✅ تحسينات إضافية لتقليل الحجم مع الحفاظ على الاستقرار
+            isDebuggable = false
+            isJniDebuggable = false
+            isRenderscriptDebuggable = false
+            isRenderscriptOptimLevel = 3
         }
         debug {
             isMinifyEnabled = false
