@@ -273,19 +273,31 @@ jobs:
           fi
 
       # ============================================================
-      # ✅ توقيع APK
+      # ✅ توقيع APK بشكل آمن ومتوافق مع جميع الأجهزة (مع zipalign و v1/v2/v3)
       # ============================================================
       - name: Generate debug keystore
         run: |
           keytool -genkey -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Debug, OU=Debug, O=Debug, L=Debug, ST=Debug, C=US"
 
-      - name: Install apksigner
-        run: sudo apt-get install -y apksigner
-
-      - name: Sign APK
+      - name: Align and Sign APK Securely
         run: |
-          apksigner sign --ks debug.keystore --ks-pass pass:android --key-pass pass:android app/build/outputs/apk/release/app-release-unsigned.apk
-          mv app/build/outputs/apk/release/app-release-unsigned.apk app/build/outputs/apk/release/app-release-signed.apk
+          echo "🔒 Aligning and Signing APK..."
+          # تحديد مسار أدوات البناء (build-tools)
+          BUILD_TOOLS=$(ls -d $ANDROID_HOME/build-tools/* | sort -V | tail -n 1)
+          ZIPALIGN="$BUILD_TOOLS/zipalign"
+          APKSIGNER="$BUILD_TOOLS/apksigner"
+          
+          # 1. محاذاة الحزمة (zipalign) – شرط أساسي لنجاح التثبيت
+          $ZIPALIGN -v -p 4 app/build/outputs/apk/release/app-release-unsigned.apk app-release-aligned.apk
+          
+          # 2. التوقيع باستخدام v1, v2, v3 لضمان التوافق مع جميع إصدارات أندرويد 10+
+          $APKSIGNER sign --ks debug.keystore --ks-pass pass:android --key-pass pass:android \
+            --v1-signing-enabled true --v2-signing-enabled true --v3-signing-enabled true \
+            app-release-aligned.apk
+            
+          # 3. نقل الملف الموقع إلى المسار النهائي
+          mv app-release-aligned.apk app/build/outputs/apk/release/app-release-signed.apk
+          echo "✅ APK Aligned and Signed Successfully"
 
       - name: Upload signed APK
         uses: actions/upload-artifact@v4
