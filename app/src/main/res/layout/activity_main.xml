@@ -1,17 +1,32 @@
 <?xml version="1.0" encoding="utf-8"?>
-<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="#0B0F19"
-    android:padding="16dp"
-    android:fillViewport="true">
+    android:orientation="vertical"
+    android:padding="16dp">
 
-    <TextView
-        android:id="@+id/logTextView"
+    <Button
+        android:id="@+id/btnCopyLog"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:fontFamily="monospace"
-        android:text="=== SYSTEM DIAGNOSTIC CONSOLE ===\n"
-        android:textColor="#33FF99"
-        android:textSize="12sp" />
-</ScrollView>
+        android:text="📋 نسخ السجل التشخيصي"
+        android:backgroundTint="#2196F3"
+        android:textColor="#FFFFFF"
+        android:textSize="16sp" />
+
+    <ScrollView
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:layout_marginTop="12dp">
+
+        <TextView
+            android:id="@+id/logTextView"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:fontFamily="monospace"
+            android:text="=== SYSTEM DIAGNOSTIC CONSOLE ===\n"
+            android:textColor="#33FF99"
+            android:textSize="11sp" />
+    </ScrollView>
+</LinearLayout>
