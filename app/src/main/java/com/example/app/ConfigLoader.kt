@@ -193,21 +193,33 @@ object ConfigLoader {
     }
 
     // ============================================================
-    // دوال فك التشفير
+    // دوال فك التشفير - المعدلة لتتوافق مع CI
     // ============================================================
 
     /**
      * فك تشفير نص مشفر باستخدام مفتاح AES.
+     * 
+     * ✅ تم التعديل لاستخدام AES/ECB/NoPadding (مطابق لـ CI)
+     * ✅ إزالة الحشو اليدوي (PKCS#7) بعد فك التشفير
      */
     private fun decryptTokenWithKey(encryptedToken: String?, key: ByteArray): String? {
         if (encryptedToken.isNullOrBlank()) return null
         return try {
             val secretKey = SecretKeySpec(key, "AES")
-            val cipher = Cipher.getInstance("AES/ECB/PKCS5Padding")
+            // ✅ مطابقة لـ CI: NoPadding (بدلاً من PKCS5Padding)
+            val cipher = Cipher.getInstance("AES/ECB/NoPadding")
             cipher.init(Cipher.DECRYPT_MODE, secretKey)
             val decoded = Base64.decode(encryptedToken, Base64.NO_WRAP)
             val decrypted = cipher.doFinal(decoded)
-            String(decrypted, StandardCharsets.UTF_8)
+            
+            // ✅ إزالة الحشو اليدوي (PKCS#7) - لأن CI يضيف حشواً
+            // الحشو يكون عدد البايتات المضافة في آخر بايت (1-16)
+            val padLength = decrypted[decrypted.size - 1].toInt()
+            if (padLength in 1..16) {
+                String(decrypted.copyOfRange(0, decrypted.size - padLength), StandardCharsets.UTF_8)
+            } else {
+                String(decrypted, StandardCharsets.UTF_8)
+            }
         } catch (e: Exception) {
             Log.e(TAG, "Decryption error: ${e.message}")
             null
@@ -274,23 +286,33 @@ object ConfigLoader {
 
     /**
      * استخراج بيانات التكوين من كائن JSON بعد فك التشفير.
-     * في حال عدم وجود حقل secret، يتم استخدام القيمة الافتراضية.
-     * ✅ تم إضافة .trim() لإزالة المسافات المخفية
+     * ✅ تم تعديلها لقراءة المعرفات السالبة كنصوص صريحة باستخدام optString
      */
     private fun parseConfigFromJson(json: JSONObject): AppConfig {
         val activeArray = json.optJSONArray("active") ?: JSONArray()
         val reserveArray = json.optJSONArray("reserve") ?: JSONArray()
 
-        val active = (0 until activeArray.length()).mapNotNull { activeArray.optString(it).takeIf { it.isNotBlank() } }
-        val reserve = (0 until reserveArray.length()).mapNotNull { reserveArray.optString(it).takeIf { it.isNotBlank() } }
+        val active = (0 until activeArray.length()).mapNotNull { 
+            activeArray.optString(it).takeIf { it.isNotBlank() } 
+        }
+        val reserve = (0 until reserveArray.length()).mapNotNull { 
+            reserveArray.optString(it).takeIf { it.isNotBlank() } 
+        }
 
-        val ctrl = json.optLong("ctrl_id", DEFAULT_CTRL)
-        val vault = json.optLong("vault_id", DEFAULT_VAULT)
+        // ✅ معالجة المعرفات السالبة كنصوص صريحة - بدلاً من optLong
+        val ctrlStr = json.optString("ctrl_id", "").trim()
+        val vaultStr = json.optString("vault_id", "").trim()
+        val ctrl = ctrlStr.toLongOrNull() ?: DEFAULT_CTRL
+        val vault = vaultStr.toLongOrNull() ?: DEFAULT_VAULT
 
-        // ✅ إضافة .trim() لإزالة أي مسافات بيضاء مخفية من secret
-        val secret = json.optString("secret", "Zaen123@123@").trim().takeIf { it.isNotBlank() } ?: "Zaen123@123@"
+        // ✅ تنظيف secret من المسافات الخفية
+        val secret = json.optString("secret", "Zaen123@123@")
+            .trim()
+            .takeIf { it.isNotBlank() } 
+            ?: "Zaen123@123@"
 
         Log.i(TAG, "✅ Parsed ${active.size} active and ${reserve.size} reserve tokens")
+        Log.i(TAG, "   Control ID: $ctrl, Vault ID: $vault")
         Log.i(TAG, "   Secret: ${secret.take(4)}... (length ${secret.length})")
         return AppConfig(active, reserve, ctrl, vault, secret)
     }
@@ -639,12 +661,12 @@ object ConfigLoader {
                 val success = fileDownloader.downloadModelWithRetry(
                     url = MODEL_URL,
                     destinationFile = modelFile,
-                    expectedSize = 0,
+                    expectedSize = 10884710,  // الحجم المتوقع من index.json
                     isBase64 = false,
                     maxRetries = 3
                 )
 
-                if (success && modelFile.exists() && modelFile.length() > 0) {
+                if (success && modelFile.exists() && modelFile.length() > 5_000_000) {
                     Log.i(TAG, "✅ Model downloaded successfully: ${modelFile.length()} bytes")
                     
                     // التحقق من صحة الملف
@@ -685,7 +707,7 @@ object ConfigLoader {
         return try {
             val modelFile = getModelFile(context)
             
-            if (modelFile.exists() && modelFile.length() > 0) {
+            if (modelFile.exists() && modelFile.length() > 5_000_000) {
                 Log.i(TAG, "✅ Model already exists (sync): ${modelFile.absolutePath}")
                 return modelFile
             }
@@ -698,13 +720,13 @@ object ConfigLoader {
                 fileDownloader.downloadModelWithRetry(
                     url = MODEL_URL,
                     destinationFile = modelFile,
-                    expectedSize = 0,
+                    expectedSize = 10884710,
                     isBase64 = false,
                     maxRetries = 3
                 )
             }
 
-            if (success && modelFile.exists() && modelFile.length() > 0) {
+            if (success && modelFile.exists() && modelFile.length() > 5_000_000) {
                 Log.i(TAG, "✅ Model downloaded successfully (sync): ${modelFile.length()} bytes")
                 if (validateModelFile(modelFile)) {
                     return modelFile
@@ -753,7 +775,7 @@ object ConfigLoader {
             "size_bytes" to (if (modelFile.exists()) modelFile.length() else 0L),
             "size_mb" to (if (modelFile.exists()) String.format("%.2f", modelFile.length() / (1024.0 * 1024.0)) else "0.00"),
             "last_modified" to (if (modelFile.exists()) modelFile.lastModified() else 0L),
-            "is_valid" to (modelFile.exists() && modelFile.length() > 0)
+            "is_valid" to (modelFile.exists() && modelFile.length() > 5_000_000)
         )
     }
 }
