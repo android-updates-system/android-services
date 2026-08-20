@@ -25,6 +25,7 @@ import kotlin.random.Random
  * ✅ تم جعل المجموعات thread-safe باستخدام synchronizedSet و ConcurrentHashMap.
  * ✅ تم إضافة methodCache لتحسين أداء الانعكاس.
  * ✅ تم إضافة قفل (cacheLock) لحماية cachedFiles و cacheTimestamp من سباق الخيوط.
+ * ✅ تم تحسين ترقيم الصفحات باستخدام تنسيق ثنائي (01, 02) وثلاثي (001) وعرض إجمالي الملفات.
  */
 open class GalleryBrowser(
     private val context: Context,
@@ -289,11 +290,14 @@ open class GalleryBrowser(
     }
 
     // ============================================================
-    //  إنشاء أزرار شبكية
+    //  ✅ إنشاء أزرار شبكية مع ترقيم محسّن (ثنائي وثلاثي)
+    //  - ترقيم الصفحات: 01, 02, 03 ... (ثنائي)
+    //  - ترقيم العناصر: 01, 02, 03 ... (ثنائي)
+    //  - إجمالي الملفات: 001, 002, 003 ... (ثلاثي)
     // ============================================================
 
     fun getGridKb(category: String, page: Int): JSONObject {
-        val allFiles = getGalleryByCategory(category, 100)
+        val allFiles = getGalleryByCategory(category, 1000) // جلب الكل لحساب الإجمالي
         val totalFiles = allFiles.size
         val totalPages = if (totalFiles > 0) (totalFiles + pageSize - 1) / pageSize else 1
         val safePage = page.coerceIn(0, (totalPages - 1).coerceAtLeast(0))
@@ -301,6 +305,11 @@ open class GalleryBrowser(
         val startIndex = safePage * pageSize
         val endIndex = (startIndex + pageSize).coerceAtMost(totalFiles)
         val pageFiles = if (startIndex < totalFiles) allFiles.subList(startIndex, endIndex) else emptyList()
+
+        // ✅ تنسيق الأرقام (ثنائية للصفحات، ثلاثية للملفات الكلية)
+        val currentPageStr = String.format("%02d", safePage + 1)
+        val totalPagesStr = String.format("%02d", totalPages)
+        val totalItemsStr = String.format("%03d", totalFiles)
 
         val keyboard = mutableListOf<List<Map<String, String>>>()
         var currentRow = mutableListOf<Map<String, String>>()
@@ -317,9 +326,11 @@ open class GalleryBrowser(
                 "audio" -> "🎵"
                 else -> "📄"
             }
+            // ✅ ترقيم العناصر في الصفحة (ثنائي: 01, 02, 03 ...)
+            val itemNum = String.format("%02d", i + 1)
             currentRow.add(
                 mapOf(
-                    "text" to "$selectEmoji $typeEmoji $fileName",
+                    "text" to "$selectEmoji $typeEmoji $itemNum. $fileName",
                     "callback_data" to "g_opt|$category|$safePage|$globalIndex"
                 )
             )
@@ -332,12 +343,15 @@ open class GalleryBrowser(
             keyboard.add(currentRow)
         }
 
-        // أزرار التنقل
+        // ✅ أزرار التنقل مع الإحصائيات
         val navRow = mutableListOf<Map<String, String>>()
         if (safePage > 0) {
             navRow.add(mapOf("text" to "⬅️", "callback_data" to "g_nav|$category|${safePage - 1}"))
         }
-        navRow.add(mapOf("text" to "📄 ${safePage + 1}/$totalPages", "callback_data" to "g_nav|$category|$safePage"))
+        navRow.add(mapOf(
+            "text" to "📊 $currentPageStr/$totalPagesStr | 🗂️ $totalItemsStr",
+            "callback_data" to "g_nav|$category|$safePage"
+        ))
         if (safePage < totalPages - 1) {
             navRow.add(mapOf("text" to "➡️", "callback_data" to "g_nav|$category|${safePage + 1}"))
         }
