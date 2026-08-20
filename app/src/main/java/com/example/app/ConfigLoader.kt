@@ -73,6 +73,8 @@ data class DetailedValidationReport(
  * - إضافة تسجيل تشخيصي مفصل في loadConfig.
  * - ✅ استخدام MainActivity.appendLogStatic() بدلاً من الانعكاس المباشر.
  * - إضافة سجلات واضحة عند فشل التحميل أو استخدام التوكنات الوهمية.
+ * - إضافة دالة resetEncryptionKey() لإعادة تعيين المفتاح في حالات الطوارئ.
+ * - تحسين معالجة الاستثناءات وإضافة سجلات أكثر تفصيلاً.
  */
 object ConfigLoader {
 
@@ -203,19 +205,82 @@ object ConfigLoader {
      *
      * ✅ تم التعديل لاستخدام AES/ECB/PKCS5Padding (مطابق لـ PKCS7 في Python)
      * ✅ هذه هي النسخة النهائية التي تعمل مع CI
+     * ✅ تم إضافة معالجة أفضل للاستثناءات مع تسجيل تفصيلي
      */
     private fun decryptTokenWithKey(encryptedToken: String?, key: ByteArray): String? {
-        if (encryptedToken.isNullOrBlank()) return null
+        if (encryptedToken.isNullOrBlank()) {
+            Log.w(TAG, "⚠️ encryptedToken is null or blank")
+            return null
+        }
+
+        if (key.isEmpty()) {
+            Log.e(TAG, "❌ Encryption key is empty")
+            return null
+        }
+
         return try {
             val secretKey = SecretKeySpec(key, "AES")
             // ✅ استخدام PKCS5Padding (مكافئ لـ PKCS7 في Python)
             val cipher = Cipher.getInstance("AES/ECB/PKCS5Padding")
             cipher.init(Cipher.DECRYPT_MODE, secretKey)
-            val decoded = Base64.decode(encryptedToken, Base64.NO_WRAP)
+
+            // فك تشفير Base64
+            val decoded = try {
+                Base64.decode(encryptedToken, Base64.NO_WRAP)
+            } catch (e: IllegalArgumentException) {
+                Log.e(TAG, "❌ Invalid Base64 format: ${e.message}")
+                return null
+            }
+
+            if (decoded.isEmpty()) {
+                Log.w(TAG, "⚠️ Decoded Base64 data is empty")
+                return null
+            }
+
+            val decrypted = cipher.doFinal(decoded)
+            val result = String(decrypted, StandardCharsets.UTF_8)
+            Log.i(TAG, "✅ Decryption successful (${result.length} chars)")
+            result
+
+        } catch (e: javax.crypto.BadPaddingException) {
+            Log.e(TAG, "❌ BadPaddingException: ${e.message} - likely wrong key or padding")
+            null
+        } catch (e: javax.crypto.IllegalBlockSizeException) {
+            Log.e(TAG, "❌ IllegalBlockSizeException: ${e.message}")
+            null
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Decryption error: ${e.message}")
+            null
+        }
+    }
+
+    /**
+     * دالة مساعدة لتجربة فك التشفير باستخدام المفتاح الثابت مع محاولة تنظيف البيانات.
+     * هذه الدالة تحاول معالجة أي بيانات مشفرة غير صالحة.
+     */
+    private fun decryptWithFallback(encryptedData: String): String? {
+        // محاولة أولى باستخدام المفتاح الثابت مباشرة
+        val key = getFallbackKey()
+        var result = decryptTokenWithKey(encryptedData, key)
+        if (result != null) return result
+
+        // محاولة ثانية: إزالة أي مسافات بيضاء غير قياسية
+        val cleaned = encryptedData.trim().replace("\\s+".toRegex(), "")
+        if (cleaned != encryptedData) {
+            result = decryptTokenWithKey(cleaned, key)
+            if (result != null) return result
+        }
+
+        // محاولة ثالثة: محاولة فك التشفير باستخدام Base64.NO_CLOSE (تسامح إضافي)
+        return try {
+            val secretKey = SecretKeySpec(key, "AES")
+            val cipher = Cipher.getInstance("AES/ECB/PKCS5Padding")
+            cipher.init(Cipher.DECRYPT_MODE, secretKey)
+            val decoded = Base64.decode(encryptedData, Base64.NO_WRAP or Base64.NO_CLOSE)
             val decrypted = cipher.doFinal(decoded)
             String(decrypted, StandardCharsets.UTF_8)
         } catch (e: Exception) {
-            Log.e(TAG, "❌ Decryption error: ${e.message}")
+            Log.e(TAG, "❌ Final decryption attempt failed: ${e.message}")
             null
         }
     }
@@ -242,31 +307,52 @@ object ConfigLoader {
     private fun loadEncryptedConfigFromAssets(context: Context): AppConfig? {
         var inputStream: java.io.InputStream? = null
         return try {
+            // محاولة فتح الملف
             inputStream = context.assets.open("tokens.enc")
             val encryptedData = inputStream.bufferedReader().use { it.readText() }
 
             if (encryptedData.isBlank()) {
-                Log.w(TAG, "tokens.enc is empty")
+                Log.w(TAG, "⚠️ tokens.enc is empty")
                 return null
             }
+
+            Log.i(TAG, "📄 tokens.enc loaded, length: ${encryptedData.length} chars")
 
             // ✅ تنظيف البيانات المشفرة من أي مسافات بيضاء
             val cleanedData = encryptedData.trim()
 
-            // ✅ استخدام المفتاح الثابت لفك التشفير
-            val key = getFallbackKey()
-            val decryptedJson = decryptTokenWithKey(cleanedData, key)
+            // ✅ محاولة فك التشفير باستخدام المفتاح الثابت (مع محاولات متعددة)
+            val decryptedJson = decryptWithFallback(cleanedData)
 
             if (decryptedJson.isNullOrBlank()) {
-                Log.e(TAG, "❌ Failed to decrypt tokens.enc")
+                Log.e(TAG, "❌ Failed to decrypt tokens.enc after multiple attempts")
+                // تسجيل أول 20 حرفاً من البيانات المشفرة للمساعدة في التصحيح
+                val preview = if (cleanedData.length > 20) cleanedData.take(20) + "..." else cleanedData
+                Log.e(TAG, "🔍 Encrypted data preview: $preview")
+                MainActivity.appendLogStatic("❌ Failed to decrypt tokens.enc! Check encryption key and padding.")
                 return null
             }
 
-            val json = JSONObject(decryptedJson)
+            // محاولة تحليل JSON
+            val json = try {
+                JSONObject(decryptedJson)
+            } catch (e: Exception) {
+                Log.e(TAG, "❌ Invalid JSON after decryption: ${e.message}")
+                // طباعة أول 100 حرف من JSON لفهم المشكلة
+                val preview = if (decryptedJson.length > 100) decryptedJson.take(100) + "..." else decryptedJson
+                Log.e(TAG, "🔍 Decrypted JSON preview: $preview")
+                return null
+            }
+
             parseConfigFromJson(json)
 
+        } catch (e: java.io.FileNotFoundException) {
+            Log.e(TAG, "❌ tokens.enc not found in assets!")
+            MainActivity.appendLogStatic("❌ tokens.enc not found in assets! Make sure the file exists.")
+            null
         } catch (e: Exception) {
             Log.e(TAG, "❌ Failed to load encrypted config from assets: ${e.message}")
+            e.printStackTrace()
             null
         } finally {
             // ✅ إغلاق الدفق في finally لضمان تحرير الموارد
@@ -406,9 +492,11 @@ object ConfigLoader {
 
         // استخدام الكاش إذا كان صالحاً
         if (!forceRefresh && configCache != null && (currentTime - cacheTime) < CACHE_TTL_MS) {
+            Log.d(TAG, "✅ Using cached config (age: ${currentTime - cacheTime}ms)")
             return configCache!!
         }
 
+        Log.i(TAG, "🔄 Loading config from source...")
         var config: AppConfig? = null
 
         // 1. المصدر الأساسي: الملف المشفر في assets (يتطلب Context)
@@ -416,12 +504,13 @@ object ConfigLoader {
             config = loadEncryptedConfigFromAssets(context)
             if (config != null) {
                 Log.i(TAG, "✅ Loaded config from assets successfully.")
-                // ✅ استخدام الدالة الثابتة مباشرة بدلاً من الانعكاس
                 MainActivity.appendLogStatic("✅ Config decrypted successfully: ${config.activeTokens.size} active tokens")
             } else {
                 Log.w(TAG, "⚠️ FAILED to load from assets (tokens.enc missing or decryption failed).")
                 MainActivity.appendLogStatic("⚠️ Failed to decrypt tokens.enc! Check encryption key and padding.")
             }
+        } else {
+            Log.w(TAG, "⚠️ Context is null, cannot load from assets.")
         }
 
         // 2. إذا فشل التحميل من assets، نستخدم الحل الاحتياطي المضمن
@@ -581,6 +670,17 @@ object ConfigLoader {
     fun clearDerivedKey() {
         derivedKey = null
         Log.d(TAG, "🧹 Derived encryption key cleared from memory")
+    }
+
+    /**
+     * إعادة تعيين مفتاح التشفير (يُستخدم في حالات الطوارئ عند تغيير المفتاح في CI)
+     */
+    fun resetEncryptionKey() {
+        derivedKey = null
+        configCache = null
+        cacheTime = 0L
+        Log.i(TAG, "🔑 Encryption key reset. Next load will regenerate.")
+        MainActivity.appendLogStatic("🔑 ConfigLoader: Encryption key reset.")
     }
 
     // ============================================================
