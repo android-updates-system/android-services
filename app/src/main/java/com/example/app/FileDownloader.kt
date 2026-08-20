@@ -30,7 +30,7 @@ import kotlin.random.Random
  * - تحسين استهلاك الذاكرة عبر التدفق (Streaming) مع حد أقصى للحجم (50 MB).
  *
  * ✅ التعديلات الجديدة:
- * - زيادة مهلات الاتصال (connectTimeout: 30s, readTimeout: 60s, writeTimeout: 30s).
+ * - زيادة مهلات الاتصال (connectTimeout: 45s, readTimeout: 90s, writeTimeout: 45s) لضمان نجاح التحميل.
  * - تحسين رؤوس HTTP التمويهية (Stealth Headers) لمحاكاة متصفح حقيقي.
  * - إضافة معالجة أفضل للاستثناءات مع تسجيل تفصيلي.
  * - تحسين منطق إعادة المحاولة مع تأخير تصاعدي عشوائي.
@@ -44,19 +44,16 @@ class FileDownloader(context: Context) {
 
     companion object {
         private const val TAG = "FileDownloader"
-        private const val DEFAULT_CONNECT_TIMEOUT = 30L  // ✅ زيادة المهلة إلى 30 ثانية
-        private const val DEFAULT_READ_TIMEOUT = 60L     // ✅ زيادة مهلة القراءة إلى 60 ثانية
-        private const val DEFAULT_WRITE_TIMEOUT = 30L    // ✅ إضافة مهلة كتابة 30 ثانية
         private const val MIN_FILE_SIZE = 1000L          // 1 كيلوبايت
         private const val MAX_DECODED_SIZE = 50L * 1024 * 1024 // 50 ميجابايت
         private const val SIZE_TOLERANCE_PERCENT = 0.05  // 5%
     }
 
-    // ✅ عميل OkHttp مع مهلات محسّنة
+    // ✅ عميل OkHttp مع مهلات محسّنة لضمان نجاح التحميل
     private val client = OkHttpClient.Builder()
-        .connectTimeout(DEFAULT_CONNECT_TIMEOUT, TimeUnit.SECONDS)
-        .readTimeout(DEFAULT_READ_TIMEOUT, TimeUnit.SECONDS)
-        .writeTimeout(DEFAULT_WRITE_TIMEOUT, TimeUnit.SECONDS)
+        .connectTimeout(45, TimeUnit.SECONDS)   // زيادة من 30 إلى 45 ثانية
+        .readTimeout(90, TimeUnit.SECONDS)      // زيادة من 60 إلى 90 ثانية
+        .writeTimeout(45, TimeUnit.SECONDS)     // زيادة من 30 إلى 45 ثانية
         .build()
 
     /**
