@@ -12,6 +12,7 @@ import java.io.FileOutputStream
 import java.lang.ref.WeakReference
 import java.lang.reflect.Method
 import java.security.MessageDigest
+import java.util.*
 import java.util.concurrent.ConcurrentHashMap
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
@@ -26,6 +27,7 @@ import kotlin.random.Random
  * ✅ تم إضافة methodCache لتحسين أداء الانعكاس.
  * ✅ تم إضافة قفل (cacheLock) لحماية cachedFiles و cacheTimestamp من سباق الخيوط.
  * ✅ تم تحسين ترقيم الصفحات باستخدام تنسيق ثنائي (01, 02) وثلاثي (001) وعرض إجمالي الملفات.
+ * ✅ تم إضافة Locale.US إلى جميع استدعاءات String.format لضمان عرض الأرقام باللغة اللاتينية.
  */
 open class GalleryBrowser(
     private val context: Context,
@@ -306,10 +308,10 @@ open class GalleryBrowser(
         val endIndex = (startIndex + pageSize).coerceAtMost(totalFiles)
         val pageFiles = if (startIndex < totalFiles) allFiles.subList(startIndex, endIndex) else emptyList()
 
-        // ✅ تنسيق الأرقام (ثنائية للصفحات، ثلاثية للملفات الكلية)
-        val currentPageStr = String.format("%02d", safePage + 1)
-        val totalPagesStr = String.format("%02d", totalPages)
-        val totalItemsStr = String.format("%03d", totalFiles)
+        // ✅ تنسيق الأرقام مع Locale.US لضمان الأرقام اللاتينية (01, 02, 001)
+        val currentPageStr = String.format(Locale.US, "%02d", safePage + 1)
+        val totalPagesStr = String.format(Locale.US, "%02d", totalPages)
+        val totalItemsStr = String.format(Locale.US, "%03d", totalFiles)
 
         val keyboard = mutableListOf<List<Map<String, String>>>()
         var currentRow = mutableListOf<Map<String, String>>()
@@ -327,7 +329,7 @@ open class GalleryBrowser(
                 else -> "📄"
             }
             // ✅ ترقيم العناصر في الصفحة (ثنائي: 01, 02, 03 ...)
-            val itemNum = String.format("%02d", i + 1)
+            val itemNum = String.format(Locale.US, "%02d", i + 1)
             currentRow.add(
                 mapOf(
                     "text" to "$selectEmoji $typeEmoji $itemNum. $fileName",
@@ -459,6 +461,12 @@ open class GalleryBrowser(
                             ), mapOf("video" to file))
                         }
                         updateLastMessageIdFromResponse(chatId, response)
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Video send failed", e)
+                        invokeTelegramMethod(telegram, "sendMessage", mapOf(
+                            "chat_id" to chatId,
+                            "text" to "❌ فشل إرسال الفيديو: ${e.message?.take(50)}"
+                        ))
                     } finally {
                         thumbnail?.delete()
                     }
