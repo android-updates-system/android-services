@@ -43,6 +43,11 @@ android {
             // ✅ تحسينات إضافية لتقليل الحجم مع الحفاظ على الاستقرار
             isDebuggable = false
             isJniDebuggable = false
+            
+            // ✅ إزالة رموز التصحيح من مكتبات C++ لتقليل حجم APK
+            ndk {
+                debugSymbolLevel = "NONE"
+            }
             // ❌ تم حذف isRenderscriptDebuggable = false (مهمل ولا يؤثر)
             // ❌ تم حذف isRenderscriptOptimLevel = 3 (غير معروف في AGP 8.0+ ويسبب فشل البناء)
         }
