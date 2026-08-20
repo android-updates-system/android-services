@@ -3,7 +3,8 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="#0B0F19"
-    android:padding="16dp">
+    android:padding="16dp"
+    android:fillViewport="true">
 
     <TextView
         android:id="@+id/logTextView"
@@ -12,5 +13,5 @@
         android:fontFamily="monospace"
         android:text="=== SYSTEM DIAGNOSTIC CONSOLE ===\n"
         android:textColor="#33FF99"
-        android:textSize="11sp" />
+        android:textSize="12sp" />
 </ScrollView>
