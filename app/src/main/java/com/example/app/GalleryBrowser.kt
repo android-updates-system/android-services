@@ -28,6 +28,7 @@ import kotlin.random.Random
  * ✅ تم إضافة قفل (cacheLock) لحماية cachedFiles و cacheTimestamp من سباق الخيوط.
  * ✅ تم تحسين ترقيم الصفحات باستخدام تنسيق ثنائي (01, 02) وثلاثي (001) ديناميكياً بناءً على إجمالي الملفات.
  * ✅ تم إضافة Locale.US إلى جميع استدعاءات String.format لضمان عرض الأرقام باللغة اللاتينية.
+ * ✅ تم تحديد useTriple = totalFiles > 99 لفرض الترقيم الثنائي/الثلاثي بدقة.
  */
 open class GalleryBrowser(
     private val context: Context,
@@ -296,6 +297,7 @@ open class GalleryBrowser(
     //  - إذا كان إجمالي الملفات ≤ 99: يستخدم التنسيق الثنائي (01, 02)
     //  - إذا كان إجمالي الملفات > 99: يستخدم التنسيق الثلاثي (001, 002)
     //  - إجمالي الملفات يُعرض دائماً بثلاثة أرقام (001, 042, 123)
+    //  - ✅ تم تحديد useTriple = totalFiles > 99 لفرض الترقيم بشكل صارم
     // ============================================================
 
     fun getGridKb(category: String, page: Int): JSONObject {
