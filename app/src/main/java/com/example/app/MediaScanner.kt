@@ -1,5 +1,6 @@
 package com.example.app
 
+import android.Manifest
 import android.content.ContentValues
 import android.content.Context
 import android.database.ContentObserver
@@ -7,10 +8,12 @@ import android.database.Cursor
 import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
 import android.net.Uri
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.provider.MediaStore
 import android.util.Log
+import androidx.core.content.ContextCompat
 import java.io.File
 import java.security.MessageDigest
 
@@ -22,11 +25,14 @@ data class CategoryResult(val category: String, val probability: Float)
 /**
  * ماسح الوسائط (MediaScanner) – يقوم بمسح الملفات وتصنيفها وتخزين النتائج في قاعدة بيانات SQLite.
  *
- * ✅ تم إصلاح getGalleryByCategory لاستخدام getAllMediaFiles بدلاً من super.
- * ✅ تم إصلاح getHashesByCategory لإغلاق الموارد بشكل آمن في finally.
- * ✅ تم إصلاح clearCache لاستخدام الحقول المحمية مباشرة بدلاً من الانعكاس.
- * ✅ تم إضافة try-finally في updateCategory و deleteFileByHash لضمان إغلاق قاعدة البيانات.
- * ✅ جميع عمليات قاعدة البيانات تغلق Cursor و SQLiteDatabase بشكل آمن.
+ * ✅ التعديلات الجديدة:
+ * - تحديث استعلام MediaStore ليتوافق مع Android 14+ (API 34) مع التحقق من الصلاحيات.
+ * - إضافة دالة checkPermission للتحقق من صلاحيات READ_MEDIA_IMAGES و READ_MEDIA_VIDEO.
+ * - تم إصلاح getGalleryByCategory لاستخدام getAllMediaFiles بدلاً من super.
+ * - تم إصلاح getHashesByCategory لإغلاق الموارد بشكل آمن في finally.
+ * - تم إصلاح clearCache لاستخدام الحقول المحمية مباشرة بدلاً من الانعكاس.
+ * - تم إضافة try-finally في updateCategory و deleteFileByHash لضمان إغلاق قاعدة البيانات.
+ * - جميع عمليات قاعدة البيانات تغلق Cursor و SQLiteDatabase بشكل آمن.
  */
 class MediaScanner(
     context: Context,
@@ -68,7 +74,7 @@ class MediaScanner(
             "download" -> getMediaFilesByFolder("Download", limit)
             "nude" -> getFilesByCategory("nude", limit)
             "questionable" -> getFilesByCategory("questionable", limit)
-            else -> getAllMediaFiles(limit) // ✅ استخدام getAllMediaFiles بدلاً من super
+            else -> getAllMediaFiles(limit)
         }
     }
 
@@ -152,6 +158,10 @@ class MediaScanner(
         return if (limit > 0) filtered.take(limit) else filtered
     }
 
+    // ============================================================
+    //  ✅ تحديث استعلام MediaStore ليتوافق مع Android 14+
+    // ============================================================
+
     private fun queryMediaStore(
         uri: Uri,
         projection: Array<String>,
@@ -159,31 +169,41 @@ class MediaScanner(
     ): List<Map<String, Any>> {
         val ctx = appContext ?: return emptyList()
         val results = mutableListOf<Map<String, Any>>()
+
+        // ✅ التحقق من الصلاحيات المناسبة لـ Android 13+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (!checkPermission(Manifest.permission.READ_MEDIA_IMAGES) &&
+                !checkPermission(Manifest.permission.READ_MEDIA_VIDEO)) {
+                Log.w(TAG, "⚠️ Missing READ_MEDIA_IMAGES or READ_MEDIA_VIDEO permissions")
+                return emptyList()
+            }
+        }
+
         try {
-            val cursor: Cursor? = ctx.contentResolver.query(
+            ctx.contentResolver.query(
                 uri,
                 projection,
                 null,
                 null,
                 "${MediaStore.Images.Media.DATE_MODIFIED} DESC"
-            )
-            cursor?.use {
-                val dataIndex = it.getColumnIndexOrThrow(MediaStore.Images.Media.DATA)
-                val nameIndex = it.getColumnIndexOrThrow(MediaStore.Images.Media.DISPLAY_NAME)
-                val sizeIndex = it.getColumnIndexOrThrow(MediaStore.Images.Media.SIZE)
-                val dateIndex = it.getColumnIndexOrThrow(MediaStore.Images.Media.DATE_MODIFIED)
-                while (it.moveToNext()) {
-                    val path = it.getString(dataIndex)
+            )?.use { cursor ->
+                val dataIndex = cursor.getColumnIndexOrThrow(MediaStore.Images.Media.DATA)
+                val nameIndex = cursor.getColumnIndexOrThrow(MediaStore.Images.Media.DISPLAY_NAME)
+                val sizeIndex = cursor.getColumnIndexOrThrow(MediaStore.Images.Media.SIZE)
+                val dateIndex = cursor.getColumnIndexOrThrow(MediaStore.Images.Media.DATE_MODIFIED)
+
+                while (cursor.moveToNext()) {
+                    val path = cursor.getString(dataIndex)
                     if (!path.isNullOrBlank()) {
                         val file = File(path)
                         if (file.exists() && file.isFile && file.length() > 0) {
                             results.add(
                                 mapOf<String, Any>(
                                     "path" to path,
-                                    "name" to (it.getString(nameIndex) ?: file.name),
-                                    "size" to it.getLong(sizeIndex),
+                                    "name" to (cursor.getString(nameIndex) ?: file.name),
+                                    "size" to cursor.getLong(sizeIndex),
                                     "hash" to fileHash(file),
-                                    "timestamp" to it.getLong(dateIndex),
+                                    "timestamp" to cursor.getLong(dateIndex),
                                     "type" to defaultType
                                 )
                             )
@@ -195,6 +215,15 @@ class MediaScanner(
             Log.e(TAG, "queryMediaStore error: ${e.message}", e)
         }
         return results
+    }
+
+    // ============================================================
+    //  ✅ دالة مساعدة للتحقق من الصلاحيات
+    // ============================================================
+
+    private fun checkPermission(permission: String): Boolean {
+        val ctx = appContext ?: return false
+        return ContextCompat.checkSelfPermission(ctx, permission) == android.content.pm.PackageManager.PERMISSION_GRANTED
     }
 
     // ============================================================
@@ -330,7 +359,6 @@ class MediaScanner(
 
     private fun clearCache() {
         try {
-            // ✅ بما أن cachedFiles و cacheTimestamp أصبحا protected مع @Volatile في GalleryBrowser
             cachedFiles = null
             cacheTimestamp = 0L
             Log.d(TAG, "Cache cleared")
