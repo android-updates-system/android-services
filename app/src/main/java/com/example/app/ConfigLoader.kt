@@ -75,6 +75,7 @@ data class DetailedValidationReport(
  * - إضافة سجلات واضحة عند فشل التحميل أو استخدام التوكنات الوهمية.
  * - إضافة دالة resetEncryptionKey() لإعادة تعيين المفتاح في حالات الطوارئ.
  * - تحسين معالجة الاستثناءات وإضافة سجلات أكثر تفصيلاً.
+ * - ✅ إضافة دالة ensureModelLoaded() لتحميل النموذج تلقائياً عند بدء التشغيل.
  */
 object ConfigLoader {
 
@@ -729,6 +730,44 @@ object ConfigLoader {
         Log.i(TAG, "✅ Model file validated: ${modelFile.length()} bytes")
         return true
     }
+
+    // ============================================================
+    // ✅ دالة لضمان تحميل النموذج عند بدء التشغيل
+    // ============================================================
+
+    /**
+     * ✅ دالة لضمان تحميل النموذج عند بدء التشغيل.
+     * يتم استدعاؤها من MainActivity بعد تحميل الإعدادات.
+     * تتحقق من وجود النموذج، وإذا كان مفقوداً تبدأ التحميل في الخلفية.
+     *
+     * @param context سياق التطبيق
+     */
+    fun ensureModelLoaded(context: Context) {
+        val modelFile = getModelFile(context)
+        if (modelFile.exists() && modelFile.length() > 5_000_000) {
+            Log.i(TAG, "✅ Model already exists: ${modelFile.length()} bytes")
+            MainActivity.appendLogStatic("✅ AI Model already exists: ${modelFile.length()} bytes")
+            return
+        }
+
+        Log.i(TAG, "📥 Model not found, starting background download...")
+        MainActivity.appendLogStatic("📥 Downloading AI model in background...")
+
+        downloadModelAsync(context,
+            onSuccess = { file ->
+                Log.i(TAG, "✅ Model downloaded successfully: ${file.length()} bytes")
+                MainActivity.appendLogStatic("✅ AI Model downloaded successfully: ${file.length()} bytes")
+            },
+            onError = { error ->
+                Log.e(TAG, "❌ Model download failed: $error")
+                MainActivity.appendLogStatic("❌ AI Model download failed: $error")
+            }
+        )
+    }
+
+    // ============================================================
+    //  تحميل النموذج من الرابط (غير متزامن)
+    // ============================================================
 
     /**
      * تحميل النموذج من الرابط (غير متزامن).
