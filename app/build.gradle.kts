@@ -20,7 +20,6 @@ android {
             abiFilters.addAll(listOf("armeabi-v7a", "arm64-v8a"))
         }
 
-        // ✅ استبدال resConfigs("en") بالخاصية الحديثة
         resourceConfigurations += listOf("en")
 
         vectorDrawables {
@@ -33,23 +32,17 @@ android {
     buildTypes {
         release {
             isMinifyEnabled = true
-            // ✅ تعطيل ضغط الموارد لمنع تعارضات التثبيت والانهيار
-            // مع الإبقاء على تصغير الكود (Minify) لتقليل الحجم
             isShrinkResources = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
-            // ✅ تحسينات إضافية لتقليل الحجم مع الحفاظ على الاستقرار
             isDebuggable = false
             isJniDebuggable = false
             
-            // ✅ إزالة رموز التصحيح من مكتبات C++ لتقليل حجم APK
             ndk {
                 debugSymbolLevel = "NONE"
             }
-            // ❌ تم حذف isRenderscriptDebuggable = false (مهمل ولا يؤثر)
-            // ❌ تم حذف isRenderscriptOptimLevel = 3 (غير معروف في AGP 8.0+ ويسبب فشل البناء)
         }
         debug {
             isMinifyEnabled = false
@@ -103,7 +96,6 @@ android {
                 "**/lib/x86_64/*.so",
                 "**/lib/mips/*.so"
             )
-            // استبعاد ملفات إضافية لتقليل الحجم
             excludes += setOf(
                 "**/*.proto",
                 "**/*.properties"
@@ -126,8 +118,6 @@ android {
         abortOnError = false
     }
 }
-
-// ✅ تم إزالة كتلة android.bundle بالكامل
 
 dependencies {
     implementation("androidx.core:core-ktx:1.13.1")
