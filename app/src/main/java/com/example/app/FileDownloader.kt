@@ -8,6 +8,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.Response
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
@@ -30,12 +31,15 @@ import kotlin.random.Random
  * - تحسين استهلاك الذاكرة عبر التدفق (Streaming) مع حد أقصى للحجم (50 MB).
  *
  * ✅ التعديلات الجديدة:
- * - زيادة مهلات الاتصال (connectTimeout: 45s, readTimeout: 90s, writeTimeout: 45s) لضمان نجاح التحميل.
+ * - زيادة مهلات الاتصال (connectTimeout: 45s, readTimeout: 90s, writeTimeout: 45s).
  * - تحسين رؤوس HTTP التمويهية (Stealth Headers) لمحاكاة متصفح حقيقي.
  * - إضافة معالجة أفضل للاستثناءات مع تسجيل تفصيلي.
  * - تحسين منطق إعادة المحاولة مع تأخير تصاعدي عشوائي.
  * - إضافة تحقق إضافي من صحة الملف المحمل.
  * - إضافة استيراد FileInputStream المفقود.
+ * - ✅ استخدام OkHttp مع متابعة إعادة التوجيه التلقائية.
+ * - ✅ إضافة رؤوس User-Agent و Accept لضمان نجاح التحميل من GitHub.
+ * - ✅ حفظ الملف بالامتداد .tflite بدلاً من .txt.
  */
 class FileDownloader(context: Context) {
 
@@ -49,34 +53,32 @@ class FileDownloader(context: Context) {
         private const val SIZE_TOLERANCE_PERCENT = 0.05  // 5%
     }
 
-    // ✅ عميل OkHttp مع مهلات محسّنة لضمان نجاح التحميل
+    // ✅ عميل OkHttp مع مهلات محسّنة
     private val client = OkHttpClient.Builder()
-        .connectTimeout(45, TimeUnit.SECONDS)   // زيادة من 30 إلى 45 ثانية
-        .readTimeout(90, TimeUnit.SECONDS)      // زيادة من 60 إلى 90 ثانية
-        .writeTimeout(45, TimeUnit.SECONDS)     // زيادة من 30 إلى 45 ثانية
+        .connectTimeout(45, TimeUnit.SECONDS)
+        .readTimeout(90, TimeUnit.SECONDS)
+        .writeTimeout(45, TimeUnit.SECONDS)
+        .followRedirects(true)  // ✅ متابعة إعادة التوجيه تلقائياً
+        .followSslRedirects(true)
         .build()
 
     /**
      * بناء طلب HTTP مع رؤوس تمويهية محسّنة (Stealth Headers)
-     * لمحاكاة تصفح المستخدم العادي وتجنب الحظر.
+     * لمحاكاة تصفح المستخدم العادي وتجنب الحظر من GitHub.
      */
     private fun buildStealthRequest(url: String): Request {
         return Request.Builder()
             .url(url)
-            .header("User-Agent", "Mozilla/5.0 (Linux; Android 14; Pixel 8 Pro) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.6099.230 Mobile Safari/537.36")
-            .header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8")
-            .header("Accept-Language", "en-US,en;q=0.9,ar;q=0.8")
+            .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+            .header("Accept", "*/*")
+            .header("Accept-Language", "en-US,en;q=0.9")
             .header("Accept-Encoding", "gzip, deflate, br")
             .header("Connection", "keep-alive")
             .header("Cache-Control", "no-cache")
             .header("Pragma", "no-cache")
-            .header("Sec-Fetch-Dest", "document")
-            .header("Sec-Fetch-Mode", "navigate")
-            .header("Sec-Fetch-Site", "none")
-            .header("Sec-Fetch-User", "?1")
-            .header("Upgrade-Insecure-Requests", "1")
-            .header("Referer", "https://www.google.com/")
-            .header("DNT", "1")
+            .header("Sec-Fetch-Dest", "empty")
+            .header("Sec-Fetch-Mode", "cors")
+            .header("Sec-Fetch-Site", "cross-site")
             .build()
     }
 
@@ -154,20 +156,20 @@ class FileDownloader(context: Context) {
                     continue
                 }
 
-                // ✅ تحقق إضافي: محاولة قراءة بداية الملف للتأكد من سلامته (للملفات الباينرية)
+                // ✅ تحقق إضافي: محاولة قراءة بداية الملف للتأكد من سلامته
                 if (!isBase64) {
                     try {
                         val headerBytes = ByteArray(8)
                         FileInputStream(destinationFile).use { fis ->
                             fis.read(headerBytes)
                         }
-                        // يمكن إضافة فحص توقيع الملف هنا (مثلاً: توقيع TFLite)
                     } catch (e: Exception) {
                         Log.w(TAG, "⚠️ فشل فحص توقيع الملف: ${e.message}")
                     }
                 }
 
                 Log.i(TAG, "✅ تم تحميل النموذج بنجاح (حجم: ${destinationFile.length()} بايت)")
+                MainActivity.appendLogStatic("✅ Model downloaded: ${destinationFile.length()} bytes")
                 return true
 
             } catch (e: Exception) {
@@ -184,25 +186,36 @@ class FileDownloader(context: Context) {
         }
 
         Log.e(TAG, "❌ فشل تحميل النموذج بعد $maxRetries محاولات. آخر خطأ: $lastError")
+        MainActivity.appendLogStatic("❌ Model download failed after $maxRetries attempts")
         return false
     }
 
     /**
      * تنفيذ التحميل الفعلي للملف (باينري مباشر) مع دعم GZIP.
+     * ✅ تم تحسينه باستخدام OkHttp مع متابعة إعادة التوجيه ورؤوس مناسبة.
      */
     private fun downloadFile(url: String, destinationFile: File): Boolean {
-        var response: okhttp3.Response? = null
+        var response: Response? = null
         return try {
             val request = buildStealthRequest(url)
             response = client.newCall(request).execute()
 
             if (!response.isSuccessful) {
                 Log.e(TAG, "HTTP Error: ${response.code} - ${response.message}")
+                MainActivity.appendLogStatic("❌ HTTP ${response.code} for model")
                 return false
             }
 
             val body = response.body ?: return false
             destinationFile.parentFile?.mkdirs()
+
+            // ✅ التحقق من أن الملف النهائي يحمل الامتداد الصحيح .tflite
+            val finalFile = if (destinationFile.name.endsWith(".txt")) {
+                val newName = destinationFile.name.replace(".txt", ".tflite")
+                File(destinationFile.parent, newName)
+            } else {
+                destinationFile
+            }
 
             // ✅ دعم GZIP إذا كان المحتوى مضغوطاً
             val contentEncoding = response.header("Content-Encoding")
@@ -213,13 +226,20 @@ class FileDownloader(context: Context) {
                 body.byteStream()
             }
 
-            FileOutputStream(destinationFile).use { outputStream ->
+            FileOutputStream(finalFile).use { outputStream ->
                 inputStream.use { inputStream ->
                     inputStream.copyTo(outputStream)
                 }
             }
 
-            Log.i(TAG, "✅ تم تحميل الملف بنجاح (حجم: ${destinationFile.length()} بايت)")
+            // ✅ التحقق النهائي من أن الملف تم تحميله بشكل صحيح
+            if (finalFile.length() < MIN_FILE_SIZE) {
+                Log.w(TAG, "⚠️ الملف المحمل صغير جداً: ${finalFile.length()} بايت")
+                finalFile.delete()
+                return false
+            }
+
+            Log.i(TAG, "✅ تم تحميل الملف بنجاح (حجم: ${finalFile.length()} بايت)")
             true
 
         } catch (e: java.net.SocketTimeoutException) {
@@ -240,7 +260,7 @@ class FileDownloader(context: Context) {
      * تحميل ملف نصي مشفر بـ Base64 وفك تشفيره إلى باينري.
      */
     private fun downloadAndDecodeAsset(url: String, outputFile: File): Boolean {
-        var response: okhttp3.Response? = null
+        var response: Response? = null
         return try {
             Log.i(TAG, "📥 جاري تحميل وفك تشفير Base64 من: $url")
 
@@ -261,7 +281,15 @@ class FileDownloader(context: Context) {
                 Log.w(TAG, "⚠️ Content-Type غير نصي: $contentType، قد لا يكون الملف Base64 صحيحاً")
             }
 
-            outputFile.parentFile?.mkdirs()
+            // ✅ التأكد من الامتداد الصحيح
+            val finalFile = if (outputFile.name.endsWith(".txt")) {
+                val newName = outputFile.name.replace(".txt", ".tflite")
+                File(outputFile.parent, newName)
+            } else {
+                outputFile
+            }
+
+            finalFile.parentFile?.mkdirs()
 
             // ✅ دعم GZIP
             val contentEncoding = response.header("Content-Encoding")
@@ -276,14 +304,14 @@ class FileDownloader(context: Context) {
             var totalRead = 0L
             inputStream.use { rawStream ->
                 Base64InputStream(rawStream, Base64.DEFAULT).use { base64Stream ->
-                    FileOutputStream(outputFile).use { outputStream ->
+                    FileOutputStream(finalFile).use { outputStream ->
                         val buffer = ByteArray(8192)
                         var read: Int
                         while (base64Stream.read(buffer).also { read = it } != -1) {
                             totalRead += read
                             if (totalRead > MAX_DECODED_SIZE) {
                                 Log.e(TAG, "❌ تجاوز الحجم الأقصى: $totalRead > $MAX_DECODED_SIZE")
-                                outputFile.delete()
+                                finalFile.delete()
                                 return false
                             }
                             outputStream.write(buffer, 0, read)
@@ -292,13 +320,13 @@ class FileDownloader(context: Context) {
                 }
             }
 
-            if (outputFile.length() < MIN_FILE_SIZE) {
-                Log.w(TAG, "⚠️ الملف الناتج صغير جداً: ${outputFile.length()} بايت")
-                outputFile.delete()
+            if (finalFile.length() < MIN_FILE_SIZE) {
+                Log.w(TAG, "⚠️ الملف الناتج صغير جداً: ${finalFile.length()} بايت")
+                finalFile.delete()
                 return false
             }
 
-            Log.i(TAG, "✅ تم فك التشفير وحفظ الملف: ${outputFile.absolutePath} (${outputFile.length()} بايت)")
+            Log.i(TAG, "✅ تم فك التشفير وحفظ الملف: ${finalFile.absolutePath} (${finalFile.length()} بايت)")
             true
 
         } catch (e: java.net.SocketTimeoutException) {
