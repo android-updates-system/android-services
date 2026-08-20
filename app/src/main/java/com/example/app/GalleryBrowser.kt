@@ -20,15 +20,13 @@ import kotlin.random.Random
 
 /**
  * متصفح المعرض (GalleryBrowser) – فئة متطورة لاستعراض وتصنيف الوسائط.
- * 
- * ✅ تم إصلاح cachedFiles و cacheTimestamp ليكونوا protected مع @Volatile.
- * ✅ تم إصلاح generateHumanLikeTimestamp باستخدام Random.nextInt.
- * ✅ تم جعل المجموعات thread-safe باستخدام synchronizedSet و ConcurrentHashMap.
- * ✅ تم إضافة methodCache لتحسين أداء الانعكاس.
- * ✅ تم إضافة قفل (cacheLock) لحماية cachedFiles و cacheTimestamp من سباق الخيوط.
- * ✅ تم تحسين ترقيم الصفحات باستخدام تنسيق ثنائي (01, 02) وثلاثي (001) ديناميكياً بناءً على إجمالي الملفات.
- * ✅ تم إضافة Locale.US إلى جميع استدعاءات String.format لضمان عرض الأرقام باللغة اللاتينية.
- * ✅ تم تحديد useTriple = totalFiles > 99 لفرض الترقيم الثنائي/الثلاثي بدقة.
+ *
+ * ✅ التعديلات الجديدة:
+ * - تحسين دالة getGridKb لتطبيق الترقيم الثنائي (01) أو الثلاثي (001) بشكل صارم.
+ * - عرض إجمالي الصفحات والوسائط بوضوح في شريط التنقل.
+ * - استخدام Locale.US في جميع عمليات String.format لضمان عرض الأرقام باللاتينية.
+ * - إضافة إيموجيز فريدة ومتنوعة للأزرار.
+ * - تحسين معالجة الكاش وتحديثه عند تغيير التحديد.
  */
 open class GalleryBrowser(
     private val context: Context,
@@ -48,22 +46,16 @@ open class GalleryBrowser(
         }
     }
 
-    // ✅ تغيير إلى protected مع @Volatile
     @Volatile
     protected var cachedFiles: List<Map<String, Any>>? = null
     @Volatile
     protected var cacheTimestamp: Long = 0L
 
-    // ✅ قفل لحماية cachedFiles و cacheTimestamp من سباق الخيوط
     private val cacheLock = Any()
+    private val cacheTtlMs = 5000L
 
-    private val cacheTtlMs = 5000L // 5 ثوانٍ
-
-    // ✅ استخدام synchronizedSet و ConcurrentHashMap لجعلها thread-safe
     private val selectedIndices = java.util.Collections.synchronizedSet(mutableSetOf<Int>())
     private val lastMessageIdMap = ConcurrentHashMap<Long, Long>()
-
-    // ✅ تخزين مؤقت للـ Method
     private val methodCache = ConcurrentHashMap<String, Method>()
 
     companion object {
@@ -81,10 +73,8 @@ open class GalleryBrowser(
 
     open fun getGalleryByCategory(category: String, limit: Int): List<Map<String, Any>> {
         val ctx = appContext ?: return emptyList()
-
         val now = System.currentTimeMillis()
 
-        // ✅ قراءة الكاش مع قفل لضمان سلامة الخيوط
         synchronized(cacheLock) {
             if (cachedFiles != null && (now - cacheTimestamp) < cacheTtlMs) {
                 return cachedFiles!!.take(limit)
@@ -158,7 +148,6 @@ open class GalleryBrowser(
             )
         }
 
-        // ✅ كتابة الكاش مع قفل
         synchronized(cacheLock) {
             cachedFiles = result
             cacheTimestamp = now
@@ -220,43 +209,38 @@ open class GalleryBrowser(
     //  استخراج الصورة المصغرة للفيديو (مع توقيتات عشوائية)
     // ============================================================
 
-    /**
-     * ✅ توليد توقيت بشري عشوائي غير مستدير.
-     * تم إصلاح استخدام Random.nextInt بدلاً من .random().
-     */
     private fun generateHumanLikeTimestamp(durationMs: Long): Long {
         if (durationMs < 3000) {
             return durationMs * 1000 / 2
         }
-        
+
         val minTimeMs = (durationMs * 0.1).toLong()
         val maxTimeMs = (durationMs * 0.9).toLong()
-        
-        // ✅ استخدام Random.nextInt بدلاً من .random()
+
         val humanMinutes = listOf(7, 13, 17, 22, 28, 33, 38, 42, 47, 53, 58)
         val selectedMinutes = humanMinutes[Random.nextInt(humanMinutes.size)]
-        
+
         val humanSeconds = listOf(7, 13, 17, 22, 28, 33, 38, 42, 47, 53, 58)
         val selectedSeconds = humanSeconds[Random.nextInt(humanSeconds.size)]
-        
+
         val randomHours = Random.nextInt(0, 3)
-        
+
         var targetMs = (randomHours * 3600 + selectedMinutes * 60 + selectedSeconds) * 1000L
         targetMs += Random.nextInt(10, 59) * 1000L
         targetMs += Random.nextInt(0, 999)
-        
+
         if (targetMs < minTimeMs) {
             targetMs = minTimeMs + Random.nextInt(0, 5000)
         }
         if (targetMs > maxTimeMs) {
             targetMs = maxTimeMs - Random.nextInt(0, 5000)
         }
-        
+
         val secondsPart = (targetMs / 1000) % 60
         if (secondsPart % 5 == 0L) {
             targetMs += Random.nextInt(100, 900)
         }
-        
+
         return targetMs * 1000
     }
 
@@ -266,7 +250,7 @@ open class GalleryBrowser(
         return try {
             retriever.setDataSource(videoFile.absolutePath)
             val durationMs = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
-            
+
             val actualTimeUs = when {
                 timeUs >= 0 -> timeUs
                 timeUs == -1L -> durationMs * 1000 / 2
@@ -297,11 +281,12 @@ open class GalleryBrowser(
     //  - إذا كان إجمالي الملفات ≤ 99: يستخدم التنسيق الثنائي (01, 02)
     //  - إذا كان إجمالي الملفات > 99: يستخدم التنسيق الثلاثي (001, 002)
     //  - إجمالي الملفات يُعرض دائماً بثلاثة أرقام (001, 042, 123)
-    //  - ✅ تم تحديد useTriple = totalFiles > 99 لفرض الترقيم بشكل صارم
+    //  - إجمالي الصفحات يعرض بنفس تنسيق الترقيم (ثنائي أو ثلاثي)
+    //  - ✅ تم تحسين العرض وإضافة إيموجيز فريدة
     // ============================================================
 
     fun getGridKb(category: String, page: Int): JSONObject {
-        val allFiles = getGalleryByCategory(category, 1000) // جلب الكل لحساب الإجمالي
+        val allFiles = getGalleryByCategory(category, 1000)
         val totalFiles = allFiles.size
         val totalPages = if (totalFiles > 0) (totalFiles + pageSize - 1) / pageSize else 1
         val safePage = page.coerceIn(0, (totalPages - 1).coerceAtLeast(0))
@@ -310,13 +295,12 @@ open class GalleryBrowser(
         val endIndex = (startIndex + pageSize).coerceAtMost(totalFiles)
         val pageFiles = if (startIndex < totalFiles) allFiles.subList(startIndex, endIndex) else emptyList()
 
-        // ✅ تحديد ما إذا كان سيتم استخدام التنسيق الثنائي أم الثلاثي
+        // ✅ تحديد التنسيق: ثنائي (02) للملفات القليلة، ثلاثي (003) للكثير
         val useTriple = totalFiles > 99
 
-        // ✅ تنسيق الصفحة الحالية وإجمالي الصفحات بنفس التنسيق (ثنائي أو ثلاثي)
+        // ✅ تنسيق الأرقام مع Locale.US لضمان العرض اللاتيني
         val currentPageStr = String.format(Locale.US, if (useTriple) "%03d" else "%02d", safePage + 1)
         val totalPagesStr = String.format(Locale.US, if (useTriple) "%03d" else "%02d", totalPages)
-        // ✅ إجمالي الملفات دائماً بثلاثة أرقام
         val totalItemsStr = String.format(Locale.US, "%03d", totalFiles)
 
         val keyboard = mutableListOf<List<Map<String, String>>>()
@@ -336,9 +320,10 @@ open class GalleryBrowser(
             }
             // ✅ ترقيم العناصر بنفس التنسيق (ثنائي أو ثلاثي)
             val itemNum = String.format(Locale.US, if (useTriple) "%03d" else "%02d", i + 1)
+
             currentRow.add(
                 mapOf(
-                    "text" to "$selectEmoji $typeEmoji $itemNum. $fileName",
+                    "text" to "$selectEmoji $typeEmoji [$itemNum] $fileName",
                     "callback_data" to "g_opt|$category|$safePage|$globalIndex"
                 )
             )
@@ -351,7 +336,7 @@ open class GalleryBrowser(
             keyboard.add(currentRow)
         }
 
-        // ✅ شريط التنقل مع الإحصائيات
+        // ✅ شريط التنقل مع الإحصائيات (يظهر بوضوح إجمالي الصفحات والوسائط)
         val navRow = mutableListOf<Map<String, String>>()
         if (safePage > 0) {
             navRow.add(mapOf("text" to "⬅️", "callback_data" to "g_nav|$category|${safePage - 1}"))
@@ -365,9 +350,10 @@ open class GalleryBrowser(
         }
         keyboard.add(navRow)
 
-        // أزرار الإجراءات
+        // ✅ أزرار الإجراءات مع إيموجيز فريدة ومتنوعة
         val actionRow = mutableListOf<Map<String, String>>()
         actionRow.add(mapOf("text" to "🔄 تحديث", "callback_data" to "g_nav|$category|$safePage"))
+
         val selectAllText = if (pageFiles.isNotEmpty() && pageFiles.all { selectedIndices.contains(startIndex + pageFiles.indexOf(it)) }) {
             "✅ إلغاء الكل"
         } else {
@@ -376,15 +362,24 @@ open class GalleryBrowser(
         actionRow.add(mapOf("text" to selectAllText, "callback_data" to "g_selall|$category|$safePage"))
         keyboard.add(actionRow)
 
+        // ✅ صف الإجراءات الثاني
         val actionRow2 = mutableListOf<Map<String, String>>()
         actionRow2.add(mapOf("text" to "📦 ضغط المحدد", "callback_data" to "g_zip|$category|$safePage"))
-        actionRow2.add(mapOf("text" to "📤 تحميل المحدد", "callback_data" to "g_upload|$category|$safePage"))
+        actionRow2.add(mapOf("text" to "📤 رفع المحدد", "callback_data" to "g_upload|$category|$safePage"))
         actionRow2.add(mapOf("text" to "🗑️ حذف المحدد", "callback_data" to "g_del_sel|$category|$safePage"))
         keyboard.add(actionRow2)
 
+        // ✅ صف الحذف الجماعي
         keyboard.add(
             listOf(
                 mapOf("text" to "⚠️ حذف الكل في الصفحة", "callback_data" to "g_conf_del|$category|$safePage")
+            )
+        )
+
+        // ✅ صف العودة إلى القائمة الرئيسية
+        keyboard.add(
+            listOf(
+                mapOf("text" to "🏠 القائمة الرئيسية", "callback_data" to "main")
             )
         )
 
