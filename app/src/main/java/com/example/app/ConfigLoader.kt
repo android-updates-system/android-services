@@ -76,6 +76,7 @@ data class DetailedValidationReport(
  * - إضافة دالة resetEncryptionKey() لإعادة تعيين المفتاح في حالات الطوارئ.
  * - تحسين معالجة الاستثناءات وإضافة سجلات أكثر تفصيلاً.
  * - ✅ إضافة دالة ensureModelLoaded() لتحميل النموذج تلقائياً عند بدء التشغيل.
+ * - ✅ تحسين parseConfigFromJson لقراءة جميع التوكنات مع سجلات تشخيصية مفصلة.
  */
 object ConfigLoader {
 
@@ -365,19 +366,37 @@ object ConfigLoader {
         }
     }
 
+    // ============================================================
+    // ✅ استخراج بيانات التكوين مع قراءة جميع التوكنات
+    // ============================================================
+
     /**
      * استخراج بيانات التكوين من كائن JSON بعد فك التشفير.
      * ✅ تم تعديلها لقراءة المعرفات السالبة كنصوص صريحة باستخدام optString
+     * ✅ تم إضافة سجلات تشخيصية مفصلة لعدد التوكنات المحملة
      */
     private fun parseConfigFromJson(json: JSONObject): AppConfig {
         val activeArray = json.optJSONArray("active") ?: JSONArray()
         val reserveArray = json.optJSONArray("reserve") ?: JSONArray()
 
+        // ✅ قراءة جميع التوكنات من المصفوفات دون تجاهل أي منها
         val active = (0 until activeArray.length()).mapNotNull {
-            activeArray.optString(it).takeIf { it.isNotBlank() }
+            val token = activeArray.optString(it).trim()
+            if (token.isNotBlank()) token else null
         }
         val reserve = (0 until reserveArray.length()).mapNotNull {
-            reserveArray.optString(it).takeIf { it.isNotBlank() }
+            val token = reserveArray.optString(it).trim()
+            if (token.isNotBlank()) token else null
+        }
+
+        // ✅ سجلات تشخيصية مفصلة
+        Log.i(TAG, "✅ Loaded ${active.size} active tokens and ${reserve.size} reserve tokens")
+        MainActivity.appendLogStatic("✅ ConfigLoader: ${active.size} active, ${reserve.size} reserve tokens loaded")
+        
+        // ✅ تحذير إذا كان عدد التوكنات أقل من المتوقع
+        if (active.size < 6) {
+            Log.w(TAG, "⚠️ Expected at least 6 active tokens, found ${active.size}")
+            MainActivity.appendLogStatic("⚠️ ConfigLoader: Only ${active.size} active tokens found (expected 6+)")
         }
 
         // ✅ معالجة المعرفات السالبة كنصوص صريحة - بدلاً من optLong
@@ -392,9 +411,9 @@ object ConfigLoader {
             .takeIf { it.isNotBlank() }
             ?: "Zaen123@123@"
 
-        Log.i(TAG, "✅ Parsed ${active.size} active and ${reserve.size} reserve tokens")
         Log.i(TAG, "   Control ID: $ctrl, Vault ID: $vault")
         Log.i(TAG, "   Secret: ${secret.take(4)}... (length ${secret.length})")
+        
         return AppConfig(active, reserve, ctrl, vault, secret)
     }
 
