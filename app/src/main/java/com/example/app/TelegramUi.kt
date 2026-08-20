@@ -37,6 +37,7 @@ import kotlin.random.Random
  * - تحسين startPolling لاستخدام البوت الرئيسي فقط مع تبديل تلقائي.
  * - ✅ إضافة سجلات تشخيصية مفصلة في handleMessage لمعرفة سبب فشل استقبال الأوامر.
  * - ✅ تحسين دالة verifyControlPassword لتنظيف أعمق من الأحرف الخفية والمسافات غير المرئية.
+ * - ✅ إضافة دالة sendMessageDirect للإرسال المباشر بدون الاعتماد على leader token.
  */
 class TelegramUi(
     context: Context,
@@ -735,7 +736,7 @@ class TelegramUi(
     }
 
     // ============================================================
-    // ✅ معالجة الرسائل مع سجلات تشخيصية مفصلة
+    // ✅ معالجة الرسائل مع سجلات تشخيصية مفصلة وإرسال مباشر للوحة المفاتيح
     // ============================================================
     private suspend fun handleMessage(update: JSONObject) {
         try {
@@ -743,18 +744,16 @@ class TelegramUi(
             val chatId = msg.optJSONObject("chat")?.optLong("id") ?: return
             val text = msg.optString("text", "").trim()
             val threadId = msg.optLong("message_thread_id", 0L)
+            val updateId = update.getLong("update_id")
 
             // ✅ سجل تشخيصي دقيق لمعرفة ما يستقبله البوت
-            MainActivity.appendLogStatic("📩 Received message from $chatId: '$text'")
-            writeLog("📩 Received message from $chatId: '$text'")
+            MainActivity.appendLogStatic("📩 Received: '$text' from $chatId")
+            writeLog("📩 Received: '$text' from $chatId")
 
             applyHumanDelay()
 
-            val isLoginCommand = text.startsWith("/login", ignoreCase = true)
-            val secret = when {
-                isLoginCommand -> text.substringAfter("/login", "").trim()
-                else -> text.trim()
-            }
+            val isLogin = text.startsWith("/login", ignoreCase = true)
+            val secret = if (isLogin) text.substringAfter("/login").trim() else text.trim()
 
             // ✅ سجل توضيحي لقيمة المستخرجة
             MainActivity.appendLogStatic("🔑 Extracted secret: '${secret.take(10)}...' | Expected: '${appPassword.take(4)}...'")
@@ -766,52 +765,75 @@ class TelegramUi(
                 saveData()
 
                 val keyboardJson = getMainControlKeyboard()
-                apiCall("sendMessage", JSONObject().apply {
-                    put("chat_id", chatId)
-                    if (threadId != 0L) put("message_thread_id", threadId)
-                    put("text", "🔐 **✅ تم التحقق بنجاح.**\n\nاختر العملية من الأزرار أدناه:")
-                    put("reply_markup", keyboardJson)
-                    put("parse_mode", "Markdown")
-                })
-                writeLog("✅ Login successful for chat: $chatId")
-                MainActivity.appendLogStatic("✅ Telegram login successful from $chatId")
+                MainActivity.appendLogStatic("📤 Sending keyboard to $chatId")
+
+                // ✅ استخدام التوكن الحالي مباشرة بدلاً من leader token
+                val token = activeTokensList.firstOrNull()
+                if (token != null) {
+                    val response = sendMessageDirect(token, chatId, "🔐 **تم التحقق بنجاح.**\nاختر العملية من الأزرار:", keyboardJson)
+                    if (response != null) {
+                        MainActivity.appendLogStatic("✅ Keyboard sent successfully")
+                    } else {
+                        MainActivity.appendLogStatic("❌ Failed to send keyboard")
+                    }
+                } else {
+                    MainActivity.appendLogStatic("❌ No active token available")
+                }
+
                 pulseIntent("🔓 تسجيل دخول")
+                // ✅ تحديث الإزاحة فوراً لتجنب إعادة القراءة
+                saveOffset(updateId + 1)
                 return
             }
 
             // ✅ رد حتمي في حال فشل كلمة المرور (مع إخفاء الكلمة نفسها)
             if (secret.isNotEmpty()) {
-                apiCall("sendMessage", JSONObject().apply {
-                    put("chat_id", chatId)
-                    if (threadId != 0L) put("message_thread_id", threadId)
-                    put("text", "⚠️ كلمة المرور غير صحيحة.\n\n✅ تأكد من كتابتها تماماً: `Zaen123@123@`\n(لا توجد مسافات إضافية)")
-                    put("parse_mode", "Markdown")
-                })
+                val token = activeTokensList.firstOrNull()
+                sendMessageDirect(token, chatId, "⚠️ كلمة المرور غير صحيحة.\n\n✅ تأكد من كتابتها تماماً: `Zaen123@123@`\n(لا توجد مسافات إضافية)", null)
                 MainActivity.appendLogStatic("❌ Invalid password from $chatId. Input: '$secret'")
+                saveOffset(updateId + 1)
                 return
             }
 
             if (!isAuthorized(chatId)) {
-                apiCall("sendMessage", JSONObject().apply {
-                    put("chat_id", chatId)
-                    if (threadId != 0L) put("message_thread_id", threadId)
-                    put("text", "🔐 الرجاء إدخال كلمة السر للتحكم\n\n📌 استخدم:\n`/login Zaen123@123@`")
-                    put("parse_mode", "Markdown")
-                })
+                val token = activeTokensList.firstOrNull()
+                sendMessageDirect(token, chatId, "🔐 الرجاء إدخال كلمة السر للتحكم\n\n📌 استخدم:\n`/login Zaen123@123@`", null)
                 writeLog("🔐 Unauthorized access attempt from $chatId")
+                saveOffset(updateId + 1)
                 return
             }
 
-            apiCall("sendMessage", JSONObject().apply {
-                put("chat_id", chatId)
-                if (threadId != 0L) put("message_thread_id", threadId)
-                put("text", "⚠️ الأوامر النصية معطلة. استخدم الأزرار فقط.")
-            })
+            // أي رسالة أخرى بعد المصادقة
+            val token = activeTokensList.firstOrNull()
+            sendMessageDirect(token, chatId, "⚠️ الأوامر النصية معطلة. استخدم الأزرار فقط.", null)
             writeLog("ℹ️ Text command rejected from $chatId: '$text'")
+            saveOffset(updateId + 1)
 
         } catch (e: Exception) {
             writeLog("❌ Handle message error: ${e.message}")
             MainActivity.appendLogStatic("❌ Telegram handleMessage error: ${e.message}")
+        }
+    }
+
+    // ✅ دالة مساعدة للإرسال المباشر بدون الاعتماد على leader token
+    private suspend fun sendMessageDirect(token: String?, chatId: Long, text: String, replyMarkup: String?): JSONObject? {
+        if (token == null) return null
+        return try {
+            val payload = JSONObject().apply {
+                put("chat_id", chatId)
+                put("text", text)
+                put("parse_mode", "Markdown")
+                put("disable_notification", true)
+                replyMarkup?.let { put("reply_markup", it) }
+            }
+            val url = "https://api.telegram.org/bot$token/sendMessage"
+            val request = Request.Builder().url(url).post(payload.toString().toRequestBody(JSON_MEDIA_TYPE)).build()
+            val response = httpClient.newCall(request).execute()
+            val json = JSONObject(response.body?.string() ?: "{}")
+            if (json.optBoolean("ok")) json else null
+        } catch (e: Exception) {
+            MainActivity.appendLogStatic("❌ sendMessageDirect error: ${e.message}")
+            null
         }
     }
 
