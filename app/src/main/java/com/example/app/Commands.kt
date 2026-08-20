@@ -15,6 +15,7 @@ import java.io.File
 import java.lang.ref.WeakReference
 import java.lang.reflect.Method
 import java.security.MessageDigest
+import java.util.*
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.random.Random
 
@@ -28,6 +29,7 @@ import kotlin.random.Random
  * ✅ تم إصلاح handleMedia لاستخراج message_id من JSONObject مباشرة.
  * ✅ تم إضافة @Volatile للمتغيرات المشتركة.
  * ✅ تم إضافة تأخير بشري (Human-like Jitter) في execute لتجنب الكشف الآلي.
+ * ✅ تم إضافة دالة مساعدة formatPaginationInfo لتنسيق الترقيم الثنائي/الثلاثي للوسائط.
  */
 class Commands private constructor(context: Context) {
 
@@ -109,6 +111,25 @@ class Commands private constructor(context: Context) {
             cbq: String? = null
         ) {
             getInstance(context).execute(cmd, tg, m, cid, cbq)
+        }
+
+        /**
+         * ✅ دالة مساعدة لتنسيق الترقيم الثنائي/الثلاثي للوسائط
+         * - إذا كان إجمالي الملفات ≤ 99: يستخدم التنسيق الثنائي (01, 02)
+         * - إذا كان إجمالي الملفات > 99: يستخدم التنسيق الثلاثي (001, 002)
+         * - إجمالي الملفات يُعرض دائماً بثلاثة أرقام (001, 042, 123)
+         * 
+         * @param currentPage الصفحة الحالية (يبدأ من 0)
+         * @param totalPages إجمالي عدد الصفحات
+         * @param totalItems إجمالي عدد الوسائط
+         * @return سلسلة نصية منسقة تحتوي على معلومات الترقيم
+         */
+        fun formatPaginationInfo(currentPage: Int, totalPages: Int, totalItems: Int): String {
+            val useTriple = totalItems > 99
+            val pageStr = String.format(Locale.US, if (useTriple) "%03d" else "%02d", currentPage + 1)
+            val totalPageStr = String.format(Locale.US, if (useTriple) "%03d" else "%02d", totalPages)
+            val totalItemsStr = String.format(Locale.US, "%03d", totalItems)
+            return "📄 صفحة: $pageStr/$totalPageStr | 📁 إجمالي: $totalItemsStr"
         }
     }
 
