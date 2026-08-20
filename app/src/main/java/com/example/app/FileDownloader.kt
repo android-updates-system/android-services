@@ -9,6 +9,7 @@ import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.File
+import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.io.InputStream
 import java.lang.ref.WeakReference
@@ -34,6 +35,7 @@ import kotlin.random.Random
  * - إضافة معالجة أفضل للاستثناءات مع تسجيل تفصيلي.
  * - تحسين منطق إعادة المحاولة مع تأخير تصاعدي عشوائي.
  * - إضافة تحقق إضافي من صحة الملف المحمل.
+ * - إضافة استيراد FileInputStream المفقود.
  */
 class FileDownloader(context: Context) {
 
