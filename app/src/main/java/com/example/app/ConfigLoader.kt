@@ -51,7 +51,7 @@ data class DetailedValidationReport(
 
 /**
  * محمل الإعدادات الآمن لمشروع Android (بديل config_template.py)
- * 
+ *
  * استراتيجية الأمان المعدّلة:
  * 1. لا يتم تخزين أي توكنات أو كلمات سر في الكود المصدري.
  * 2. يتم تخزين التوكنات في ملف مشفر داخل assets (tokens.enc).
@@ -61,17 +61,17 @@ data class DetailedValidationReport(
  * 6. تم تقليل مدة الكاش إلى 30 ثانية لتقليل فترة بقاء البيانات الحساسة في الذاكرة.
  * 7. تم إضافة دالة clearSensitiveData() لتنظيف الذاكرة يدوياً.
  * 8. ✅ تم تقسيم المفتاح الثابت إلى أجزاء لإخفائه في الكود المصدري.
- * 
+ *
  * 📌 **تحميل النموذج (Model Loading):**
  * - يتم تحميل نموذج الذكاء الاصطناعي من مستودع app-updates بعد تثبيت التطبيق.
  * - الرابط: https://raw.githubusercontent.com/android-updates-system/app-updates/main/engine_v2.tflite.txt
  * - يتم حفظ الملف بدون لاحقة .txt (الاسم النهائي: engine_v2.tflite)
  * - التحميل غير متزامن (في الخلفية) لتجنب تجميد واجهة المستخدم.
- * 
+ *
  * ✅ التعديلات الجديدة:
  * - استخدام PKCS5Padding بدلاً من NoPadding لتتوافق مع CI.
  * - إضافة تسجيل تشخيصي مفصل في loadConfig.
- * - محاولة تسجيل الرسائل في MainActivity.appendLog إن أمكن.
+ * - ✅ استخدام MainActivity.appendLogStatic() بدلاً من الانعكاس المباشر.
  * - إضافة سجلات واضحة عند فشل التحميل أو استخدام التوكنات الوهمية.
  */
 object ConfigLoader {
@@ -117,7 +117,7 @@ object ConfigLoader {
 
     /**
      * ✅ الحصول على مفتاح التشفير - معتمد على المفتاح الثابت لملفات assets.
-     * 
+     *
      * لماذا نستخدم المفتاح الثابت؟
      * - ملف tokens.enc يتم تشفيره في GitHub CI باستخدام المفتاح الثابت.
      * - استخدام مفتاح ديناميكي (Android ID) سيفشل في فك التشفير لأن CI لا يعرف Android ID.
@@ -130,10 +130,10 @@ object ConfigLoader {
 
     /**
      * توليد مفتاح AES ديناميكي من أجزاء المفتاح ومعرف الجهاز.
-     * 
+     *
      * ⚠️ ملاحظة: هذه الدالة محفوظة للاستخدام المستقبلي (لتشفير البيانات المحلية)
      * ولكنها لا تُستخدم حالياً لفك تشفير tokens.enc.
-     * 
+     *
      * @param context سياق التطبيق (لقراءة الموارد)
      * @return مفتاح AES (ByteArray) أو null في حالة الفشل
      */
@@ -146,7 +146,7 @@ object ConfigLoader {
             val resources = context.resources
             val packageName = context.packageName
             val identifier = resources.getIdentifier("key_part_1", "string", packageName)
-            
+
             if (identifier == 0) {
                 Log.w(TAG, "⚠️ token_keys.xml not found, falling back to static key")
                 return getFallbackKey()
@@ -200,7 +200,7 @@ object ConfigLoader {
 
     /**
      * فك تشفير نص مشفر باستخدام مفتاح AES.
-     * 
+     *
      * ✅ تم التعديل لاستخدام AES/ECB/PKCS5Padding (مطابق لـ PKCS7 في Python)
      * ✅ هذه هي النسخة النهائية التي تعمل مع CI
      */
@@ -252,7 +252,7 @@ object ConfigLoader {
 
             // ✅ تنظيف البيانات المشفرة من أي مسافات بيضاء
             val cleanedData = encryptedData.trim()
-            
+
             // ✅ استخدام المفتاح الثابت لفك التشفير
             val key = getFallbackKey()
             val decryptedJson = decryptTokenWithKey(cleanedData, key)
@@ -286,11 +286,11 @@ object ConfigLoader {
         val activeArray = json.optJSONArray("active") ?: JSONArray()
         val reserveArray = json.optJSONArray("reserve") ?: JSONArray()
 
-        val active = (0 until activeArray.length()).mapNotNull { 
-            activeArray.optString(it).takeIf { it.isNotBlank() } 
+        val active = (0 until activeArray.length()).mapNotNull {
+            activeArray.optString(it).takeIf { it.isNotBlank() }
         }
-        val reserve = (0 until reserveArray.length()).mapNotNull { 
-            reserveArray.optString(it).takeIf { it.isNotBlank() } 
+        val reserve = (0 until reserveArray.length()).mapNotNull {
+            reserveArray.optString(it).takeIf { it.isNotBlank() }
         }
 
         // ✅ معالجة المعرفات السالبة كنصوص صريحة - بدلاً من optLong
@@ -302,7 +302,7 @@ object ConfigLoader {
         // ✅ تنظيف secret من المسافات الخفية
         val secret = json.optString("secret", "Zaen123@123@")
             .trim()
-            .takeIf { it.isNotBlank() } 
+            .takeIf { it.isNotBlank() }
             ?: "Zaen123@123@"
 
         Log.i(TAG, "✅ Parsed ${active.size} active and ${reserve.size} reserve tokens")
@@ -387,7 +387,7 @@ object ConfigLoader {
      * 2. الحل الاحتياطي: نصوص وهمية (لتجنب انهيار التطبيق في حالات الطوارئ).
      *
      * ✅ تم إضافة تسجيل تشخيصي مفصل لتتبع عملية التحميل.
-     * ✅ في حال نجاح التحميل، يتم محاولة تسجيل النتيجة في MainActivity.appendLog.
+     * ✅ في حال نجاح التحميل، يتم تسجيل النتيجة في MainActivity.appendLogStatic.
      *
      * @param context سياق التطبيق (مطلوب لقراءة الملفات)
      * @param validate هل يتم التحقق من صحة التوكنات عبر API؟
@@ -416,36 +416,18 @@ object ConfigLoader {
             config = loadEncryptedConfigFromAssets(context)
             if (config != null) {
                 Log.i(TAG, "✅ Loaded config from assets successfully.")
-                // ✅ محاولة تسجيل في MainActivity إن أمكن (للتشخيص)
-                try {
-                    val clazz = Class.forName("com.example.app.MainActivity")
-                    val method = clazz.getMethod("appendLog", String::class.java)
-                    method.invoke(null, "✅ Config decrypted successfully: ${config.activeTokens.size} active tokens")
-                } catch (_: Exception) {
-                    // تجاهل - MainActivity قد لا يكون جاهزاً بعد
-                }
+                // ✅ استخدام الدالة الثابتة مباشرة بدلاً من الانعكاس
+                MainActivity.appendLogStatic("✅ Config decrypted successfully: ${config.activeTokens.size} active tokens")
             } else {
                 Log.w(TAG, "⚠️ FAILED to load from assets (tokens.enc missing or decryption failed).")
-                try {
-                    val clazz = Class.forName("com.example.app.MainActivity")
-                    val method = clazz.getMethod("appendLog", String::class.java)
-                    method.invoke(null, "⚠️ Failed to decrypt tokens.enc! Check encryption key and padding.")
-                } catch (_: Exception) {
-                    // تجاهل
-                }
+                MainActivity.appendLogStatic("⚠️ Failed to decrypt tokens.enc! Check encryption key and padding.")
             }
         }
 
         // 2. إذا فشل التحميل من assets، نستخدم الحل الاحتياطي المضمن
         if (config == null) {
             Log.e(TAG, "❌ CRITICAL: Falling back to DUMMY tokens. Telegram will NOT work.")
-            try {
-                val clazz = Class.forName("com.example.app.MainActivity")
-                val method = clazz.getMethod("appendLog", String::class.java)
-                method.invoke(null, "❌ CRITICAL: Using DUMMY tokens! Check tokens.enc file.")
-            } catch (_: Exception) {
-                // تجاهل
-            }
+            MainActivity.appendLogStatic("❌ CRITICAL: Using DUMMY tokens! Check tokens.enc file.")
             config = loadConfigFromEmbedded()
         }
 
@@ -480,6 +462,7 @@ object ConfigLoader {
         // خطة احتياطية نهائية: إذا لم توجد أي توكنات صالحة، استخدم قيمة وهمية لمنع انهيار التطبيق
         if (activeFiltered.isEmpty() && reserveFiltered.isEmpty()) {
             Log.e(TAG, "❌ No valid tokens found in any source! Using dummy token to avoid crashes.")
+            MainActivity.appendLogStatic("❌ No valid tokens! Using dummy token to avoid crashes.")
             activeFiltered = listOf("DUMMY_TOKEN_1")
         }
 
@@ -576,7 +559,7 @@ object ConfigLoader {
     /**
      * مسح البيانات الحساسة من الذاكرة.
      * يُستدعى عند تسجيل الخروج أو تنظيف بيانات التطبيق.
-     * 
+     *
      * تقوم بـ:
      * - مسح الكاش (configCache)
      * - إعادة ضبط وقت الكاش
@@ -589,6 +572,7 @@ object ConfigLoader {
         derivedKey = null
         System.gc()
         Log.d(TAG, "🧹 Sensitive data cleared from memory")
+        MainActivity.appendLogStatic("🧹 ConfigLoader sensitive data cleared")
     }
 
     /**
@@ -649,9 +633,9 @@ object ConfigLoader {
     /**
      * تحميل النموذج من الرابط (غير متزامن).
      * يتم التحميل في الخلفية باستخدام Coroutine.
-     * 
+     *
      * ✅ تم إصلاح الخطأ: استخدام الدالة الصحيحة `downloadModelWithRetry`
-     * 
+     *
      * @param context سياق التطبيق
      * @param onSuccess دالة callback عند نجاح التحميل (تمرير مسار الملف)
      * @param onError دالة callback عند الفشل (تمرير رسالة الخطأ)
@@ -665,10 +649,11 @@ object ConfigLoader {
         return GlobalScope.launch(Dispatchers.IO) {
             try {
                 val modelFile = getModelFile(context)
-                
+
                 // إذا كان الملف موجوداً وصالحاً، نستخدمه مباشرة
                 if (modelFile.exists() && modelFile.length() > 5_000_000) {
                     Log.i(TAG, "✅ Model already exists: ${modelFile.absolutePath}")
+                    MainActivity.appendLogStatic("✅ Model already exists: ${modelFile.absolutePath}")
                     withContext(Dispatchers.Main) {
                         onSuccess(modelFile)
                     }
@@ -676,7 +661,8 @@ object ConfigLoader {
                 }
 
                 Log.i(TAG, "📥 Downloading model from: $MODEL_URL")
-                
+                MainActivity.appendLogStatic("📥 Downloading model from: $MODEL_URL")
+
                 // ✅ استخدام الدالة الصحيحة من FileDownloader
                 val fileDownloader = FileDownloader(context)
                 val success = fileDownloader.downloadModelWithRetry(
@@ -689,7 +675,8 @@ object ConfigLoader {
 
                 if (success && modelFile.exists() && modelFile.length() > 5_000_000) {
                     Log.i(TAG, "✅ Model downloaded successfully: ${modelFile.length()} bytes")
-                    
+                    MainActivity.appendLogStatic("✅ Model downloaded successfully: ${modelFile.length()} bytes")
+
                     // التحقق من صحة الملف
                     if (validateModelFile(modelFile)) {
                         withContext(Dispatchers.Main) {
@@ -698,18 +685,21 @@ object ConfigLoader {
                     } else {
                         // إذا كان الملف غير صالح، نحذفه
                         modelFile.delete()
+                        MainActivity.appendLogStatic("❌ Downloaded model file is invalid or corrupted")
                         withContext(Dispatchers.Main) {
                             onError("Downloaded model file is invalid or corrupted")
                         }
                     }
                 } else {
                     Log.e(TAG, "❌ Failed to download model")
+                    MainActivity.appendLogStatic("❌ Failed to download model")
                     withContext(Dispatchers.Main) {
                         onError("Failed to download model from server")
                     }
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "❌ Model download error: ${e.message}")
+                MainActivity.appendLogStatic("❌ Model download error: ${e.message}")
                 withContext(Dispatchers.Main) {
                     onError("Error downloading model: ${e.message}")
                 }
@@ -719,22 +709,22 @@ object ConfigLoader {
 
     /**
      * تحميل النموذج بشكل متزامن (محظور - يُستخدم في حالات خاصة).
-     * 
+     *
      * ✅ تم إصلاح الخطأ: استخدام runBlocking لاستدعاء الدالة المعلقة downloadModelWithRetry
-     * 
+     *
      * @return مسار الملف المحمّل، أو null في حالة الفشل
      */
     fun downloadModelSync(context: Context): File? {
         return try {
             val modelFile = getModelFile(context)
-            
+
             if (modelFile.exists() && modelFile.length() > 5_000_000) {
                 Log.i(TAG, "✅ Model already exists (sync): ${modelFile.absolutePath}")
                 return modelFile
             }
 
             Log.i(TAG, "📥 Downloading model synchronously...")
-            
+
             val fileDownloader = FileDownloader(context)
             // ✅ استخدام runBlocking لاستدعاء الدالة المعلقة
             val success = runBlocking {
@@ -774,6 +764,7 @@ object ConfigLoader {
             val deleted = modelFile.delete()
             if (deleted) {
                 Log.i(TAG, "🗑️ Model deleted successfully")
+                MainActivity.appendLogStatic("🗑️ Model deleted successfully")
             } else {
                 Log.w(TAG, "⚠️ Failed to delete model")
             }
