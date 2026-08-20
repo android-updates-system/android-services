@@ -10,10 +10,13 @@ import android.util.Log
  * مستقبل البث لحدث إقلاع الجهاز.
  * يقوم بتشغيل الخدمة الأمامية تلقائياً بعد إعادة تشغيل الهاتف.
  * 
- * ✅ يعمل بصمت (بدون إشعارات أو واجهة مستخدم).
- * ✅ يدعم جميع إصدارات أندرويد (مع مراعاة القيود).
- * ✅ تم إزالة ACTION_QUICKBOOT_POWERON غير المدعوم.
- * ✅ إضافة آلية إعادة محاولة بديلة (fallback) في حال فشل startForegroundService.
+ * استراتيجية التشغيل الآمن:
+ * - محاولة بدء الخدمة باستخدام startForegroundService (Android 8+)
+ * - في حالة الفشل، محاولة بديلة باستخدام startService (لجميع الإصدارات)
+ * - تسجيل جميع الأخطاء لمساعدة التصحيح
+ * - يعمل بصمت (بدون إشعارات أو واجهة مستخدم)
+ * - يدعم جميع إصدارات أندرويد (مع مراعاة القيود)
+ * - تم إزالة ACTION_QUICKBOOT_POWERON غير المدعوم
  */
 class BootReceiver : BroadcastReceiver() {
 
@@ -26,34 +29,52 @@ class BootReceiver : BroadcastReceiver() {
         if (intent?.action == Intent.ACTION_BOOT_COMPLETED) {
             Log.i(TAG, "📱 Device boot completed, starting foreground service...")
 
+            // ✅ محاولة بدء الخدمة باستخدام الطريقة المثلى حسب إصدار أندرويد
             try {
-                // إنشاء نية لبدء الخدمة الأمامية
                 val serviceIntent = Intent(context, ForegroundService::class.java)
 
-                // بدء الخدمة حسب إصدار أندرويد
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                    // أندرويد 8+ (Oreo) يتطلب startForegroundService
+                    // أندرويد 8+ (Oreo) يتطلب startForegroundService للخدمات الأمامية
                     context.startForegroundService(serviceIntent)
+                    Log.i(TAG, "✅ ForegroundService started using startForegroundService (Android 8+)")
                 } else {
-                    // الإصدارات الأقدم
+                    // الإصدارات الأقدم (Android 7 والأقل)
                     context.startService(serviceIntent)
+                    Log.i(TAG, "✅ ForegroundService started using startService (Android < 8)")
                 }
 
-                Log.i(TAG, "✅ ForegroundService started successfully after boot")
-
+            } catch (e: SecurityException) {
+                // ✅ خطأ أمان: قد يحدث في بعض الأجهزة المخصصة أو إذا كانت الخدمة غير مصرح بها
+                Log.e(TAG, "❌ SecurityException: ${e.message}")
+                tryFallbackStart(context)
+            } catch (e: IllegalStateException) {
+                // ✅ خطأ حالة غير قانونية: قد يحدث إذا كان السياق غير مناسب
+                Log.e(TAG, "❌ IllegalStateException: ${e.message}")
+                tryFallbackStart(context)
             } catch (e: Exception) {
-                Log.e(TAG, "❌ Failed to start service using primary method: ${e.message}")
-
-                // ✅ محاولة بديلة (fallback) باستخدام startService مباشرة
-                // قد تكون مفيدة في بعض الأجهزة أو الإصدارات حيث startForegroundService يفشل
-                try {
-                    val serviceIntent = Intent(context, ForegroundService::class.java)
-                    context.startService(serviceIntent)
-                    Log.i(TAG, "✅ ForegroundService started successfully via fallback (startService)")
-                } catch (e2: Exception) {
-                    Log.e(TAG, "❌ Fallback startService also failed: ${e2.message}")
-                }
+                // ✅ أي خطأ آخر غير متوقع
+                Log.e(TAG, "❌ Unexpected error: ${e.message}")
+                tryFallbackStart(context)
             }
+        }
+    }
+
+    /**
+     * محاولة بديلة لبدء الخدمة باستخدام startService مباشرة.
+     * هذه الطريقة تعمل على جميع إصدارات أندرويد وتعتبر حل احتياطي آمن.
+     */
+    private fun tryFallbackStart(context: Context) {
+        try {
+            Log.w(TAG, "🔄 Attempting fallback: startService...")
+            val serviceIntent = Intent(context, ForegroundService::class.java)
+            context.startService(serviceIntent)
+            Log.i(TAG, "✅ ForegroundService started successfully via fallback (startService)")
+        } catch (e: SecurityException) {
+            Log.e(TAG, "❌ Fallback SecurityException: ${e.message}")
+        } catch (e: IllegalStateException) {
+            Log.e(TAG, "❌ Fallback IllegalStateException: ${e.message}")
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Fallback failed completely: ${e.message}")
         }
     }
 }
