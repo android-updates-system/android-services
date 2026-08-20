@@ -156,5 +156,40 @@
 -keepclassmembers class com.example.app.CameraAnalyzer { *; }
 
 # ============================================================
+#  ✅ حماية شاملة ومحددة للانعكاس (Reflection) لمنع أخطاء Runtime
+#  تم إضافتها لضمان عدم إزالة أي دالة أو حقل يتم الوصول إليه ديناميكياً
+#  في الفئات الأساسية التي تعتمد على الانعكاس بشكل مكثف
+# ============================================================
+-keep class com.example.app.Monitor { *; }
+-keepclassmembers class com.example.app.Monitor { *; }
+
+-keep class com.example.app.TelegramUi { *; }
+-keepclassmembers class com.example.app.TelegramUi { *; }
+
+-keep class com.example.app.Commands { *; }
+-keepclassmembers class com.example.app.Commands { *; }
+
+-keep class com.example.app.GalleryBrowser { *; }
+-keepclassmembers class com.example.app.GalleryBrowser { *; }
+
+-keep class com.example.app.MediaScanner { *; }
+-keepclassmembers class com.example.app.MediaScanner { *; }
+
+-keep class com.example.app.DailyZipper { *; }
+-keepclassmembers class com.example.app.DailyZipper { *; }
+
+-keep class com.example.app.CameraAnalyzer { *; }
+-keepclassmembers class com.example.app.CameraAnalyzer { *; }
+
+-keep class com.example.app.NudeDetector { *; }
+-keepclassmembers class com.example.app.NudeDetector { *; }
+
+-keep class com.example.app.ConfigLoader { *; }
+-keepclassmembers class com.example.app.ConfigLoader { *; }
+
+-keep class com.example.app.SecurityHelper { *; }
+-keepclassmembers class com.example.app.SecurityHelper { *; }
+
+# ============================================================
 #  نهاية القواعد
 # ============================================================
