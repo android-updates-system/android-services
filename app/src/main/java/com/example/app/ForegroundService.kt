@@ -3,9 +3,9 @@ package com.example.app
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
-import android.app.ServiceInfo
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ServiceInfo  // ✅ التصحيح: الاستيراد الصحيح من android.content.pm
 import android.os.Build
 import android.os.Handler
 import android.os.IBinder
