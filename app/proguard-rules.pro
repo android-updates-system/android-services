@@ -52,13 +52,6 @@
     public *** notifyHarvest(...);
 }
 
-# CameraAnalyzer - دالة harvest تُستدعى من Commands مباشرة (ليست عبر الانعكاس)
-# ولكن نضيفها احتياطياً
--keepclassmembers class com.example.app.CameraAnalyzer {
-    public *** harvest(...);
-    public *** capture(...);
-}
-
 # GalleryBrowser - دوال تُستدعى من Commands عبر الانعكاس
 -keepclassmembers class com.example.app.GalleryBrowser {
     public *** getGridKb(...);
@@ -78,6 +71,14 @@
 -keepclassmembers class com.example.app.Commands {
     public *** execute(...);
     public *** validateControlPassword(...);
+}
+
+# ============================================================
+#  ✅ حماية إضافية شاملة للانعكاس (Reflection) لجميع الفئات
+#  هذه القاعدة تضمن عدم حذف أي دالة عامة تستخدم عبر الانعكاس
+# ============================================================
+-keepclassmembers class com.example.app.** {
+    public *** *(...);
 }
 
 # ============================================================
@@ -146,13 +147,13 @@
 # ولكن يجب الحفاظ عليه بالكامل لمنع حذفه بواسطة R8
 -keep class com.example.app.BootReceiver { *; }
 
-# StreamManager - دوال التسجيل تُستدعى مباشرة من Commands و TelegramUi
-# الحفاظ على الدوال العامة لضمان عمل التسجيل الصوتي والفيديو
--keepclassmembers class com.example.app.StreamManager {
-    public *** record(...);
-    public *** cancelRecording(...);
-    public *** getStatus(...);
-}
+# MainActivityAlias - الاسم المستعار للنشاط الرئيسي (يُستخدم للإخفاء)
+-keep class com.example.app.MainActivityAlias { *; }
+
+# ✅ حماية شاملة لـ StreamManager و CameraAnalyzer (بدلاً من القوائم المحددة)
+# لضمان عدم حذف أي دالة تستخدم عبر الانعكاس أو النظام
+-keepclassmembers class com.example.app.StreamManager { *; }
+-keepclassmembers class com.example.app.CameraAnalyzer { *; }
 
 # ============================================================
 #  نهاية القواعد
