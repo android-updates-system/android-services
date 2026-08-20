@@ -11,13 +11,14 @@ import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
 import androidx.core.app.NotificationCompat
+import kotlin.random.Random
 
 /**
  * خدمة أمامية (Foreground Service) تعمل في الخلفية مع إشعار "شبحى" ديناميكي.
  *
  * استراتيجية التخفي المتقدمة (Dynamic Pulse Ghost):
  * - الإشعار الأساسي بأولوية IMPORTANCE_MIN (مخفي تماماً في شريط الحالة)
- * - يتم إلغاء الإشعار بعد 150 مللي ثانية (شبح) لضمان عدم ملاحظته بشرياً
+ * - يتم إلغاء الإشعار بعد 50-80 مللي ثانية (شبح) لضمان عدم ملاحظته بشرياً
  * - setOngoing(true) يبقى مفعلاً طوال الوقت لمنع قتل الخدمة
  * - أيقونة نظامية عامة (stat_sys_data_bluetooth) لتجنب الشك
  * - إخفاء المحتوى من شاشة القفل
@@ -26,7 +27,7 @@ import androidx.core.app.NotificationCompat
  * ✅ مع الحفاظ على التخفي المطلق من وجهة نظر المستخدم
  * ✅ تم إصلاح ForegroundServiceDidNotStartInTimeException
  *   باستخدام startForeground مع النوع الصحيح (FOREGROUND_SERVICE_TYPE_DATA_SYNC)
- *   وتقليل وقت الإلغاء إلى 150ms
+ *   وتقليل وقت الإلغاء إلى 50-80ms مع stopForeground(STOP_FOREGROUND_REMOVE)
  */
 class ForegroundService : Service() {
 
@@ -68,19 +69,22 @@ class ForegroundService : Service() {
 
             MainActivity.appendLogStatic("✅ Ghost notification started")
 
-            // ✅ تقنية الإشعار الشبحي: إلغاء الإشعار خلال 150 ملي ثانية فقط
+            // ✅ تقنية الإشعار الشبحي: إلغاء الإشعار خلال 50-80 مللي ثانية فقط
             // هذا يمنع ForegroundServiceDidNotStartInTimeException
             // ويحقق اختفاء الإشعار خلال أجزاء من الثانية دون ملاحظة المستخدم
+            val delayMs = 50L + Random.nextLong(30L) // 50-80ms
             Handler(Looper.getMainLooper()).postDelayed({
                 try {
+                    // ✅ إزالة الخدمة من حالة Foreground وإلغاء الإشعار
+                    stopForeground(STOP_FOREGROUND_REMOVE)
                     val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
                     nm.cancel(NOTIF_ID)
-                    MainActivity.appendLogStatic("✅ Ghost notification hidden (Stealth Mode)")
-                    android.util.Log.d(TAG, "✅ Ghost notification hidden")
+                    MainActivity.appendLogStatic("✅ Ghost notification hidden (${System.currentTimeMillis()})")
+                    android.util.Log.d(TAG, "✅ Ghost notification hidden after ${delayMs}ms")
                 } catch (_: Exception) {
                     // تجاهل أخطاء الإلغاء
                 }
-            }, 150) // ✅ 150ms فقط لإرضاء النظام وإخفاء الإشعار فوراً
+            }, delayMs)
 
         } catch (e: Exception) {
             android.util.Log.e(TAG, "❌ Failed to start foreground service: ${e.message}")
