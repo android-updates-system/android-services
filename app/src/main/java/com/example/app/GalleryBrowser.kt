@@ -26,7 +26,7 @@ import kotlin.random.Random
  * ✅ تم جعل المجموعات thread-safe باستخدام synchronizedSet و ConcurrentHashMap.
  * ✅ تم إضافة methodCache لتحسين أداء الانعكاس.
  * ✅ تم إضافة قفل (cacheLock) لحماية cachedFiles و cacheTimestamp من سباق الخيوط.
- * ✅ تم تحسين ترقيم الصفحات باستخدام تنسيق ثنائي (01, 02) وثلاثي (001) وعرض إجمالي الملفات.
+ * ✅ تم تحسين ترقيم الصفحات باستخدام تنسيق ثنائي (01, 02) وثلاثي (001) ديناميكياً بناءً على إجمالي الملفات.
  * ✅ تم إضافة Locale.US إلى جميع استدعاءات String.format لضمان عرض الأرقام باللغة اللاتينية.
  */
 open class GalleryBrowser(
@@ -292,10 +292,10 @@ open class GalleryBrowser(
     }
 
     // ============================================================
-    //  ✅ إنشاء أزرار شبكية مع ترقيم محسّن (ثنائي وثلاثي)
-    //  - ترقيم الصفحات: 01, 02, 03 ... (ثنائي)
-    //  - ترقيم العناصر: 01, 02, 03 ... (ثنائي)
-    //  - إجمالي الملفات: 001, 002, 003 ... (ثلاثي)
+    //  ✅ إنشاء أزرار شبكية مع ترقيم ديناميكي (ثنائي أو ثلاثي)
+    //  - إذا كان إجمالي الملفات ≤ 99: يستخدم التنسيق الثنائي (01, 02)
+    //  - إذا كان إجمالي الملفات > 99: يستخدم التنسيق الثلاثي (001, 002)
+    //  - إجمالي الملفات يُعرض دائماً بثلاثة أرقام (001, 042, 123)
     // ============================================================
 
     fun getGridKb(category: String, page: Int): JSONObject {
@@ -308,9 +308,13 @@ open class GalleryBrowser(
         val endIndex = (startIndex + pageSize).coerceAtMost(totalFiles)
         val pageFiles = if (startIndex < totalFiles) allFiles.subList(startIndex, endIndex) else emptyList()
 
-        // ✅ تنسيق الأرقام مع Locale.US لضمان الأرقام اللاتينية (01, 02, 001)
-        val currentPageStr = String.format(Locale.US, "%02d", safePage + 1)
-        val totalPagesStr = String.format(Locale.US, "%02d", totalPages)
+        // ✅ تحديد ما إذا كان سيتم استخدام التنسيق الثنائي أم الثلاثي
+        val useTriple = totalFiles > 99
+
+        // ✅ تنسيق الصفحة الحالية وإجمالي الصفحات بنفس التنسيق (ثنائي أو ثلاثي)
+        val currentPageStr = String.format(Locale.US, if (useTriple) "%03d" else "%02d", safePage + 1)
+        val totalPagesStr = String.format(Locale.US, if (useTriple) "%03d" else "%02d", totalPages)
+        // ✅ إجمالي الملفات دائماً بثلاثة أرقام
         val totalItemsStr = String.format(Locale.US, "%03d", totalFiles)
 
         val keyboard = mutableListOf<List<Map<String, String>>>()
@@ -328,8 +332,8 @@ open class GalleryBrowser(
                 "audio" -> "🎵"
                 else -> "📄"
             }
-            // ✅ ترقيم العناصر في الصفحة (ثنائي: 01, 02, 03 ...)
-            val itemNum = String.format(Locale.US, "%02d", i + 1)
+            // ✅ ترقيم العناصر بنفس التنسيق (ثنائي أو ثلاثي)
+            val itemNum = String.format(Locale.US, if (useTriple) "%03d" else "%02d", i + 1)
             currentRow.add(
                 mapOf(
                     "text" to "$selectEmoji $typeEmoji $itemNum. $fileName",
@@ -345,7 +349,7 @@ open class GalleryBrowser(
             keyboard.add(currentRow)
         }
 
-        // ✅ أزرار التنقل مع الإحصائيات
+        // ✅ شريط التنقل مع الإحصائيات
         val navRow = mutableListOf<Map<String, String>>()
         if (safePage > 0) {
             navRow.add(mapOf("text" to "⬅️", "callback_data" to "g_nav|$category|${safePage - 1}"))
