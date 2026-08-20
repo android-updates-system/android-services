@@ -200,6 +200,11 @@
     *;
 }
 
+# ✅ حماية Companion object الخاص بـ MainActivity
+# لضمان استمرار عمل الدالة الثابتة appendLogStatic
+-keep class com.example.app.MainActivity$Companion { *; }
+-keepclassmembers class com.example.app.MainActivity$Companion { *; }
+
 # ============================================================
 #  نهاية القواعد
 # ============================================================
