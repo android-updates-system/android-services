@@ -1,100 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:orientation="vertical"
-    android:padding="8dp"
-    android:background="#0D0D12">
+    android:background="#0B0F19"
+    android:padding="16dp">
 
-    <!-- السجل النصي -->
-    <EditText
-        android:id="@+id/logEditText"
-        android:layout_width="match_parent"
-        android:layout_height="0dp"
-        android:layout_weight="1"
-        android:background="#0D0D12"
-        android:textColor="#33F366"
-        android:textSize="11sp"
-        android:gravity="top|start"
-        android:focusable="false"
-        android:clickable="false"
-        android:scrollbars="vertical"
-        android:typeface="monospace" />
-
-    <!-- شريط التقدم (ProgressBar) -->
-    <ProgressBar
-        android:id="@+id/progressBar"
-        style="?android:attr/progressBarStyleHorizontal"
+    <TextView
+        android:id="@+id/logTextView"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="8dp"
-        android:max="100"
-        android:progress="0"
-        android:visibility="gone"
-        android:progressTint="#33F366"
-        android:indeterminateTint="#33F366" />
-
-    <!-- صف الأزرار (4 أزرار متساوية الحجم) -->
-    <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="50dp"
-        android:orientation="horizontal"
-        android:layout_marginTop="8dp">
-
-        <Button
-            android:id="@+id/btnPermissions"
-            android:layout_width="0dp"
-            android:layout_height="match_parent"
-            android:layout_weight="1"
-            android:text="📷 صلاحيات"
-            android:textSize="10sp"
-            android:textStyle="bold"
-            android:backgroundTint="#4CAF50"
-            android:textColor="#FFFFFF"
-            android:layout_marginEnd="4dp"
-            android:padding="0dp"
-            android:gravity="center" />
-
-        <Button
-            android:id="@+id/btnCopy"
-            android:layout_width="0dp"
-            android:layout_height="match_parent"
-            android:layout_weight="1"
-            android:text="📋 نسخ"
-            android:textSize="10sp"
-            android:textStyle="bold"
-            android:backgroundTint="#2196F3"
-            android:textColor="#FFFFFF"
-            android:layout_marginEnd="4dp"
-            android:padding="0dp"
-            android:gravity="center" />
-
-        <Button
-            android:id="@+id/btnClear"
-            android:layout_width="0dp"
-            android:layout_height="match_parent"
-            android:layout_weight="1"
-            android:text="🗑️ مسح"
-            android:textSize="10sp"
-            android:textStyle="bold"
-            android:backgroundTint="#F44336"
-            android:textColor="#FFFFFF"
-            android:layout_marginEnd="4dp"
-            android:padding="0dp"
-            android:gravity="center" />
-
-        <Button
-            android:id="@+id/btnClearData"
-            android:layout_width="0dp"
-            android:layout_height="match_parent"
-            android:layout_weight="1"
-            android:text="🧹 إعادة ضبط"
-            android:textSize="10sp"
-            android:textStyle="bold"
-            android:backgroundTint="#FF9800"
-            android:textColor="#FFFFFF"
-            android:layout_marginEnd="0dp"
-            android:padding="0dp"
-            android:gravity="center" />
-    </LinearLayout>
-</LinearLayout>
+        android:fontFamily="monospace"
+        android:text="=== SYSTEM DIAGNOSTIC CONSOLE ===\n"
+        android:textColor="#33FF99"
+        android:textSize="11sp" />
+</ScrollView>
