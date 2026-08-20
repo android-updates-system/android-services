@@ -43,8 +43,8 @@ android {
             // ✅ تحسينات إضافية لتقليل الحجم مع الحفاظ على الاستقرار
             isDebuggable = false
             isJniDebuggable = false
-            isRenderscriptDebuggable = false
-            isRenderscriptOptimLevel = 3
+            // ❌ تم حذف isRenderscriptDebuggable = false (مهمل ولا يؤثر)
+            // ❌ تم حذف isRenderscriptOptimLevel = 3 (غير معروف في AGP 8.0+ ويسبب فشل البناء)
         }
         debug {
             isMinifyEnabled = false
