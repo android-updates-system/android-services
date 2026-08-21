@@ -77,6 +77,7 @@ data class DetailedValidationReport(
  * - تحسين معالجة الاستثناءات وإضافة سجلات أكثر تفصيلاً.
  * - ✅ إضافة دالة ensureModelLoaded() لتحميل النموذج تلقائياً عند بدء التشغيل.
  * - ✅ تحسين parseConfigFromJson لقراءة جميع التوكنات مع سجلات تشخيصية مفصلة.
+ * - ✅ إضافة تحقق إضافي لضمان قراءة جميع التوكنات العشرة.
  */
 object ConfigLoader {
 
@@ -346,16 +347,16 @@ object ConfigLoader {
                 return null
             }
 
-            parseConfigFromJson(json)
+            return parseConfigFromJson(json)
 
         } catch (e: java.io.FileNotFoundException) {
             Log.e(TAG, "❌ tokens.enc not found in assets!")
             MainActivity.appendLogStatic("❌ tokens.enc not found in assets! Make sure the file exists.")
-            null
+            return null
         } catch (e: Exception) {
             Log.e(TAG, "❌ Failed to load encrypted config from assets: ${e.message}")
             e.printStackTrace()
-            null
+            return null
         } finally {
             // ✅ إغلاق الدفق في finally لضمان تحرير الموارد
             try {
@@ -374,6 +375,7 @@ object ConfigLoader {
      * استخراج بيانات التكوين من كائن JSON بعد فك التشفير.
      * ✅ تم تعديلها لقراءة المعرفات السالبة كنصوص صريحة باستخدام optString
      * ✅ تم إضافة سجلات تشخيصية مفصلة لعدد التوكنات المحملة
+     * ✅ تم إضافة تحقق إضافي للتأكد من قراءة جميع التوكنات العشرة
      */
     private fun parseConfigFromJson(json: JSONObject): AppConfig {
         val activeArray = json.optJSONArray("active") ?: JSONArray()
@@ -393,10 +395,17 @@ object ConfigLoader {
         Log.i(TAG, "✅ Loaded ${active.size} active tokens and ${reserve.size} reserve tokens")
         MainActivity.appendLogStatic("✅ ConfigLoader: ${active.size} active, ${reserve.size} reserve tokens loaded")
         
-        // ✅ تحذير إذا كان عدد التوكنات أقل من المتوقع
+        // ✅ تحذير إذا كان عدد التوكنات النشطة أقل من المتوقع (6 على الأقل)
         if (active.size < 6) {
             Log.w(TAG, "⚠️ Expected at least 6 active tokens, found ${active.size}")
             MainActivity.appendLogStatic("⚠️ ConfigLoader: Only ${active.size} active tokens found (expected 6+)")
+        }
+
+        // ✅ تحذير إذا كان العدد الإجمالي للتوكنات أقل من 10
+        val totalTokens = active.size + reserve.size
+        if (totalTokens < 10) {
+            Log.w(TAG, "⚠️ Expected total 10 tokens, found $totalTokens (${active.size} active + ${reserve.size} reserve)")
+            MainActivity.appendLogStatic("⚠️ ConfigLoader: Total tokens $totalTokens (expected 10)")
         }
 
         // ✅ معالجة المعرفات السالبة كنصوص صريحة - بدلاً من optLong
