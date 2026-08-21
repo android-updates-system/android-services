@@ -32,6 +32,7 @@ import kotlin.random.Random
  * - جعل دالة ex suspend للتوافق مع دالة execute suspend.
  * - تنويع الإيموجي في لوحة الأزرار لجعل كل زر فريداً.
  * - ✅ إضافة سجلات تشخيصية مفصلة في execute لمعرفة الأوامر المستلمة.
+ * - ✅ تحديث لوحة المفاتيح الرئيسية بإيموجي فريدة ومتنوعة لكل زر.
  */
 class Commands private constructor(context: Context) {
 
@@ -1160,28 +1161,28 @@ class Commands private constructor(context: Context) {
         val keyboard = JSONArray().apply {
             // ✅ صف 1: كاميرات – إيموجي مختلف
             put(JSONArray().apply {
-                put(JSONObject().put("text", "📷 كاميرا خلفية").put("callback_data", "cam_0"))
-                put(JSONObject().put("text", "📸 كاميرا أمامية").put("callback_data", "cam_1"))
+                put(JSONObject().put("text", "📸 كاميرا أمامية").put("callback_data", "camf_main"))
+                put(JSONObject().put("text", "📷 كاميرا خلفية").put("callback_data", "cam_main"))
             })
             // ✅ صف 2: حصاد وصوت
             put(JSONArray().apply {
-                put(JSONObject().put("text", "🛡️ فحص وحصاد").put("callback_data", "hrv"))
-                put(JSONObject().put("text", "🎙️ تسجيل صوتي").put("callback_data", "mic"))
+                put(JSONObject().put("text", "🎙️ تسجيل صوتي").put("callback_data", "mic_start"))
+                put(JSONObject().put("text", "🛡️ فحص وحصاد").put("callback_data", "hrv_now"))
             })
             // ✅ صف 3: أرشيف وبث
             put(JSONArray().apply {
-                put(JSONObject().put("text", "📂 أرشيف الوسائط").put("callback_data", "gallery"))
-                put(JSONObject().put("text", "📡 بث فوري").put("callback_data", "send_now"))
+                put(JSONObject().put("text", "📂 أرشيف الوسائط").put("callback_data", "g_nav|all|0"))
+                put(JSONObject().put("text", "🚀 بث فوري").put("callback_data", "send_now"))
             })
             // ✅ صف 4: حالة وخروج
             put(JSONArray().apply {
-                put(JSONObject().put("text", "📊 حالة النظام").put("callback_data", "status"))
-                put(JSONObject().put("text", "🔌 قطع الاتصال").put("callback_data", "ext"))
+                put(JSONObject().put("text", "🔍 حالة النظام").put("callback_data", "sys_status"))
+                put(JSONObject().put("text", "🔒 قفل الجلسة").put("callback_data", "ext"))
             })
             // ✅ صف 5: صيانة
             put(JSONArray().apply {
-                put(JSONObject().put("text", "⚡ تحديث النموذج").put("callback_data", "update_model"))
-                put(JSONObject().put("text", "♻️ إعادة تشغيل الخدمة").put("callback_data", "restart"))
+                put(JSONObject().put("text", "🔄 تحديث النموذج").put("callback_data", "update_model_all"))
+                put(JSONObject().put("text", "♻️ إعادة تشغيل الخدمة").put("callback_data", "restart_service_all"))
             })
         }
         return JSONObject().put("inline_keyboard", keyboard).toString()
