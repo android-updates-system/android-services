@@ -29,6 +29,7 @@ import kotlin.random.Random
  * - تحسين معالجة الكاش وتحديثه عند تغيير التحديد.
  * - دعم الخماسي (5 أرقام) عند تجاوز عدد الملفات 9999.
  * - ✅ تم التأكيد على عرض الإحصائيات بالصيغة: 📊 currentPageStr/totalPagesStr | 🗂️ totalItemsStr
+ * - ✅ تم التأكيد على استخدام Locale.US في جميع عمليات String.format.
  */
 open class GalleryBrowser(
     private val context: Context,
