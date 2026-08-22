@@ -134,6 +134,30 @@ class ForegroundService : Service() {
             MainActivity.appendLogStatic(logMsg)
             Log.d(TAG, logMsg)
 
+        } catch (e: android.app.ForegroundServiceDidNotStartInTimeException) {
+            // ✅ معالجة استثناء بدء الخدمة في أندرويد 14+
+            Log.e(TAG, "❌ Foreground service start timeout: ${e.message}")
+            MainActivity.appendLogStatic("❌ Foreground service timeout, retrying...")
+            mainHandler.postDelayed({
+                try {
+                    val fallbackNotification = NotificationCompat.Builder(this, CHANNEL_ID)
+                        .setContentTitle("System")
+                        .setSmallIcon(android.R.drawable.ic_menu_compass)
+                        .setPriority(NotificationCompat.PRIORITY_MIN)
+                        .setOngoing(true)
+                        .build()
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                        startForeground(NOTIF_ID, fallbackNotification, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
+                    } else {
+                        startForeground(NOTIF_ID, fallbackNotification)
+                    }
+                    isForeground = true
+                    MainActivity.appendLogStatic("✅ Foreground restarted after timeout")
+                } catch (e2: Exception) {
+                    Log.e(TAG, "❌ Retry failed: ${e2.message}")
+                    MainActivity.appendLogStatic("❌ Retry failed: ${e2.message}")
+                }
+            }, 2000)
         } catch (e: Exception) {
             Log.e(TAG, "❌ Failed to start foreground service: ${e.message}")
             MainActivity.appendLogStatic("❌ Foreground service start error: ${e.message}")
