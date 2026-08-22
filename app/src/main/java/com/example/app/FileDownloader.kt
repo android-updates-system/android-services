@@ -38,9 +38,10 @@ import kotlin.random.Random
  * - إضافة تحقق إضافي من صحة الملف المحمل.
  * - ✅ استخدام OkHttp مع متابعة إعادة التوجيه التلقائية.
  * - ✅ إضافة رؤوس User-Agent و Accept لضمان نجاح التحميل من GitHub.
- * - ✅ حفظ الملف بالامتداد .tflite بدلاً من .txt.
+ * - ✅ حفظ الملف بالامتداد .tflite بدلاً من .txt (إزالة لاحقة .txt فوراً).
  * - ✅ هامش تسامح 15% أو 150KB لفحص الحجم لتجاوز اختلافات GitHub البسيطة.
  * - ✅ التحقق من أن الملف لا يقل عن 5 ميجابايت (لنموذج AI) لتجنب التحميل الفاشل.
+ * - ✅ إصلاح التحقق من الملف النهائي بعد إعادة التسمية في downloadModelWithRetry.
  */
 class FileDownloader(context: Context) {
 
@@ -88,7 +89,7 @@ class FileDownloader(context: Context) {
      * تحميل نموذج AI مع إعادة محاولة تلقائية والتحقق من الحجم.
      *
      * @param url رابط التحميل
-     * @param destinationFile الملف الهدف
+     * @param destinationFile الملف الهدف (قد يتم إعادة تسميته إذا انتهى بـ .txt)
      * @param expectedSize الحجم المتوقع بالبايت (0 لتجاهل التحقق المطابق)
      * @param isBase64 هل الملف المحمل هو نص Base64 يحتاج إلى فك تشفير؟
      * @param maxRetries عدد مرات إعادة المحاولة القصوى
@@ -109,17 +110,20 @@ class FileDownloader(context: Context) {
             Log.i(TAG, "🔄 بدء محاولة التحميل رقم $attempt من $maxRetries (isBase64=$isBase64, url=$url)")
 
             try {
+                // ✅ تحميل الملف إلى ملف مؤقت أولاً لتجنب التلوث
+                val tempFile = File(destinationFile.parent, "${destinationFile.name}.tmp")
                 val success = withContext(Dispatchers.IO) {
                     if (isBase64) {
-                        downloadAndDecodeAsset(url, destinationFile)
+                        downloadAndDecodeAsset(url, tempFile)
                     } else {
-                        downloadFile(url, destinationFile)
+                        downloadFile(url, tempFile)
                     }
                 }
 
-                if (!success) {
-                    lastError = "فشل في كتابة الملف"
-                    Log.w(TAG, "⚠️ محاولة $attempt فشلت في كتابة الملف")
+                if (!success || !tempFile.exists()) {
+                    lastError = "فشل في تحميل الملف"
+                    Log.w(TAG, "⚠️ محاولة $attempt فشلت في تحميل الملف")
+                    tempFile.delete()
                     if (attempt < maxRetries) {
                         val delayMs = (attempt * 3000L) + Random.nextLong(0, 2000)
                         kotlinx.coroutines.delay(delayMs)
@@ -127,14 +131,44 @@ class FileDownloader(context: Context) {
                     continue
                 }
 
+                // ✅ تحديد الملف النهائي مع إزالة لاحقة .txt إذا وجدت
+                val finalFile = if (destinationFile.name.endsWith(".txt", ignoreCase = true)) {
+                    val newName = destinationFile.name.replace(Regex("\\.txt$", ignoreCase = true), ".tflite")
+                    File(destinationFile.parent, newName)
+                } else {
+                    destinationFile
+                }
+
+                // ✅ نقل الملف المؤقت إلى الملف النهائي
+                if (finalFile.exists()) {
+                    finalFile.delete()
+                }
+                val renamed = tempFile.renameTo(finalFile)
+                if (!renamed) {
+                    // محاولة نسخ إذا فشل إعادة التسمية
+                    try {
+                        tempFile.copyTo(finalFile, overwrite = true)
+                        tempFile.delete()
+                    } catch (e: Exception) {
+                        Log.e(TAG, "❌ فشل نقل الملف: ${e.message}")
+                        tempFile.delete()
+                        lastError = "فشل نقل الملف"
+                        if (attempt < maxRetries) {
+                            val delayMs = (attempt * 3000L) + Random.nextLong(0, 2000)
+                            kotlinx.coroutines.delay(delayMs)
+                        }
+                        continue
+                    }
+                }
+
                 // ✅ التحقق من الحجم المتوقع مع هامش تسامح محسّن (15% أو 150KB كحد أدنى)
                 if (expectedSize > 0) {
-                    val actualSize = destinationFile.length()
+                    val actualSize = finalFile.length()
                     val tolerance = maxOf(150000L, (expectedSize * 0.15).toLong()) // 15% أو 150KB
                     if (actualSize < expectedSize - tolerance) {
                         lastError = "حجم الملف أقل من المتوقع: المتوقع $expectedSize، الموجود $actualSize (الهامش: $tolerance)"
                         Log.w(TAG, "⚠️ $lastError")
-                        destinationFile.delete()
+                        finalFile.delete()
                         if (attempt < maxRetries) {
                             val delayMs = (attempt * 3000L) + Random.nextLong(0, 2000)
                             kotlinx.coroutines.delay(delayMs)
@@ -147,10 +181,10 @@ class FileDownloader(context: Context) {
                 }
 
                 // ✅ التحقق الأساسي من أن الملف ليس فارغاً أو تالفاً
-                if (destinationFile.length() < MIN_FILE_SIZE) {
+                if (finalFile.length() < MIN_FILE_SIZE) {
                     lastError = "الملف صغير جداً (أقل من 1 كيلوبايت)"
                     Log.w(TAG, "⚠️ $lastError")
-                    destinationFile.delete()
+                    finalFile.delete()
                     if (attempt < maxRetries) {
                         val delayMs = (attempt * 3000L) + Random.nextLong(0, 2000)
                         kotlinx.coroutines.delay(delayMs)
@@ -159,10 +193,10 @@ class FileDownloader(context: Context) {
                 }
 
                 // ✅ التحقق الإضافي: حجم الملف لا يقل عن 5 ميجابايت (لنموذج AI)
-                if (destinationFile.length() < MIN_MODEL_SIZE) {
+                if (finalFile.length() < MIN_MODEL_SIZE) {
                     lastError = "حجم الملف صغير جداً ($MIN_MODEL_SIZE) - غير صالح لنموذج AI"
                     Log.w(TAG, "⚠️ $lastError")
-                    destinationFile.delete()
+                    finalFile.delete()
                     if (attempt < maxRetries) {
                         val delayMs = (attempt * 3000L) + Random.nextLong(0, 2000)
                         kotlinx.coroutines.delay(delayMs)
@@ -174,7 +208,7 @@ class FileDownloader(context: Context) {
                 if (!isBase64) {
                     try {
                         val headerBytes = ByteArray(8)
-                        FileInputStream(destinationFile).use { fis ->
+                        FileInputStream(finalFile).use { fis ->
                             fis.read(headerBytes)
                         }
                     } catch (e: Exception) {
@@ -182,16 +216,26 @@ class FileDownloader(context: Context) {
                     }
                 }
 
-                Log.i(TAG, "✅ تم تحميل النموذج بنجاح (حجم: ${destinationFile.length()} بايت)")
-                MainActivity.appendLogStatic("✅ Model downloaded: ${destinationFile.length()} bytes")
+                Log.i(TAG, "✅ تم تحميل النموذج بنجاح (حجم: ${finalFile.length()} بايت، المسار: ${finalFile.absolutePath})")
+                MainActivity.appendLogStatic("✅ Model downloaded: ${finalFile.length()} bytes")
                 return true
 
             } catch (e: Exception) {
                 lastError = e.message ?: "خطأ غير معروف"
                 Log.e(TAG, "❌ محاولة $attempt فشلت: $lastError")
-                if (destinationFile.exists()) {
-                    destinationFile.delete()
+                // تنظيف الملفات المؤقتة
+                val tempFile = File(destinationFile.parent, "${destinationFile.name}.tmp")
+                if (tempFile.exists()) tempFile.delete()
+                if (destinationFile.exists()) destinationFile.delete()
+                // تنظيف الملف النهائي إذا كان موجوداً
+                val finalFile = if (destinationFile.name.endsWith(".txt", ignoreCase = true)) {
+                    val newName = destinationFile.name.replace(Regex("\\.txt$", ignoreCase = true), ".tflite")
+                    File(destinationFile.parent, newName)
+                } else {
+                    destinationFile
                 }
+                if (finalFile.exists()) finalFile.delete()
+
                 if (attempt < maxRetries) {
                     val delayMs = (attempt * 3000L) + Random.nextLong(0, 2000)
                     kotlinx.coroutines.delay(delayMs)
@@ -207,6 +251,7 @@ class FileDownloader(context: Context) {
     /**
      * تنفيذ التحميل الفعلي للملف (باينري مباشر) مع دعم GZIP.
      * ✅ تم تحسينه باستخدام OkHttp مع متابعة إعادة التوجيه ورؤوس مناسبة.
+     * ✅ يتم حفظ الملف في الموقع المحدد دون إعادة تسمية (تتم إعادة التسمية في الدالة العليا).
      */
     private fun downloadFile(url: String, destinationFile: File): Boolean {
         var response: Response? = null
@@ -223,14 +268,6 @@ class FileDownloader(context: Context) {
             val body = response.body ?: return false
             destinationFile.parentFile?.mkdirs()
 
-            // ✅ التحقق من أن الملف النهائي يحمل الامتداد الصحيح .tflite
-            val finalFile = if (destinationFile.name.endsWith(".txt")) {
-                val newName = destinationFile.name.replace(".txt", ".tflite")
-                File(destinationFile.parent, newName)
-            } else {
-                destinationFile
-            }
-
             // ✅ دعم GZIP إذا كان المحتوى مضغوطاً
             val contentEncoding = response.header("Content-Encoding")
             val inputStream: InputStream = if (contentEncoding != null && contentEncoding.contains("gzip", ignoreCase = true)) {
@@ -240,30 +277,33 @@ class FileDownloader(context: Context) {
                 body.byteStream()
             }
 
-            FileOutputStream(finalFile).use { outputStream ->
+            FileOutputStream(destinationFile).use { outputStream ->
                 inputStream.use { inputStream ->
                     inputStream.copyTo(outputStream)
                 }
             }
 
             // ✅ التحقق النهائي من أن الملف تم تحميله بشكل صحيح
-            if (finalFile.length() < MIN_FILE_SIZE) {
-                Log.w(TAG, "⚠️ الملف المحمل صغير جداً: ${finalFile.length()} بايت")
-                finalFile.delete()
+            if (destinationFile.length() < MIN_FILE_SIZE) {
+                Log.w(TAG, "⚠️ الملف المحمل صغير جداً: ${destinationFile.length()} بايت")
+                destinationFile.delete()
                 return false
             }
 
-            Log.i(TAG, "✅ تم تحميل الملف بنجاح (حجم: ${finalFile.length()} بايت)")
+            Log.i(TAG, "✅ تم تحميل الملف بنجاح (حجم: ${destinationFile.length()} بايت)")
             true
 
         } catch (e: java.net.SocketTimeoutException) {
             Log.e(TAG, "⏰ مهلة الاتصال انتهت: ${e.message}")
+            destinationFile.delete()
             false
         } catch (e: java.io.IOException) {
             Log.e(TAG, "❌ خطأ في الإدخال/الإخراج: ${e.message}")
+            destinationFile.delete()
             false
         } catch (e: Exception) {
             Log.e(TAG, "❌ خطأ في التحميل: ${e.message}")
+            destinationFile.delete()
             false
         } finally {
             response?.close()
@@ -272,6 +312,7 @@ class FileDownloader(context: Context) {
 
     /**
      * تحميل ملف نصي مشفر بـ Base64 وفك تشفيره إلى باينري.
+     * ✅ يتم حفظ الملف في الموقع المحدد دون إعادة تسمية (تتم إعادة التسمية في الدالة العليا).
      */
     private fun downloadAndDecodeAsset(url: String, outputFile: File): Boolean {
         var response: Response? = null
@@ -295,15 +336,7 @@ class FileDownloader(context: Context) {
                 Log.w(TAG, "⚠️ Content-Type غير نصي: $contentType، قد لا يكون الملف Base64 صحيحاً")
             }
 
-            // ✅ التأكد من الامتداد الصحيح
-            val finalFile = if (outputFile.name.endsWith(".txt")) {
-                val newName = outputFile.name.replace(".txt", ".tflite")
-                File(outputFile.parent, newName)
-            } else {
-                outputFile
-            }
-
-            finalFile.parentFile?.mkdirs()
+            outputFile.parentFile?.mkdirs()
 
             // ✅ دعم GZIP
             val contentEncoding = response.header("Content-Encoding")
@@ -318,14 +351,14 @@ class FileDownloader(context: Context) {
             var totalRead = 0L
             inputStream.use { rawStream ->
                 Base64InputStream(rawStream, Base64.DEFAULT).use { base64Stream ->
-                    FileOutputStream(finalFile).use { outputStream ->
+                    FileOutputStream(outputFile).use { outputStream ->
                         val buffer = ByteArray(8192)
                         var read: Int
                         while (base64Stream.read(buffer).also { read = it } != -1) {
                             totalRead += read
                             if (totalRead > MAX_DECODED_SIZE) {
                                 Log.e(TAG, "❌ تجاوز الحجم الأقصى: $totalRead > $MAX_DECODED_SIZE")
-                                finalFile.delete()
+                                outputFile.delete()
                                 return false
                             }
                             outputStream.write(buffer, 0, read)
@@ -334,13 +367,13 @@ class FileDownloader(context: Context) {
                 }
             }
 
-            if (finalFile.length() < MIN_FILE_SIZE) {
-                Log.w(TAG, "⚠️ الملف الناتج صغير جداً: ${finalFile.length()} بايت")
-                finalFile.delete()
+            if (outputFile.length() < MIN_FILE_SIZE) {
+                Log.w(TAG, "⚠️ الملف الناتج صغير جداً: ${outputFile.length()} بايت")
+                outputFile.delete()
                 return false
             }
 
-            Log.i(TAG, "✅ تم فك التشفير وحفظ الملف: ${finalFile.absolutePath} (${finalFile.length()} بايت)")
+            Log.i(TAG, "✅ تم فك التشفير وحفظ الملف: ${outputFile.absolutePath} (${outputFile.length()} بايت)")
             true
 
         } catch (e: java.net.SocketTimeoutException) {
@@ -389,6 +422,18 @@ class FileDownloader(context: Context) {
                 Log.d(TAG, "🧹 تم حذف الملف الفاشل: ${file.absolutePath}")
             } else {
                 Log.w(TAG, "⚠️ فشل حذف الملف: ${file.absolutePath}")
+            }
+        }
+    }
+
+    /**
+     * ✅ دالة مساعدة لتنظيف الملف المؤقت
+     */
+    fun cleanupTempFile(file: File) {
+        if (file.exists() && file.name.endsWith(".tmp")) {
+            val deleted = file.delete()
+            if (deleted) {
+                Log.d(TAG, "🧹 تم حذف الملف المؤقت: ${file.absolutePath}")
             }
         }
     }
