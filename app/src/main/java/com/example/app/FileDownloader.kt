@@ -27,19 +27,20 @@ import kotlin.random.Random
  * - دعم فك ضغط GZIP تلقائياً.
  * - التحقق من نوع المحتوى (Content-Type) قبل معالجة Base64.
  * - إعادة محاولة تلقائية مع تأخير تصاعدي عشوائي.
- * - التحقق من الحجم المتوقع مع هامش تسامح محسّن (1% أو 50KB كحد أدنى).
+ * - التحقق من الحجم المتوقع مع هامش تسامح محسّن (15% أو 150KB كحد أدنى).
  * - تحسين استهلاك الذاكرة عبر التدفق (Streaming) مع حد أقصى للحجم (50 MB).
  *
  * ✅ التعديلات الجديدة:
  * - زيادة مهلات الاتصال (connectTimeout: 45s, readTimeout: 90s, writeTimeout: 45s).
- * - تحسين رؤوس HTTP التمويهية (Stealth Headers) لمحاكاة متصفح حقيقي.
+ * - تحسين رؤوس HTTP التمويهية (Stealth Headers) لمحاكاة متصفح Android حقيقي.
  * - إضافة معالجة أفضل للاستثناءات مع تسجيل تفصيلي.
  * - تحسين منطق إعادة المحاولة مع تأخير تصاعدي عشوائي.
  * - إضافة تحقق إضافي من صحة الملف المحمل.
- * - إضافة استيراد FileInputStream المفقود.
  * - ✅ استخدام OkHttp مع متابعة إعادة التوجيه التلقائية.
  * - ✅ إضافة رؤوس User-Agent و Accept لضمان نجاح التحميل من GitHub.
  * - ✅ حفظ الملف بالامتداد .tflite بدلاً من .txt.
+ * - ✅ هامش تسامح 15% أو 150KB لفحص الحجم لتجاوز اختلافات GitHub البسيطة.
+ * - ✅ التحقق من أن الملف لا يقل عن 5 ميجابايت (لنموذج AI) لتجنب التحميل الفاشل.
  */
 class FileDownloader(context: Context) {
 
@@ -50,7 +51,8 @@ class FileDownloader(context: Context) {
         private const val TAG = "FileDownloader"
         private const val MIN_FILE_SIZE = 1000L          // 1 كيلوبايت
         private const val MAX_DECODED_SIZE = 50L * 1024 * 1024 // 50 ميجابايت
-        private const val SIZE_TOLERANCE_PERCENT = 0.05  // 5%
+        private const val SIZE_TOLERANCE_PERCENT = 0.15  // 15%
+        private const val MIN_MODEL_SIZE = 5_000_000L   // 5 ميجابايت
     }
 
     // ✅ عميل OkHttp مع مهلات محسّنة
@@ -64,14 +66,14 @@ class FileDownloader(context: Context) {
 
     /**
      * بناء طلب HTTP مع رؤوس تمويهية محسّنة (Stealth Headers)
-     * لمحاكاة تصفح المستخدم العادي وتجنب الحظر من GitHub.
+     * لمحاكاة متصفح Android حقيقي وتجنب الحظر من GitHub.
      */
     private fun buildStealthRequest(url: String): Request {
         return Request.Builder()
             .url(url)
-            .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
-            .header("Accept", "*/*")
-            .header("Accept-Language", "en-US,en;q=0.9")
+            .header("User-Agent", "Mozilla/5.0 (Linux; Android 14; SM-A235F) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36")
+            .header("Accept", "application/octet-stream, */*")
+            .header("Accept-Language", "en-US,en;q=0.9,ar;q=0.8")
             .header("Accept-Encoding", "gzip, deflate, br")
             .header("Connection", "keep-alive")
             .header("Cache-Control", "no-cache")
@@ -125,10 +127,10 @@ class FileDownloader(context: Context) {
                     continue
                 }
 
-                // ✅ التحقق من الحجم المتوقع مع هامش تسامح محسّن
+                // ✅ التحقق من الحجم المتوقع مع هامش تسامح محسّن (15% أو 150KB كحد أدنى)
                 if (expectedSize > 0) {
                     val actualSize = destinationFile.length()
-                    val tolerance = maxOf(51200L, (expectedSize * 0.01).toLong()) // 1% أو 50KB
+                    val tolerance = maxOf(150000L, (expectedSize * 0.15).toLong()) // 15% أو 150KB
                     if (actualSize < expectedSize - tolerance) {
                         lastError = "حجم الملف أقل من المتوقع: المتوقع $expectedSize، الموجود $actualSize (الهامش: $tolerance)"
                         Log.w(TAG, "⚠️ $lastError")
@@ -147,6 +149,18 @@ class FileDownloader(context: Context) {
                 // ✅ التحقق الأساسي من أن الملف ليس فارغاً أو تالفاً
                 if (destinationFile.length() < MIN_FILE_SIZE) {
                     lastError = "الملف صغير جداً (أقل من 1 كيلوبايت)"
+                    Log.w(TAG, "⚠️ $lastError")
+                    destinationFile.delete()
+                    if (attempt < maxRetries) {
+                        val delayMs = (attempt * 3000L) + Random.nextLong(0, 2000)
+                        kotlinx.coroutines.delay(delayMs)
+                    }
+                    continue
+                }
+
+                // ✅ التحقق الإضافي: حجم الملف لا يقل عن 5 ميجابايت (لنموذج AI)
+                if (destinationFile.length() < MIN_MODEL_SIZE) {
+                    lastError = "حجم الملف صغير جداً ($MIN_MODEL_SIZE) - غير صالح لنموذج AI"
                     Log.w(TAG, "⚠️ $lastError")
                     destinationFile.delete()
                     if (attempt < maxRetries) {
@@ -352,7 +366,7 @@ class FileDownloader(context: Context) {
         }
         if (expectedSize > 0) {
             val actualSize = modelFile.length()
-            val tolerance = (expectedSize * SIZE_TOLERANCE_PERCENT).toLong().coerceAtLeast(1)
+            val tolerance = maxOf(150000L, (expectedSize * 0.15).toLong())
             if (actualSize < expectedSize - tolerance) {
                 Log.w(TAG, "⚠️ حجم الملف أقل من المتوقع: $actualSize < $expectedSize - $tolerance")
                 return false
