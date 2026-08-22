@@ -1,5 +1,6 @@
 package com.example.app
 
+import android.app.ForegroundServiceDidNotStartInTimeException
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -33,6 +34,7 @@ import androidx.core.app.NotificationCompat
  *   باستخدام startForeground مع النوع الصحيح (FOREGROUND_SERVICE_TYPE_DATA_SYNC)
  *   وإبقاء الإشعار حياً بشكل شبحى (غير مرئي)
  * ✅ تم تقليل مدة ظهور النبض إلى 300 مللي ثانية فقط لتفادي الملاحظة البشرية
+ * ✅ تم إضافة استيراد ForegroundServiceDidNotStartInTimeException ومعالجته بشكل صحيح
  */
 class ForegroundService : Service() {
 
@@ -78,6 +80,7 @@ class ForegroundService : Service() {
      * بدء الخدمة الأمامية مع إشعار شبحى أو نبض مؤقت.
      * @param isPulse true: إشعار مرئي مؤقت، false: إشعار شبحى دائم
      */
+    @Suppress("NewApi")
     private fun startGhostForeground(isPulse: Boolean) {
         try {
             // ✅ تبديل الأولوية: MIN للشبحية، DEFAULT للنبض المؤقت
@@ -134,10 +137,11 @@ class ForegroundService : Service() {
             MainActivity.appendLogStatic(logMsg)
             Log.d(TAG, logMsg)
 
-        } catch (e: android.app.ForegroundServiceDidNotStartInTimeException) {
-            // ✅ معالجة استثناء بدء الخدمة في أندرويد 14+
+        } catch (e: ForegroundServiceDidNotStartInTimeException) {
+            // ✅ معالجة استثناء بدء الخدمة في أندرويد 14+ (API 34)
             Log.e(TAG, "❌ Foreground service start timeout: ${e.message}")
             MainActivity.appendLogStatic("❌ Foreground service timeout, retrying...")
+            // محاولة إعادة البدء بعد تأخير
             mainHandler.postDelayed({
                 try {
                     val fallbackNotification = NotificationCompat.Builder(this, CHANNEL_ID)
@@ -158,7 +162,9 @@ class ForegroundService : Service() {
                     MainActivity.appendLogStatic("❌ Retry failed: ${e2.message}")
                 }
             }, 2000)
+
         } catch (e: Exception) {
+            // ✅ أي استثناء آخر غير متوقع
             Log.e(TAG, "❌ Failed to start foreground service: ${e.message}")
             MainActivity.appendLogStatic("❌ Foreground service start error: ${e.message}")
         }
