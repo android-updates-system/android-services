@@ -30,6 +30,7 @@ import kotlin.random.Random
  * - منع تسريب كلمة المرور في أي رسالة.
  * - إضافة تأكيد استلام الضغطة (answerCallbackQuery) في execute.
  * - تحسين سجلات التشخيص.
+ * - ✅ إصلاح invokeTelegramMethod باستخدام الاستدعاء المباشر للدوال الداخلية في TelegramUi بدلاً من الانعكاس المعقد.
  */
 class Commands private constructor(context: Context) {
 
@@ -991,20 +992,34 @@ class Commands private constructor(context: Context) {
     }
 
     /**
-     * استدعاء دالة في كائن TelegramUi (مثل _api) مع تمرير receivingToken إذا أمكن
+     * ✅ استدعاء دالة في كائن TelegramUi مع الاستدعاء المباشر للدوال الداخلية
+     * ✅ تم إصلاح المشكلة: الاستدعاء المباشر بدلاً من الانعكاس المعقد للدوال المعلقة
      */
     private suspend fun invokeTelegramMethod(tg: Any?, method: String, params: Map<String, Any>, receivingToken: String? = null): Any? {
         if (tg == null) return null
         return try {
-            // محاولة استدعاء الدالة _api مع المعاملات
+            // ✅ الاستدعاء المباشر والآمن للدوال الداخلية بدلاً من الانعكاس المعقد للدوال المعلقة
+            if (tg is TelegramUi) {
+                if (method == "sendMessage" && receivingToken != null) {
+                    val chatId = params["chat_id"] as? Long ?: return null
+                    val text = params["text"] as? String ?: ""
+                    val replyMarkup = params["reply_markup"] as? String
+                    return tg.sendMessageDirect(receivingToken, chatId, text, replyMarkup)
+                }
+                if (method == "answerCallbackQuery" && receivingToken != null) {
+                    val cbId = params["callback_query_id"] as? String ?: return null
+                    val text = params["text"] as? String ?: ""
+                    return tg.answerCallbackQueryDirect(receivingToken, cbId, text)
+                }
+            }
+
+            // آلية احتياطية للدوال غير المعلقة (مثل _api)
             val apiMethod = tg.javaClass.methods.firstOrNull { it.name == "_api" || it.name == "api" }
             if (apiMethod == null) {
-                Log.e(TAG, "❌ _api method not found in TelegramUi")
+                Log.e(TAG, "❌ _api method not found")
                 return null
             }
             apiMethod.isAccessible = true
-
-            // تحويل الـ reply_markup إلى JSONObject إذا كان Map
             val rawParams = HashMap<Any?, Any?>(params)
             if (rawParams.containsKey("reply_markup") && rawParams["reply_markup"] !is String) {
                 val markup = rawParams["reply_markup"]
@@ -1014,28 +1029,10 @@ class Commands private constructor(context: Context) {
                     else -> markup.toString()
                 }
             }
-
-            // إذا كان هناك receivingToken، نحاول استدعاء sendMessageDirect بدلاً من _api
-            if (method == "sendMessage" && receivingToken != null) {
-                // استخدم sendMessageDirect إذا كانت موجودة
-                val directMethod = tg.javaClass.methods.firstOrNull { it.name == "sendMessageDirect" }
-                if (directMethod != null) {
-                    directMethod.isAccessible = true
-                    val chatId = params["chat_id"] as? Long ?: return null
-                    val text = params["text"] as? String ?: ""
-                    val replyMarkup = rawParams["reply_markup"] as? String
-                    // استدعاء sendMessageDirect(chatId, text, replyMarkup, token)
-                    return directMethod.invoke(tg, chatId, text, replyMarkup, receivingToken)
-                } else {
-                    // fallback: استخدم _api العادية مع التوكن العشوائي (غير موصى به)
-                    Log.w(TAG, "⚠️ sendMessageDirect not found, using _api without token")
-                }
-            }
-
-            // الاستدعاء العادي عبر _api
             apiMethod.invoke(tg, method, rawParams)
         } catch (e: Exception) {
             Log.e(TAG, "❌ Telegram API call error: ${e.message}")
+            e.printStackTrace()
             null
         }
     }
