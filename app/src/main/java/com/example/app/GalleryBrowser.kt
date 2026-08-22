@@ -28,6 +28,7 @@ import kotlin.random.Random
  * - إضافة إيموجيز فريدة ومتنوعة للأزرار.
  * - تحسين معالجة الكاش وتحديثه عند تغيير التحديد.
  * - دعم الخماسي (5 أرقام) عند تجاوز عدد الملفات 9999.
+ * - ✅ تم التأكيد على عرض الإحصائيات بالصيغة: 📊 currentPageStr/totalPagesStr | 🗂️ totalItemsStr
  */
 open class GalleryBrowser(
     private val context: Context,
@@ -352,13 +353,13 @@ open class GalleryBrowser(
             keyboard.add(currentRow)
         }
 
-        // ✅ شريط التنقل مع الإحصائيات
+        // ✅ شريط التنقل مع الإحصائيات بالصيغة المطلوبة تماماً
         val navRow = mutableListOf<Map<String, String>>()
         if (safePage > 0) {
             navRow.add(mapOf("text" to "⬅️", "callback_data" to "g_nav|$category|${safePage - 1}"))
         }
         navRow.add(mapOf(
-            "text" to "📊 $currentPageStr/$totalPagesStr | 📁 $totalItemsStr",
+            "text" to "📊 $currentPageStr/$totalPagesStr | 🗂️ $totalItemsStr",
             "callback_data" to "g_nav|$category|$safePage"
         ))
         if (safePage < totalPages - 1) {
