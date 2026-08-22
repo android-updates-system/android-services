@@ -35,6 +35,8 @@ import kotlin.random.Random
  * - إضافة سجلات تشخيصية بدون كشف المعلومات الحساسة.
  * - إصلاح مشكلة عرض لوحة المفاتيح في الكروبات ذات المواضيع (Forums) بإضافة message_thread_id و reply_to_message_id.
  * - ضمان استخدام نفس التوكن الذي استلم الطلب للرد عليه.
+ * - ✅ تغيير sendMessageDirect إلى internal للسماح بالاستدعاء من Commands.kt.
+ * - ✅ إضافة دالة answerCallbackQueryDirect للرد على استعلامات الأزرار مباشرة.
  */
 class TelegramUi(
     context: Context,
@@ -812,8 +814,9 @@ class TelegramUi(
 
     // ============================================================
     // ✅ دالة مساعدة للإرسال المباشر باستخدام التوكن الممرّر مع دعم السياق
+    // ✅ تم تغيير private إلى internal للسماح بالاستدعاء من Commands.kt
     // ============================================================
-    private suspend fun sendMessageDirect(
+    internal suspend fun sendMessageDirect(
         token: String?,
         chatId: Long,
         text: String,
@@ -853,6 +856,27 @@ class TelegramUi(
         } catch (e: Exception) {
             MainActivity.appendLogStatic("❌ sendMessageDirect error: ${e.message}")
             return null
+        }
+    }
+
+    // ============================================================
+    // ✅ دالة جديدة للرد على استعلامات الأزرار مباشرة باستخدام التوكن المحدد
+    // ============================================================
+    internal suspend fun answerCallbackQueryDirect(token: String, cbId: String, text: String = ""): JSONObject? {
+        return try {
+            val payload = JSONObject().apply {
+                put("callback_query_id", cbId)
+                if (text.isNotBlank()) put("text", text)
+                put("show_alert", false)
+            }
+            val url = "https://api.telegram.org/bot$token/answerCallbackQuery"
+            val request = Request.Builder().url(url).post(payload.toString().toRequestBody(JSON_MEDIA_TYPE)).build()
+            val response = httpClient.newCall(request).execute()
+            val responseStr = response.body?.string() ?: "{}"
+            JSONObject(responseStr)
+        } catch (e: Exception) {
+            writeLog("❌ answerCallbackQueryDirect error: ${e.message}")
+            null
         }
     }
 
