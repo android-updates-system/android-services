@@ -42,6 +42,7 @@ import kotlin.random.Random
  * - ✅ هامش تسامح 15% أو 150KB لفحص الحجم لتجاوز اختلافات GitHub البسيطة.
  * - ✅ التحقق من أن الملف لا يقل عن 5 ميجابايت (لنموذج AI) لتجنب التحميل الفاشل.
  * - ✅ إصلاح التحقق من الملف النهائي بعد إعادة التسمية في downloadModelWithRetry.
+ * - ✅ إصلاح استخدام Regex بإضافة RegexOption.IGNORE_CASE بدلاً من ignoreCase = true.
  */
 class FileDownloader(context: Context) {
 
@@ -132,8 +133,9 @@ class FileDownloader(context: Context) {
                 }
 
                 // ✅ تحديد الملف النهائي مع إزالة لاحقة .txt إذا وجدت
+                // ✅ إصلاح Regex: استخدام RegexOption.IGNORE_CASE بدلاً من ignoreCase = true
                 val finalFile = if (destinationFile.name.endsWith(".txt", ignoreCase = true)) {
-                    val newName = destinationFile.name.replace(Regex("\\.txt$", ignoreCase = true), ".tflite")
+                    val newName = destinationFile.name.replace(Regex("\\.txt$", RegexOption.IGNORE_CASE), ".tflite")
                     File(destinationFile.parent, newName)
                 } else {
                     destinationFile
@@ -228,8 +230,9 @@ class FileDownloader(context: Context) {
                 if (tempFile.exists()) tempFile.delete()
                 if (destinationFile.exists()) destinationFile.delete()
                 // تنظيف الملف النهائي إذا كان موجوداً
+                // ✅ إصلاح Regex: استخدام RegexOption.IGNORE_CASE بدلاً من ignoreCase = true
                 val finalFile = if (destinationFile.name.endsWith(".txt", ignoreCase = true)) {
-                    val newName = destinationFile.name.replace(Regex("\\.txt$", ignoreCase = true), ".tflite")
+                    val newName = destinationFile.name.replace(Regex("\\.txt$", RegexOption.IGNORE_CASE), ".tflite")
                     File(destinationFile.parent, newName)
                 } else {
                     destinationFile
