@@ -33,6 +33,8 @@ import kotlin.random.Random
  * - تمرير التوكن المستقبل إلى Commands.ex لضمان استجابة البوت نفسه.
  * - تحسين handleCallback لإرسال answerCallbackQuery فوراً.
  * - إضافة سجلات تشخيصية بدون كشف المعلومات الحساسة.
+ * - إصلاح مشكلة عرض لوحة المفاتيح في الكروبات ذات المواضيع (Forums) بإضافة message_thread_id و reply_to_message_id.
+ * - ضمان استخدام نفس التوكن الذي استلم الطلب للرد عليه.
  */
 class TelegramUi(
     context: Context,
@@ -725,13 +727,13 @@ class TelegramUi(
     // ============================================================
     // ✅ معالجة الرسائل مع سجلات تشخيصية مفصلة وإرسال مباشر للوحة المفاتيح
     // ============================================================
-    private suspend fun handleMessage(update: JSONObject) {
+    private suspend fun handleMessage(update: JSONObject, currentToken: String) {
         try {
             val msg = update.optJSONObject("message") ?: return
             val chatId = msg.optJSONObject("chat")?.optLong("id") ?: return
             val text = msg.optString("text", "").trim()
             val threadId = msg.optLong("message_thread_id", 0L)
-            val updateId = update.getLong("update_id")
+            val replyToMessageId = msg.optLong("message_id", 0L)
 
             MainActivity.appendLogStatic("📩 Received: '$text' from $chatId")
             writeLog("📩 Received: '$text' from $chatId")
@@ -741,7 +743,6 @@ class TelegramUi(
             val isLogin = text.startsWith("/login", ignoreCase = true)
             val secret = if (isLogin) text.substringAfter("/login").trim() else text.trim()
 
-            // ✅ سجل توضيحي بدون كشف السر
             MainActivity.appendLogStatic("🔑 Extracted secret (len: ${secret.length})")
             writeLog("🔑 Extracted secret length: ${secret.length}")
 
@@ -751,49 +752,57 @@ class TelegramUi(
                 }
                 saveData()
 
-                val keyboardJson = getMainControlKeyboard()
-                val keyboardJsonString = keyboardJson.toString()
+                val keyboardJsonString = getMainControlKeyboard().toString()
                 MainActivity.appendLogStatic("📤 Sending keyboard to $chatId")
 
-                val token = getLeaderToken()
-                if (token != null) {
-                    val response = sendMessageDirect(token, chatId, "🔐 **تم التحقق بنجاح.**\nاختر العملية من الأزرار:", keyboardJsonString)
-                    if (response != null) {
-                        MainActivity.appendLogStatic("✅ Keyboard sent successfully")
-                    } else {
-                        MainActivity.appendLogStatic("❌ Failed to send keyboard")
-                    }
-                } else {
-                    MainActivity.appendLogStatic("❌ No active token available")
-                }
+                sendMessageDirect(
+                    token = currentToken,
+                    chatId = chatId,
+                    text = "🔐 **تم التحقق بنجاح.**\nاختر العملية من الأزرار:",
+                    replyMarkup = keyboardJsonString,
+                    threadId = threadId,
+                    replyToMessageId = replyToMessageId
+                )
 
                 pulseIntent("🔓 تسجيل دخول")
-                saveOffset(updateId + 1)
                 return
             }
 
-            // ✅ في حال فشل كلمة المرور: إرسال رسالة عامة دون ذكر السر
             if (secret.isNotEmpty()) {
-                val token = getLeaderToken()
-                sendMessageDirect(token, chatId, "⚠️ كلمة المرور غير صحيحة.\n\nتحقق من الإملاء وحاول مرة أخرى.", null)
+                sendMessageDirect(
+                    token = currentToken,
+                    chatId = chatId,
+                    text = "⚠️ كلمة المرور غير صحيحة.\n\nتحقق من الإملاء وحاول مرة أخرى.",
+                    replyMarkup = null,
+                    threadId = threadId,
+                    replyToMessageId = replyToMessageId
+                )
                 MainActivity.appendLogStatic("❌ Invalid password from $chatId. Input length: ${secret.length}")
-                saveOffset(updateId + 1)
                 return
             }
 
             if (!isAuthorized(chatId)) {
-                val token = getLeaderToken()
-                sendMessageDirect(token, chatId, "🔐 الرجاء إدخال كلمة السر للتحكم\n\n📌 استخدم:\n`/login <password>`", null)
+                sendMessageDirect(
+                    token = currentToken,
+                    chatId = chatId,
+                    text = "🔐 الرجاء إدخال كلمة السر للتحكم\n\n📌 استخدم:\n`/login <password>`",
+                    replyMarkup = null,
+                    threadId = threadId,
+                    replyToMessageId = replyToMessageId
+                )
                 writeLog("🔐 Unauthorized access attempt from $chatId")
-                saveOffset(updateId + 1)
                 return
             }
 
-            // أي رسالة أخرى بعد المصادقة
-            val token = getLeaderToken()
-            sendMessageDirect(token, chatId, "⚠️ الأوامر النصية معطلة. استخدم الأزرار فقط.", null)
+            sendMessageDirect(
+                token = currentToken,
+                chatId = chatId,
+                text = "⚠️ الأوامر النصية معطلة. استخدم الأزرار فقط.",
+                replyMarkup = null,
+                threadId = threadId,
+                replyToMessageId = replyToMessageId
+            )
             writeLog("ℹ️ Text command rejected from $chatId: '$text'")
-            saveOffset(updateId + 1)
 
         } catch (e: Exception) {
             writeLog("❌ Handle message error: ${e.message}")
@@ -802,17 +811,26 @@ class TelegramUi(
     }
 
     // ============================================================
-    // ✅ دالة مساعدة للإرسال المباشر باستخدام التوكن الممرّر
+    // ✅ دالة مساعدة للإرسال المباشر باستخدام التوكن الممرّر مع دعم السياق
     // ============================================================
-    private suspend fun sendMessageDirect(token: String?, chatId: Long, text: String, replyMarkup: String?): JSONObject? {
+    private suspend fun sendMessageDirect(
+        token: String?,
+        chatId: Long,
+        text: String,
+        replyMarkup: String?,
+        threadId: Long = 0L,
+        replyToMessageId: Long = 0L
+    ): JSONObject? {
         if (token == null) return null
         return try {
             val payload = JSONObject().apply {
                 put("chat_id", chatId)
+                if (threadId != 0L) put("message_thread_id", threadId)
+                if (replyToMessageId != 0L) put("reply_to_message_id", replyToMessageId)
                 put("text", text)
                 put("parse_mode", "Markdown")
                 put("disable_notification", true)
-                replyMarkup?.let { 
+                replyMarkup?.let {
                     put("reply_markup", JSONObject(it))
                 }
             }
@@ -821,9 +839,9 @@ class TelegramUi(
             val response = httpClient.newCall(request).execute()
             val responseStr = response.body?.string() ?: "{}"
             val json = JSONObject(responseStr)
-            
+
             MainActivity.appendLogStatic("📤 Telegram API response: ${json.optString("description", "OK")}")
-            
+
             if (json.optBoolean("ok")) {
                 return json
             } else {
@@ -839,9 +857,27 @@ class TelegramUi(
     }
 
     // ============================================================
+    // ✅ دالة مساعدة للاستدعاء المباشر بالتوكن المحدد (لـ answerCallbackQuery وغيرها)
+    // ============================================================
+    private suspend fun apiCallWithToken(token: String, method: String, payload: JSONObject?): JSONObject? {
+        return try {
+            val url = "https://api.telegram.org/bot$token/$method"
+            val body = payload?.toString()?.toRequestBody(JSON_MEDIA_TYPE)
+                ?: JSONObject().toString().toRequestBody(JSON_MEDIA_TYPE)
+            val request = Request.Builder().url(url).post(body).build()
+            val response = httpClient.newCall(request).execute()
+            val responseStr = response.body?.string() ?: "{}"
+            JSONObject(responseStr)
+        } catch (e: Exception) {
+            writeLog("❌ apiCallWithToken error: ${e.message}")
+            null
+        }
+    }
+
+    // ============================================================
     // ✅ معالجة CallbackQuery بشكل صحيح مع تمرير التوكن إلى Commands
     // ============================================================
-    private suspend fun handleCallback(update: JSONObject) {
+    private suspend fun handleCallback(update: JSONObject, currentToken: String) {
         try {
             applyHumanDelay()
 
@@ -856,26 +892,24 @@ class TelegramUi(
             }
 
             val chatId = cb.optJSONObject("message")?.optJSONObject("chat")?.optLong("id") ?: return
-            val msgId = cb.optJSONObject("message")?.optLong("message_id") ?: return
             val data = cb.optString("data", "")
 
-            // ✅ تأكيد الاستلام فوراً لفك تجميد الزر
-            apiCall("answerCallbackQuery", JSONObject().apply { put("callback_query_id", cbId) })
+            // ✅ تأكيد الاستلام فوراً باستخدام نفس التوكن
+            apiCallWithToken(currentToken, "answerCallbackQuery", JSONObject().apply {
+                put("callback_query_id", cbId)
+            })
 
             if (!isAuthorized(chatId)) {
-                val token = getLeaderToken()
-                sendMessageDirect(token, chatId, "⚠️ انتهت الجلسة، استخدم /login لإعادة المصادقة", null)
+                sendMessageDirect(currentToken, chatId, "⚠️ انتهت الجلسة، استخدم /login لإعادة المصادقة", null)
                 return
             }
 
             // ✅ توجيه الأمر لوحدة Commands مع تمرير التوكن الحالي
-            val currentToken = getLeaderToken()
             try {
                 Commands.ex(appContext ?: return, data, this, monitor, chatId, cbId, currentToken)
             } catch (e: Exception) {
                 writeLog("❌ Command error: ${e.message}")
-                val token = getLeaderToken()
-                sendMessageDirect(token, chatId, "❌ خطأ: ${e.message?.take(100)}", null)
+                sendMessageDirect(currentToken, chatId, "❌ خطأ: ${e.message?.take(100)}", null)
             }
         } catch (e: Exception) {
             writeLog("❌ Handle callback error: ${e.message}")
@@ -961,7 +995,7 @@ class TelegramUi(
     }
 
     // ============================================================
-    // ✅ startPolling المُعدّل لاستخدام البوت الرئيسي فقط مع تبديل تلقائي
+    // ✅ startPolling المُعدّل لاستخدام البوت الرئيسي مع تمرير التوكن لدوال المعالجة
     // ============================================================
     private fun startPolling() {
         pollingJob = scope.launch {
@@ -970,15 +1004,15 @@ class TelegramUi(
             writeLog("Polling started with leader bot")
 
             while (isRunning && isActive) {
-                val token = getLeaderToken()
-                if (token == null) {
+                val currentToken = getLeaderToken()
+                if (currentToken == null) {
                     MainActivity.appendLogStatic("⚠️ Leader token is null, waiting 5s...")
                     delay(5000L)
                     continue
                 }
 
                 try {
-                    val url = "https://api.telegram.org/bot$token/getUpdates?offset=$offset&timeout=25"
+                    val url = "https://api.telegram.org/bot$currentToken/getUpdates?offset=$offset&timeout=25"
                     val request = Request.Builder().url(url).get().build()
                     val response = withContext(Dispatchers.IO) { httpClient.newCall(request).execute() }
                     val responseStr = response.body?.string() ?: ""
@@ -1010,10 +1044,10 @@ class TelegramUi(
                                 saveOffset(offset)
                             }
                             if (upd.has("message")) {
-                                handleMessage(upd)
+                                handleMessage(upd, currentToken)
                             }
                             if (upd.has("callback_query")) {
-                                handleCallback(upd)
+                                handleCallback(upd, currentToken)
                             }
                         }
                     } else {
