@@ -78,6 +78,9 @@ data class DetailedValidationReport(
  * - ✅ إضافة دالة ensureModelLoaded() لتحميل النموذج تلقائياً عند بدء التشغيل.
  * - ✅ تحسين parseConfigFromJson لقراءة جميع التوكنات مع سجلات تشخيصية مفصلة.
  * - ✅ إضافة تحقق إضافي لضمان قراءة جميع التوكنات العشرة.
+ *
+ * ✅ ملاحظة: تم إصلاح مشكلة امتداد الملف في FileDownloader.kt، ولا تحتاج ConfigLoader.kt
+ * لأي تعديل إضافي بخصوص ذلك.
  */
 object ConfigLoader {
 
