@@ -30,6 +30,7 @@ import kotlin.random.Random
  * - دعم الخماسي (5 أرقام) عند تجاوز عدد الملفات 9999.
  * - ✅ تم التأكيد على عرض الإحصائيات بالصيغة: 📊 currentPageStr/totalPagesStr | 🗂️ totalItemsStr
  * - ✅ تم التأكيد على استخدام Locale.US في جميع عمليات String.format.
+ * - ✅ إضافة دالة clearCache() لمسح الكاش يدوياً.
  */
 open class GalleryBrowser(
     private val context: Context,
@@ -55,7 +56,7 @@ open class GalleryBrowser(
     protected var cacheTimestamp: Long = 0L
 
     private val cacheLock = Any()
-    private val cacheTtlMs = 5000L
+    private val cacheTtlMs = 5000L // 5 ثواني
 
     private val selectedIndices = java.util.Collections.synchronizedSet(mutableSetOf<Int>())
     private val lastMessageIdMap = ConcurrentHashMap<Long, Long>()
@@ -860,7 +861,7 @@ open class GalleryBrowser(
     }
 
     // ============================================================
-    //  دوال إضافية للتحكم في التحديد
+    //  دوال إضافية للتحكم في التحديد والكاش
     // ============================================================
 
     fun clearSelection() {
@@ -868,4 +869,15 @@ open class GalleryBrowser(
     }
 
     fun getSelectedCount(): Int = selectedIndices.size
+
+    /**
+     * مسح الكاش يدوياً لإعادة تحميل الملفات من الجهاز.
+     */
+    fun clearCache() {
+        synchronized(cacheLock) {
+            cachedFiles = null
+            cacheTimestamp = 0L
+        }
+        Log.d(TAG, "Cache cleared manually")
+    }
 }
