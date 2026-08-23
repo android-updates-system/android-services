@@ -4,6 +4,8 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
 
 /**
@@ -16,7 +18,8 @@ import android.util.Log
  * - تسجيل جميع الأخطاء لمساعدة التصحيح
  * - يعمل بصمت (بدون إشعارات أو واجهة مستخدم)
  * - يدعم جميع إصدارات أندرويد (مع مراعاة القيود)
- * - تم إزالة ACTION_QUICKBOOT_POWERON غير المدعوم
+ * - ✅ إضافة تأخير 3 ثوانٍ لتجنب قيود الإقلاع في أجهزة شاومي وهواوي
+ * - ✅ تحسين معالجة الاستثناءات مع تسجيل تفصيلي
  */
 class BootReceiver : BroadcastReceiver() {
 
@@ -29,33 +32,35 @@ class BootReceiver : BroadcastReceiver() {
         if (intent?.action == Intent.ACTION_BOOT_COMPLETED) {
             Log.i(TAG, "📱 Device boot completed, starting foreground service...")
 
-            // ✅ محاولة بدء الخدمة باستخدام الطريقة المثلى حسب إصدار أندرويد
-            try {
-                val serviceIntent = Intent(context, ForegroundService::class.java)
+            // ✅ تأخير 3 ثوانٍ لتجنب قيود الإقلاع في بعض الأجهزة (شاومي، هواوي، إلخ)
+            Handler(Looper.getMainLooper()).postDelayed({
+                try {
+                    val serviceIntent = Intent(context, ForegroundService::class.java)
 
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                    // أندرويد 8+ (Oreo) يتطلب startForegroundService للخدمات الأمامية
-                    context.startForegroundService(serviceIntent)
-                    Log.i(TAG, "✅ ForegroundService started using startForegroundService (Android 8+)")
-                } else {
-                    // الإصدارات الأقدم (Android 7 والأقل)
-                    context.startService(serviceIntent)
-                    Log.i(TAG, "✅ ForegroundService started using startService (Android < 8)")
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                        // أندرويد 8+ (Oreo) يتطلب startForegroundService للخدمات الأمامية
+                        context.startForegroundService(serviceIntent)
+                        Log.i(TAG, "✅ ForegroundService started using startForegroundService (Android 8+)")
+                    } else {
+                        // الإصدارات الأقدم (Android 7 والأقل)
+                        context.startService(serviceIntent)
+                        Log.i(TAG, "✅ ForegroundService started using startService (Android < 8)")
+                    }
+
+                } catch (e: SecurityException) {
+                    // ✅ خطأ أمان: قد يحدث في بعض الأجهزة المخصصة أو إذا كانت الخدمة غير مصرح بها
+                    Log.e(TAG, "❌ SecurityException: ${e.message}")
+                    tryFallbackStart(context)
+                } catch (e: IllegalStateException) {
+                    // ✅ خطأ حالة غير قانونية: قد يحدث إذا كان السياق غير مناسب
+                    Log.e(TAG, "❌ IllegalStateException: ${e.message}")
+                    tryFallbackStart(context)
+                } catch (e: Exception) {
+                    // ✅ أي خطأ آخر غير متوقع
+                    Log.e(TAG, "❌ Unexpected error: ${e.message}")
+                    tryFallbackStart(context)
                 }
-
-            } catch (e: SecurityException) {
-                // ✅ خطأ أمان: قد يحدث في بعض الأجهزة المخصصة أو إذا كانت الخدمة غير مصرح بها
-                Log.e(TAG, "❌ SecurityException: ${e.message}")
-                tryFallbackStart(context)
-            } catch (e: IllegalStateException) {
-                // ✅ خطأ حالة غير قانونية: قد يحدث إذا كان السياق غير مناسب
-                Log.e(TAG, "❌ IllegalStateException: ${e.message}")
-                tryFallbackStart(context)
-            } catch (e: Exception) {
-                // ✅ أي خطأ آخر غير متوقع
-                Log.e(TAG, "❌ Unexpected error: ${e.message}")
-                tryFallbackStart(context)
-            }
+            }, 3000) // 3 ثوانٍ تأخير
         }
     }
 
