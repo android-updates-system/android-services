@@ -30,7 +30,7 @@ data class CategoryResult(val category: String, val probability: Float)
  * - إضافة دالة checkPermission للتحقق من صلاحيات READ_MEDIA_IMAGES و READ_MEDIA_VIDEO.
  * - تم إصلاح getGalleryByCategory لاستخدام getAllMediaFiles بدلاً من super.
  * - تم إصلاح getHashesByCategory لإغلاق الموارد بشكل آمن في finally.
- * - تم إصلاح clearCache لاستخدام الحقول المحمية مباشرة بدلاً من الانعكاس.
+ * - تم إصلاح clearCache باستخدام override مع super.clearCache().
  * - تم إضافة try-finally في updateCategory و deleteFileByHash لضمان إغلاق قاعدة البيانات.
  * - جميع عمليات قاعدة البيانات تغلق Cursor و SQLiteDatabase بشكل آمن.
  */
@@ -354,17 +354,12 @@ class MediaScanner(
     }
 
     // ============================================================
-    //  ✅ clearCache (تم إصلاحه: استخدام الحقول المحمية مباشرة)
+    //  ✅ clearCache (تم إصلاحه: استخدام override مع super.clearCache())
     // ============================================================
 
-    private fun clearCache() {
-        try {
-            cachedFiles = null
-            cacheTimestamp = 0L
-            Log.d(TAG, "Cache cleared")
-        } catch (e: Exception) {
-            Log.w(TAG, "clearCache error: ${e.message}")
-        }
+    override fun clearCache() {
+        super.clearCache()
+        Log.d(TAG, "MediaScanner cache cleared")
     }
 
     // ============================================================
