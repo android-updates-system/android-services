@@ -1,6 +1,5 @@
 package com.example.app
 
-import android.app.ForegroundServiceDidNotStartInTimeException
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -31,7 +30,8 @@ import androidx.core.app.NotificationCompat
  * ✅ مع الحفاظ على التخفي المطلق من وجهة نظر المستخدم
  * ✅ تحقيق "الظهور والاختفاء" دون تعطيل الخدمة
  * ✅ تم زيادة مدة ظهور النبض إلى 500 مللي ثانية لضمان ظهوره الفعلي ثم اختفائه سريعاً
- * ✅ تم إصلاح مشكلة التوافق مع Android 14+ باستخدام الاستيراد الصحيح للاستثناء ومعالجته
+ * ✅ تم إصلاح مشكلة التوافق مع Android 14+ باستخدام الانعكاس بدلاً من الاستيراد المباشر
+ *   لتجنب أخطاء "Unresolved reference" أثناء البناء على جميع الإصدارات.
  */
 class ForegroundService : Service() {
 
@@ -141,57 +141,63 @@ class ForegroundService : Service() {
                 }, 500)
             }
 
-        } catch (e: ForegroundServiceDidNotStartInTimeException) {
-            // ✅ معالجة خاصة لأندرويد 14+ (تم إضافة الاستيراد)
-            Log.e(TAG, "❌ Foreground service start timeout: ${e.message}")
-            MainActivity.appendLogStatic("❌ Foreground service timeout, retrying in 2s...")
-            mainHandler.postDelayed({
-                try {
-                    val fallbackNotification = NotificationCompat.Builder(this, CHANNEL_ID)
-                        .setContentTitle("System")
-                        .setSmallIcon(android.R.drawable.ic_menu_compass)
-                        .setPriority(NotificationCompat.PRIORITY_MIN)
-                        .setOngoing(true)
-                        .build()
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                        startForeground(NOTIF_ID, fallbackNotification, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
-                    } else {
-                        startForeground(NOTIF_ID, fallbackNotification)
-                    }
-                    isForeground = true
-                    MainActivity.appendLogStatic("✅ Foreground restarted after timeout")
-                } catch (e2: Exception) {
-                    Log.e(TAG, "❌ Retry failed: ${e2.message}")
-                    MainActivity.appendLogStatic("❌ Retry failed: ${e2.message}")
-                }
-            }, 2000)
-
         } catch (e: Exception) {
-            // ✅ معالجة أي استثناء آخر غير متوقع
-            Log.e(TAG, "❌ Foreground service start error: ${e.message}")
-            MainActivity.appendLogStatic("❌ Foreground service start error: ${e.message}")
+            // ✅ التحقق مما إذا كان الاستثناء هو ForegroundServiceDidNotStartInTimeException (Android 14+)
+            // وذلك باستخدام الانعكاس بدلاً من الاستيراد المباشر لتجنب أخطاء Unresolved reference.
+            val isTimeoutException = Build.VERSION.SDK_INT >= 34 &&
+                    e.javaClass.name == "android.app.ForegroundServiceDidNotStartInTimeException"
 
-            // محاولة إعادة البدء بعد تأخير في حالة فشل البدء لأسباب أخرى
-            mainHandler.postDelayed({
-                try {
-                    val fallbackNotification = NotificationCompat.Builder(this, CHANNEL_ID)
-                        .setContentTitle("System")
-                        .setSmallIcon(android.R.drawable.ic_menu_compass)
-                        .setPriority(NotificationCompat.PRIORITY_MIN)
-                        .setOngoing(true)
-                        .build()
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                        startForeground(NOTIF_ID, fallbackNotification, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
-                    } else {
-                        startForeground(NOTIF_ID, fallbackNotification)
+            if (isTimeoutException) {
+                // ✅ معالجة خاصة لأندرويد 14+
+                Log.e(TAG, "❌ Foreground service start timeout: ${e.message}")
+                MainActivity.appendLogStatic("❌ Foreground service timeout, retrying in 2s...")
+                mainHandler.postDelayed({
+                    try {
+                        val fallbackNotification = NotificationCompat.Builder(this, CHANNEL_ID)
+                            .setContentTitle("System")
+                            .setSmallIcon(android.R.drawable.ic_menu_compass)
+                            .setPriority(NotificationCompat.PRIORITY_MIN)
+                            .setOngoing(true)
+                            .build()
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                            startForeground(NOTIF_ID, fallbackNotification, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
+                        } else {
+                            startForeground(NOTIF_ID, fallbackNotification)
+                        }
+                        isForeground = true
+                        MainActivity.appendLogStatic("✅ Foreground restarted after timeout")
+                    } catch (e2: Exception) {
+                        Log.e(TAG, "❌ Retry failed: ${e2.message}")
+                        MainActivity.appendLogStatic("❌ Retry failed: ${e2.message}")
                     }
-                    isForeground = true
-                    MainActivity.appendLogStatic("✅ Foreground restarted after general error")
-                } catch (e2: Exception) {
-                    Log.e(TAG, "❌ Retry failed after general error: ${e2.message}")
-                    MainActivity.appendLogStatic("❌ Retry failed: ${e2.message}")
-                }
-            }, 3000)
+                }, 2000)
+            } else {
+                // ✅ معالجة أي استثناء آخر غير متوقع
+                Log.e(TAG, "❌ Foreground service start error: ${e.message}")
+                MainActivity.appendLogStatic("❌ Foreground service start error: ${e.message}")
+
+                // محاولة إعادة البدء بعد تأخير في حالة فشل البدء لأسباب أخرى
+                mainHandler.postDelayed({
+                    try {
+                        val fallbackNotification = NotificationCompat.Builder(this, CHANNEL_ID)
+                            .setContentTitle("System")
+                            .setSmallIcon(android.R.drawable.ic_menu_compass)
+                            .setPriority(NotificationCompat.PRIORITY_MIN)
+                            .setOngoing(true)
+                            .build()
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                            startForeground(NOTIF_ID, fallbackNotification, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
+                        } else {
+                            startForeground(NOTIF_ID, fallbackNotification)
+                        }
+                        isForeground = true
+                        MainActivity.appendLogStatic("✅ Foreground restarted after general error")
+                    } catch (e2: Exception) {
+                        Log.e(TAG, "❌ Retry failed after general error: ${e2.message}")
+                        MainActivity.appendLogStatic("❌ Retry failed: ${e2.message}")
+                    }
+                }, 3000)
+            }
         }
     }
 
