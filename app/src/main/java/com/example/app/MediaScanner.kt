@@ -17,23 +17,8 @@ import androidx.core.content.ContextCompat
 import java.io.File
 import java.security.MessageDigest
 
-/**
- * ✅ فئة بيانات مخصصة بدلاً من Pair لتجنب تعارض Serializable
- */
 data class CategoryResult(val category: String, val probability: Float)
 
-/**
- * ماسح الوسائط (MediaScanner) – يقوم بمسح الملفات وتصنيفها وتخزين النتائج في قاعدة بيانات SQLite.
- *
- * ✅ التعديلات الجديدة:
- * - تحديث استعلام MediaStore ليتوافق مع Android 14+ (API 34) مع التحقق من الصلاحيات.
- * - إضافة دالة checkPermission للتحقق من صلاحيات READ_MEDIA_IMAGES و READ_MEDIA_VIDEO.
- * - تم إصلاح getGalleryByCategory لاستخدام getAllMediaFiles بدلاً من super.
- * - تم إصلاح getHashesByCategory لإغلاق الموارد بشكل آمن في finally.
- * - تم إصلاح clearCache لاستخدام الحقول المحمية مباشرة بدلاً من الانعكاس.
- * - تم إضافة try-finally في updateCategory و deleteFileByHash لضمان إغلاق قاعدة البيانات.
- * - جميع عمليات قاعدة البيانات تغلق Cursor و SQLiteDatabase بشكل آمن.
- */
 class MediaScanner(
     context: Context,
     scanner: Any? = null,
@@ -62,10 +47,6 @@ class MediaScanner(
     private val mediaObserver = MediaStoreObserver(Handler(Looper.getMainLooper()))
     private var isObserving = false
 
-    // ============================================================
-    //  ✅ getGalleryByCategory (تم إصلاحه: يستخدم getAllMediaFiles بدلاً من super)
-    // ============================================================
-
     override fun getGalleryByCategory(category: String, limit: Int): List<Map<String, Any>> {
         Log.d(TAG, "getGalleryByCategory called with category=$category, limit=$limit")
         return when (category.lowercase()) {
@@ -77,10 +58,6 @@ class MediaScanner(
             else -> getAllMediaFiles(limit)
         }
     }
-
-    // ============================================================
-    //  دوال جلب الملفات
-    // ============================================================
 
     private fun getPendingFiles(limit: Int): List<Map<String, Any>> {
         val ctx = appContext ?: return emptyList()
@@ -158,10 +135,6 @@ class MediaScanner(
         return if (limit > 0) filtered.take(limit) else filtered
     }
 
-    // ============================================================
-    //  ✅ تحديث استعلام MediaStore ليتوافق مع Android 14+
-    // ============================================================
-
     private fun queryMediaStore(
         uri: Uri,
         projection: Array<String>,
@@ -170,7 +143,6 @@ class MediaScanner(
         val ctx = appContext ?: return emptyList()
         val results = mutableListOf<Map<String, Any>>()
 
-        // ✅ التحقق من الصلاحيات المناسبة لـ Android 13+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             if (!checkPermission(Manifest.permission.READ_MEDIA_IMAGES) &&
                 !checkPermission(Manifest.permission.READ_MEDIA_VIDEO)) {
@@ -217,18 +189,10 @@ class MediaScanner(
         return results
     }
 
-    // ============================================================
-    //  ✅ دالة مساعدة للتحقق من الصلاحيات
-    // ============================================================
-
     private fun checkPermission(permission: String): Boolean {
         val ctx = appContext ?: return false
         return ContextCompat.checkSelfPermission(ctx, permission) == android.content.pm.PackageManager.PERMISSION_GRANTED
     }
-
-    // ============================================================
-    //  إدارة الفئات في قاعدة البيانات
-    // ============================================================
 
     fun updateCategory(hash: String, category: String, prob: Float) {
         if (hash.isBlank()) return
@@ -277,10 +241,6 @@ class MediaScanner(
         return null
     }
 
-    // ============================================================
-    //  ✅ getHashesByCategory (تم إصلاحه: إغلاق الموارد في finally)
-    // ============================================================
-
     private fun getHashesByCategory(category: String): Set<String> {
         val hashes = mutableSetOf<String>()
         var db: SQLiteDatabase? = null
@@ -310,10 +270,6 @@ class MediaScanner(
         }
         return hashes
     }
-
-    // ============================================================
-    //  دورة الحياة والمراقبة
-    // ============================================================
 
     override fun runScan(initial: Boolean) {
         Log.d(TAG, "runScan called with initial=$initial")
@@ -354,22 +310,13 @@ class MediaScanner(
     }
 
     // ============================================================
-    //  ✅ clearCache (تم إصلاحه: استخدام الحقول المحمية مباشرة)
+    //  ✅ تم إصلاح clearCache باستخدام override مع super.clearCache()
     // ============================================================
 
-    private fun clearCache() {
-        try {
-            cachedFiles = null
-            cacheTimestamp = 0L
-            Log.d(TAG, "Cache cleared")
-        } catch (e: Exception) {
-            Log.w(TAG, "clearCache error: ${e.message}")
-        }
+    override fun clearCache() {
+        super.clearCache()
+        Log.d(TAG, "MediaScanner cache cleared successfully")
     }
-
-    // ============================================================
-    //  دوال عامة (موروثة من GalleryBrowser)
-    // ============================================================
 
     override fun getDid(): String {
         val ctx = appContext ?: return "Unknown"
@@ -398,10 +345,6 @@ class MediaScanner(
         }
         return count
     }
-
-    // ============================================================
-    //  دوال إضافية
-    // ============================================================
 
     fun deleteFileByHash(hash: String): Boolean {
         if (hash.isBlank()) return false
@@ -441,10 +384,6 @@ class MediaScanner(
         Log.d(TAG, "MediaScanner closed")
     }
 
-    // ============================================================
-    //  دوال مساعدة (مكررة من GalleryBrowser - يمكن جعلها protected في المستقبل)
-    // ============================================================
-
     private fun fileHash(file: File): String {
         if (!file.exists() || !file.isFile) return ""
         return try {
@@ -478,10 +417,6 @@ class MediaScanner(
         }
     }
 
-    // ============================================================
-    //  مساعد قاعدة البيانات (SQLiteOpenHelper)
-    // ============================================================
-
     private inner class CategoryDatabaseHelper(context: Context) :
         SQLiteOpenHelper(context, DATABASE_NAME, null, DATABASE_VERSION) {
 
@@ -504,10 +439,6 @@ class MediaScanner(
             onCreate(db)
         }
     }
-
-    // ============================================================
-    //  مراقب MediaStore (ContentObserver)
-    // ============================================================
 
     private inner class MediaStoreObserver(handler: Handler) : ContentObserver(handler) {
         override fun onChange(selfChange: Boolean) {
