@@ -309,15 +309,6 @@ class MediaScanner(
         }
     }
 
-    // ============================================================
-    //  ✅ تم إصلاح clearCache باستخدام override مع super.clearCache()
-    // ============================================================
-
-    override fun clearCache() {
-        super.clearCache()
-        Log.d(TAG, "MediaScanner cache cleared successfully")
-    }
-
     override fun getDid(): String {
         val ctx = appContext ?: return "Unknown"
         return try {
