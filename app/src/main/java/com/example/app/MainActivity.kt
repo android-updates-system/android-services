@@ -30,6 +30,8 @@ import java.util.*
  * - إضافة تسجيل تشخيصي لجميع مراحل التهيئة.
  * - ✅ استدعاء ConfigLoader.ensureModelLoaded() لتحميل نموذج AI تلقائياً.
  * - إبقاء التطبيق ظاهراً 10 ثوانٍ للتشخيص قبل الإخفاء الخلفي.
+ * - ✅ تحسين معالجة السجلات بحماية من NullPointerException.
+ * - ✅ إضافة تنظيف الموارد في onDestroy.
  */
 class MainActivity : AppCompatActivity() {
     companion object {
@@ -169,6 +171,12 @@ class MainActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
+        // تنظيف الموارد
+        try {
+            ConfigLoader.clearSensitiveData()
+        } catch (_: Exception) {
+            // تجاهل
+        }
         instance = null
         appendLog("✅ Application shutdown complete")
     }
