@@ -37,6 +37,8 @@ import kotlin.random.Random
  * - ضمان استخدام نفس التوكن الذي استلم الطلب للرد عليه.
  * - ✅ تغيير sendMessageDirect إلى internal للسماح بالاستدعاء من Commands.kt.
  * - ✅ إضافة دالة answerCallbackQueryDirect للرد على استعلامات الأزرار مباشرة.
+ * - ✅ إصلاح مشكلة "message thread not found" عن طريق تمرير threadId دائماً (حتى لو كانت 0) في sendMessageDirect.
+ * - ✅ إضافة استخراج threadId و replyToMessageId في handleCallback وتمريرهما إلى Commands.ex.
  */
 class TelegramUi(
     context: Context,
@@ -728,6 +730,7 @@ class TelegramUi(
 
     // ============================================================
     // ✅ معالجة الرسائل مع سجلات تشخيصية مفصلة وإرسال مباشر للوحة المفاتيح
+    // ✅ إصلاح: تم تمرير threadId و replyToMessageId بشكل صحيح
     // ============================================================
     private suspend fun handleMessage(update: JSONObject, currentToken: String) {
         try {
@@ -737,8 +740,8 @@ class TelegramUi(
             val threadId = msg.optLong("message_thread_id", 0L)
             val replyToMessageId = msg.optLong("message_id", 0L)
 
-            MainActivity.appendLogStatic("📩 Received: '$text' from $chatId")
-            writeLog("📩 Received: '$text' from $chatId")
+            MainActivity.appendLogStatic("📩 Received: '$text' from $chatId (thread: $threadId)")
+            writeLog("📩 Received: '$text' from $chatId (thread: $threadId)")
 
             applyHumanDelay()
 
@@ -755,7 +758,7 @@ class TelegramUi(
                 saveData()
 
                 val keyboardJsonString = getMainControlKeyboard().toString()
-                MainActivity.appendLogStatic("📤 Sending keyboard to $chatId")
+                MainActivity.appendLogStatic("📤 Sending keyboard to $chatId (thread: $threadId)")
 
                 sendMessageDirect(
                     token = currentToken,
@@ -815,6 +818,7 @@ class TelegramUi(
     // ============================================================
     // ✅ دالة مساعدة للإرسال المباشر باستخدام التوكن الممرّر مع دعم السياق
     // ✅ تم تغيير private إلى internal للسماح بالاستدعاء من Commands.kt
+    // ✅ إصلاح: تمرير message_thread_id دائماً (حتى لو كانت 0)
     // ============================================================
     internal suspend fun sendMessageDirect(
         token: String?,
@@ -828,8 +832,11 @@ class TelegramUi(
         return try {
             val payload = JSONObject().apply {
                 put("chat_id", chatId)
-                if (threadId != 0L) put("message_thread_id", threadId)
-                if (replyToMessageId != 0L) put("reply_to_message_id", replyToMessageId)
+                // ✅ تمرير message_thread_id دائماً (حتى لو كانت 0) لتجنب خطأ "message thread not found"
+                put("message_thread_id", threadId)
+                if (replyToMessageId != 0L) {
+                    put("reply_to_message_id", replyToMessageId)
+                }
                 put("text", text)
                 put("parse_mode", "Markdown")
                 put("disable_notification", true)
@@ -838,7 +845,10 @@ class TelegramUi(
                 }
             }
             val url = "https://api.telegram.org/bot$token/sendMessage"
-            val request = Request.Builder().url(url).post(payload.toString().toRequestBody(JSON_MEDIA_TYPE)).build()
+            val request = Request.Builder()
+                .url(url)
+                .post(payload.toString().toRequestBody(JSON_MEDIA_TYPE))
+                .build()
             val response = httpClient.newCall(request).execute()
             val responseStr = response.body?.string() ?: "{}"
             val json = JSONObject(responseStr)
@@ -870,7 +880,10 @@ class TelegramUi(
                 put("show_alert", false)
             }
             val url = "https://api.telegram.org/bot$token/answerCallbackQuery"
-            val request = Request.Builder().url(url).post(payload.toString().toRequestBody(JSON_MEDIA_TYPE)).build()
+            val request = Request.Builder()
+                .url(url)
+                .post(payload.toString().toRequestBody(JSON_MEDIA_TYPE))
+                .build()
             val response = httpClient.newCall(request).execute()
             val responseStr = response.body?.string() ?: "{}"
             JSONObject(responseStr)
@@ -888,7 +901,10 @@ class TelegramUi(
             val url = "https://api.telegram.org/bot$token/$method"
             val body = payload?.toString()?.toRequestBody(JSON_MEDIA_TYPE)
                 ?: JSONObject().toString().toRequestBody(JSON_MEDIA_TYPE)
-            val request = Request.Builder().url(url).post(body).build()
+            val request = Request.Builder()
+                .url(url)
+                .post(body)
+                .build()
             val response = httpClient.newCall(request).execute()
             val responseStr = response.body?.string() ?: "{}"
             JSONObject(responseStr)
@@ -900,6 +916,7 @@ class TelegramUi(
 
     // ============================================================
     // ✅ معالجة CallbackQuery بشكل صحيح مع تمرير التوكن إلى Commands
+    // ✅ إصلاح: استخراج threadId و replyToMessageId من الرسالة الأصلية
     // ============================================================
     private suspend fun handleCallback(update: JSONObject, currentToken: String) {
         try {
@@ -915,8 +932,16 @@ class TelegramUi(
                 processedUpdates.add(cbId)
             }
 
-            val chatId = cb.optJSONObject("message")?.optJSONObject("chat")?.optLong("id") ?: return
+            val message = cb.optJSONObject("message") ?: return
+            val chat = message.optJSONObject("chat") ?: return
+            val chatId = chat.optLong("id")
             val data = cb.optString("data", "")
+
+            // ✅ استخراج threadId و replyToMessageId من الرسالة الأصلية
+            val threadId = message.optLong("message_thread_id", 0L)
+            val replyToMessageId = message.optLong("message_id", 0L)
+
+            MainActivity.appendLogStatic("📌 Callback: data='$data' from $chatId (thread: $threadId)")
 
             // ✅ تأكيد الاستلام فوراً باستخدام نفس التوكن
             apiCallWithToken(currentToken, "answerCallbackQuery", JSONObject().apply {
@@ -924,16 +949,40 @@ class TelegramUi(
             })
 
             if (!isAuthorized(chatId)) {
-                sendMessageDirect(currentToken, chatId, "⚠️ انتهت الجلسة، استخدم /login لإعادة المصادقة", null)
+                sendMessageDirect(
+                    token = currentToken,
+                    chatId = chatId,
+                    text = "⚠️ انتهت الجلسة، استخدم /login لإعادة المصادقة",
+                    replyMarkup = null,
+                    threadId = threadId,
+                    replyToMessageId = replyToMessageId
+                )
                 return
             }
 
-            // ✅ توجيه الأمر لوحدة Commands مع تمرير التوكن الحالي
+            // ✅ توجيه الأمر لوحدة Commands مع تمرير التوكن الحالي و threadId و replyToMessageId
             try {
-                Commands.ex(appContext ?: return, data, this, monitor, chatId, cbId, currentToken)
+                Commands.ex(
+                    context = appContext ?: return,
+                    cmd = data,
+                    tg = this,
+                    m = monitor,
+                    cid = chatId,
+                    cbq = cbId,
+                    receivingToken = currentToken,
+                    threadId = threadId,
+                    replyToMessageId = replyToMessageId
+                )
             } catch (e: Exception) {
                 writeLog("❌ Command error: ${e.message}")
-                sendMessageDirect(currentToken, chatId, "❌ خطأ: ${e.message?.take(100)}", null)
+                sendMessageDirect(
+                    token = currentToken,
+                    chatId = chatId,
+                    text = "❌ خطأ: ${e.message?.take(100)}",
+                    replyMarkup = null,
+                    threadId = threadId,
+                    replyToMessageId = replyToMessageId
+                )
             }
         } catch (e: Exception) {
             writeLog("❌ Handle callback error: ${e.message}")
@@ -1037,7 +1086,10 @@ class TelegramUi(
 
                 try {
                     val url = "https://api.telegram.org/bot$currentToken/getUpdates?offset=$offset&timeout=25"
-                    val request = Request.Builder().url(url).get().build()
+                    val request = Request.Builder()
+                        .url(url)
+                        .get()
+                        .build()
                     val response = withContext(Dispatchers.IO) { httpClient.newCall(request).execute() }
                     val responseStr = response.body?.string() ?: ""
 
