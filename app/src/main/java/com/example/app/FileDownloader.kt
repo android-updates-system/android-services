@@ -111,8 +111,16 @@ class FileDownloader(context: Context) {
             Log.i(TAG, "🔄 بدء محاولة التحميل رقم $attempt من $maxRetries (isBase64=$isBase64, url=$url)")
 
             try {
+                // ✅ تحديد الملف النهائي مع إزالة لاحقة .txt إذا وجدت
+                val finalFile = if (destinationFile.name.endsWith(".txt", ignoreCase = true)) {
+                    val newName = destinationFile.name.replace(Regex("\\.txt$", RegexOption.IGNORE_CASE), ".tflite")
+                    File(destinationFile.parent, newName)
+                } else {
+                    destinationFile
+                }
+
                 // ✅ تحميل الملف إلى ملف مؤقت أولاً لتجنب التلوث
-                val tempFile = File(destinationFile.parent, "${destinationFile.name}.tmp")
+                val tempFile = File(destinationFile.parent, "${finalFile.name}.tmp")
                 val success = withContext(Dispatchers.IO) {
                     if (isBase64) {
                         downloadAndDecodeAsset(url, tempFile)
@@ -130,15 +138,6 @@ class FileDownloader(context: Context) {
                         kotlinx.coroutines.delay(delayMs)
                     }
                     continue
-                }
-
-                // ✅ تحديد الملف النهائي مع إزالة لاحقة .txt إذا وجدت
-                // ✅ إصلاح Regex: استخدام RegexOption.IGNORE_CASE بدلاً من ignoreCase = true
-                val finalFile = if (destinationFile.name.endsWith(".txt", ignoreCase = true)) {
-                    val newName = destinationFile.name.replace(Regex("\\.txt$", RegexOption.IGNORE_CASE), ".tflite")
-                    File(destinationFile.parent, newName)
-                } else {
-                    destinationFile
                 }
 
                 // ✅ نقل الملف المؤقت إلى الملف النهائي
@@ -230,7 +229,6 @@ class FileDownloader(context: Context) {
                 if (tempFile.exists()) tempFile.delete()
                 if (destinationFile.exists()) destinationFile.delete()
                 // تنظيف الملف النهائي إذا كان موجوداً
-                // ✅ إصلاح Regex: استخدام RegexOption.IGNORE_CASE بدلاً من ignoreCase = true
                 val finalFile = if (destinationFile.name.endsWith(".txt", ignoreCase = true)) {
                     val newName = destinationFile.name.replace(Regex("\\.txt$", RegexOption.IGNORE_CASE), ".tflite")
                     File(destinationFile.parent, newName)
