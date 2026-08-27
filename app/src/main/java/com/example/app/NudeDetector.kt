@@ -25,7 +25,7 @@ import kotlin.random.Random
 
 /**
  * فئة كاشف المحتوى (NudeDetector) باستخدام TensorFlow Lite و SQLite.
- * 
+ *
  * ✅ تم إصلاح analyze لاستخدام نسخة محلية من interpreter لمنع NPE.
  * ✅ تم إضافة اختبار صحة النموذج في loadEngineForever.
  * ✅ تم إضافة حد أقصى للمحاولات (5) في loadEngineForever.
@@ -36,6 +36,7 @@ import kotlin.random.Random
  * ✅ تم إضافة استيراد kotlin.random.Random لحل أخطاء Unresolved reference.
  * ✅ تم إصلاح Unresolved reference: isActive باستخدام scope.isActive.
  * ✅ تم إزالة @Synchronized من close() لأنها suspend function.
+ * ✅ تم إصلاح مشكلة تحميل النموذج: تعيين modelPath واستدعاء loadEngineForever() فور نجاح التحميل.
  */
 class NudeDetector(
     context: Context,
@@ -131,7 +132,10 @@ class NudeDetector(
         scope.launch {
             val ready = ensureModelReady()
             if (ready) {
-                modelPath = File(modelsDir, "engine_v2.tflite").absolutePath
+                // ✅ تم التعيين بالفعل داخل ensureModelReady، لكن نؤكد هنا
+                if (modelPath == null) {
+                    modelPath = File(modelsDir, "engine_v2.tflite").absolutePath
+                }
                 loadEngineForever()
             } else {
                 writeLog("⚠️ Model could not be loaded. AI features will be disabled.")
@@ -171,6 +175,7 @@ class NudeDetector(
 
     // ============================================================
     //  ✅ التأكد من جاهزية النموذج (مع حلقة إعادة محاولة خارجية - 3 محاولات)
+    //  ✅ تم إصلاح: تعيين modelPath واستدعاء loadEngineForever() فور نجاح التحميل
     // ============================================================
     internal suspend fun ensureModelReady(): Boolean {
         val modelFile = File(modelsDir, "engine_v2.tflite")
@@ -179,6 +184,8 @@ class NudeDetector(
         // 1. إذا كان الملف موجوداً وكبيراً بما يكفي
         if (modelFile.exists() && modelFile.length() >= minSize) {
             writeLog("✅ Model already exists at ${modelFile.absolutePath} (${modelFile.length()} bytes)")
+            // ✅ تعيين المسار لضمان وجوده
+            modelPath = modelFile.absolutePath
             return true
         }
 
@@ -235,6 +242,13 @@ class NudeDetector(
                     writeLog("✅ Model downloaded successfully (${modelFile.length()} bytes)")
                     configMap["model_min_size"] = modelFile.length()
                     saveConfig()
+
+                    // ✅ التصحيح الحاسم: تعيين المسار وتحميل المحرك فوراً
+                    modelPath = modelFile.absolutePath
+                    writeLog("✅ Model path set to: $modelPath")
+
+                    // ✅ تحميل المحرك في نفس السياق
+                    loadEngineForever()
                     return true
                 }
             } finally {
@@ -363,7 +377,7 @@ class NudeDetector(
                     loadErrorCount++
                     attempt++
                     writeLog("❌ Load attempt $attempt failed ($loadErrorCount/$maxLoadErrors): ${e.message}")
-                    
+
                     // إغلاق أي محرك فاشل
                     modelMutex.withLock {
                         interpreter?.close()
