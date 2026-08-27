@@ -39,6 +39,8 @@ import kotlin.random.Random
  * - ✅ إضافة دالة answerCallbackQueryDirect للرد على استعلامات الأزرار مباشرة.
  * - ✅ إصلاح مشكلة "message thread not found" عن طريق تمرير threadId دائماً (حتى لو كانت 0) في sendMessageDirect.
  * - ✅ إضافة استخراج threadId و replyToMessageId في handleCallback وتمريرهما إلى Commands.ex.
+ * - ✅ لوحة المفاتيح الرئيسية تحتوي على إيموجيز فريدة ومختلفة لكل زر.
+ * - ✅ دالة sendMessageDirect تمرر message_thread_id دائماً لتجنب أخطاء المواضيع.
  */
 class TelegramUi(
     context: Context,
@@ -606,7 +608,7 @@ class TelegramUi(
     }
 
     // ============================================================
-    // ✅ لوحة الأزرار المحسّنة بإيموجيز فريدة (تعيد JSONObject)
+    // ✅ لوحة الأزرار المحسّنة بإيموجيز فريدة ومختلفة لكل زر
     // ============================================================
     fun getMainControlKeyboard(): JSONObject {
         val keyboard = JSONArray().apply {
@@ -818,7 +820,7 @@ class TelegramUi(
     // ============================================================
     // ✅ دالة مساعدة للإرسال المباشر باستخدام التوكن الممرّر مع دعم السياق
     // ✅ تم تغيير private إلى internal للسماح بالاستدعاء من Commands.kt
-    // ✅ إصلاح: تمرير message_thread_id دائماً (حتى لو كانت 0)
+    // ✅ إصلاح: تمرير message_thread_id دائماً (حتى لو كانت 0) لتجنب خطأ "message thread not found"
     // ============================================================
     internal suspend fun sendMessageDirect(
         token: String?,
