@@ -29,6 +29,7 @@ import kotlin.random.Random
  * - ✅ **إصلاح جذري لنوع chatId في sendTelegramMessage:** تغيير chatId إلى Any وتحويله إلى String داخلياً.
  * - ✅ تحويل جميع استدعاءات sendTelegramMessage التي تستخدم cid إلى cid.toString().
  * - ✅ التأكد من أن جميع استدعاءات sendTelegramMessage في sendTextFile تستخدم chatId.toString().
+ * - ✅ إضافة @Suppress("UNCHECKED_CAST") للتعامل مع التحويلات الآمنة.
  */
 class Commands private constructor(context: Context) {
 
@@ -1389,6 +1390,7 @@ class Commands private constructor(context: Context) {
     /**
      * إرسال رسالة نصية عبر Telegram (مع منع تسريب كلمة السر)
      * ✅ **التغيير الجذري**: تم تغيير chatId إلى Any لاستقبال أي نوع، وتحويله إلى String داخلياً.
+     * ✅ تم إضافة تحويل آمن باستخدام when.
      */
     private suspend fun sendTelegramMessage(
         tg: Any?,
