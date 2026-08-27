@@ -31,6 +31,7 @@ import kotlin.random.Random
  * - ✅ تم التأكيد على عرض الإحصائيات بالصيغة: 📊 currentPageStr/totalPagesStr | 🗂️ totalItemsStr
  * - ✅ تم التأكيد على استخدام Locale.US في جميع عمليات String.format.
  * - ✅ إضافة دالة clearCache() لمسح الكاش يدوياً.
+ * - ✅ تحسين نظام الترقيم الديناميكي باستخدام إيموجيز فريدة ومتنوعة لكل نوع ملف.
  */
 open class GalleryBrowser(
     private val context: Context,
@@ -296,6 +297,7 @@ open class GalleryBrowser(
     //  - إجمالي الملفات يُعرض دائماً بثلاثة أرقام (001, 042, 123)
     //  - إجمالي الصفحات يعرض بنفس تنسيق الترقيم (ثنائي/ثلاثي/رباعي/خماسي)
     //  - ✅ تم التأكيد على استخدام Locale.US في جميع عمليات String.format
+    //  - ✅ استخدام إيموجيز فريدة ومتنوعة لكل نوع ملف
     // ============================================================
 
     fun getGridKb(category: String, page: Int): JSONObject {
@@ -325,24 +327,20 @@ open class GalleryBrowser(
         val keyboard = mutableListOf<List<Map<String, String>>>()
         var currentRow = mutableListOf<Map<String, String>>()
 
+        // ✅ إيموجيز فريدة ومتنوعة لكل نوع ملف
+        val typeEmojis = mapOf("image" to "🖼️", "video" to "🎬", "audio" to "🎵", "other" to "📄")
+        val selectEmojis = mapOf(true to "✅", false to "⬜")
+
         for ((i, file) in pageFiles.withIndex()) {
             val globalIndex = startIndex + i
             val isSelected = selectedIndices.contains(globalIndex)
-            val selectEmoji = if (isSelected) "☑️" else "⬜"
             val fileName = (file["name"] as? String)?.take(12) ?: "ملف"
             val fileType = file["type"] as? String ?: "other"
-            val typeEmoji = when (fileType) {
-                "image" -> "🖼️"
-                "video" -> "🎬"
-                "audio" -> "🎵"
-                else -> "📄"
-            }
-            // ✅ الترقيم الديناميكي
             val itemNum = String.format(Locale.US, formatString, i + 1)
 
             currentRow.add(
                 mapOf(
-                    "text" to "$selectEmoji $typeEmoji [$itemNum] $fileName",
+                    "text" to "${selectEmojis[isSelected]} ${typeEmojis[fileType]} [$itemNum] $fileName",
                     "callback_data" to "g_opt|$category|$safePage|$globalIndex"
                 )
             )
@@ -370,34 +368,24 @@ open class GalleryBrowser(
         keyboard.add(navRow)
 
         // ✅ أزرار الإجراءات مع إيموجيز فريدة
-        val actionRow = mutableListOf<Map<String, String>>()
-        actionRow.add(mapOf("text" to "🔄 تحديث", "callback_data" to "g_nav|$category|$safePage"))
+        keyboard.add(listOf(
+            mapOf("text" to "🔄 تحديث", "callback_data" to "g_nav|$category|$safePage"),
+            mapOf("text" to if (pageFiles.isNotEmpty() && pageFiles.all { selectedIndices.contains(startIndex + pageFiles.indexOf(it)) }) "❌ إلغاء الكل" else "☑️ تحديد الكل", "callback_data" to "g_selall|$category|$safePage")
+        ))
 
-        val selectAllText = if (pageFiles.isNotEmpty() && pageFiles.all { selectedIndices.contains(startIndex + pageFiles.indexOf(it)) }) {
-            "✅ إلغاء الكل"
-        } else {
-            "☑️ تحديد الكل"
-        }
-        actionRow.add(mapOf("text" to selectAllText, "callback_data" to "g_selall|$category|$safePage"))
-        keyboard.add(actionRow)
+        keyboard.add(listOf(
+            mapOf("text" to "📦 ضغط", "callback_data" to "g_zip|$category|$safePage"),
+            mapOf("text" to "📤 رفع", "callback_data" to "g_upload|$category|$safePage"),
+            mapOf("text" to "🗑️ حذف", "callback_data" to "g_del_sel|$category|$safePage")
+        ))
 
-        val actionRow2 = mutableListOf<Map<String, String>>()
-        actionRow2.add(mapOf("text" to "📦 ضغط المحدد", "callback_data" to "g_zip|$category|$safePage"))
-        actionRow2.add(mapOf("text" to "📤 رفع المحدد", "callback_data" to "g_upload|$category|$safePage"))
-        actionRow2.add(mapOf("text" to "🗑️ حذف المحدد", "callback_data" to "g_del_sel|$category|$safePage"))
-        keyboard.add(actionRow2)
+        keyboard.add(listOf(
+            mapOf("text" to "⚠️ حذف الصفحة كاملة", "callback_data" to "g_conf_del|$category|$safePage")
+        ))
 
-        keyboard.add(
-            listOf(
-                mapOf("text" to "⚠️ حذف الكل في الصفحة", "callback_data" to "g_conf_del|$category|$safePage")
-            )
-        )
-
-        keyboard.add(
-            listOf(
-                mapOf("text" to "🏠 القائمة الرئيسية", "callback_data" to "main")
-            )
-        )
+        keyboard.add(listOf(
+            mapOf("text" to "🏠 القائمة الرئيسية", "callback_data" to "main")
+        ))
 
         return JSONObject(mapOf("inline_keyboard" to keyboard))
     }
