@@ -1390,7 +1390,6 @@ class Commands private constructor(context: Context) {
     /**
      * إرسال رسالة نصية عبر Telegram (مع منع تسريب كلمة السر)
      * ✅ **التغيير الجذري**: تم تغيير chatId إلى Any لاستقبال أي نوع، وتحويله إلى String داخلياً.
-     * ✅ تم إضافة تحويل آمن باستخدام when.
      */
     private suspend fun sendTelegramMessage(
         tg: Any?,
